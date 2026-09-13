@@ -15,7 +15,7 @@ from .confinement import ConfinementAxis
 from .detections import FrameDiagnostics
 from .imaging import StackMetadata
 from .measurements import TrackSummary
-from .tracking import FrameEvent, Track
+from .tracking import FrameEvent, Track, UnlinkedStart
 
 SEVERITY_INFO = "info"
 SEVERITY_WARN = "warning"
@@ -53,6 +53,7 @@ def collect_issues(
     tracks: Sequence[Track],
     summaries: Sequence[TrackSummary],
     cfg: TrackingConfig,
+    unlinked: Sequence[UnlinkedStart] = (),
 ) -> list[QCIssue]:
     issues: list[QCIssue] = []
 
@@ -84,6 +85,17 @@ def collect_issues(
                 f"{len(axis.channels)} channels in this field",
                 "Cells were kept inside their own channel; associations across channel "
                 "walls were forbidden. Check the detected channel boundaries.",
+            )
+        )
+    inferred = [c for c in axis.channels if not c.detected]
+    if inferred:
+        issues.append(
+            QCIssue(
+                "inferred_channel", SEVERITY_WARN,
+                f"{len(inferred)} channel boundary/boundaries were inferred, not seen",
+                "Their walls were too faint to detect, so they were placed from the "
+                "spacing of the channels either side. That is an assumption about the "
+                "device. If a cell looks like it changed channel, check these first.",
             )
         )
     if axis.confidence < 0.5:
@@ -194,6 +206,37 @@ def collect_issues(
                     frame=s.last_frame, track_id=s.track_id,
                 )
             )
+
+    # -- identities the tracker deliberately did not join --------------------
+    for start in unlinked:
+        if start.candidate_track_id is None:
+            continue
+        severity = SEVERITY_INFO
+        # A pairing refused only by the gap limit, that would otherwise have
+        # fitted well, is the case a reviewer most needs to see: the tracker is
+        # declining to assert continuity, not ruling it out.
+        if (
+            start.refused_because == "gap_too_long"
+            and start.cost_chi2 is not None
+            and start.cost_chi2 <= cfg.gate_chi2
+        ):
+            severity = SEVERITY_WARN
+        issues.append(
+            QCIssue(
+                "unlinked_start", severity,
+                f"Track {start.track_id} starts at frame {start.frame} "
+                f"and was not joined to track {start.candidate_track_id}",
+                start.describe()
+                + (
+                    f" The fit itself would have cost {start.cost_chi2:.1f} "
+                    f"against a limit of {cfg.gate_chi2:.0f}."
+                    if start.cost_chi2 is not None else ""
+                )
+                + " Corridor does not assert continuity it cannot support; "
+                "judge this one from the images.",
+                frame=start.frame, track_id=start.track_id,
+            )
+        )
 
     if not tracks:
         issues.append(

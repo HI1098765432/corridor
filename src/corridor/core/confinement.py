@@ -67,11 +67,18 @@ _AXIS_SIGMA = {
 
 @dataclass
 class Channel:
-    """One confinement channel: a centre line plus a half width."""
+    """One confinement channel: a centre line plus a half width.
+
+    ``detected`` distinguishes a channel whose wall was actually measured from
+    one inferred from the lattice because its wall was too faint to see. Both
+    are used for gating, but a reviewer is entitled to know which is which:
+    an inferred boundary is a assumption about the device, not an observation.
+    """
 
     index: int
     origin: tuple[float, float]  # a point on the centre line, (x, y)
     half_width_px: float
+    detected: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -79,6 +86,7 @@ class Channel:
             "origin_x": self.origin[0],
             "origin_y": self.origin[1],
             "half_width_px": self.half_width_px,
+            "detected": self.detected,
         }
 
 
@@ -533,10 +541,16 @@ def resolve_axis(
             pitch = float(np.median(gaps))
     half_width = (pitch / 2.0) if pitch else float(max(min_sep, 0.5 * (width if vertical else height)))
 
+    inferred = {round(g[1], 3) for g in groups if g[2] == 0}
     channels: list[Channel] = []
     for i, c in enumerate(sorted(centres)):
         origin = (float(c), 0.0) if vertical else (0.0, float(c))
-        channels.append(Channel(index=i, origin=origin, half_width_px=half_width))
+        channels.append(
+            Channel(
+                index=i, origin=origin, half_width_px=half_width,
+                detected=round(float(c), 3) not in inferred,
+            )
+        )
     if not channels:
         origin = (width / 2.0, 0.0) if vertical else (0.0, height / 2.0)
         channels = [
@@ -545,6 +559,13 @@ def resolve_axis(
     axis.channels = channels
     axis.pitch_px = pitch
 
+    n_inferred = sum(1 for c in axis.channels if not c.detected)
+    if n_inferred:
+        axis.notes.append(
+            f"{n_inferred} channel boundary/boundaries could not be seen directly and "
+            "were placed from the spacing of the others. Check them if a cell appears "
+            "to change channel."
+        )
     if axis.is_multichannel:
         axis.notes.append(
             f"{len(axis.channels)} confinement channels were measured in this field"
@@ -591,6 +612,7 @@ def _complete_lattice(
         rounded = int(round(multiple))
         if rounded >= 2 and abs(multiple - rounded) <= tolerance:
             for k in range(1, rounded):
+                # Support 0 marks this centre line as inferred, not measured.
                 out.append((slope, previous[1] + k * gap / rounded, 0))
         out.append(current)
     return out

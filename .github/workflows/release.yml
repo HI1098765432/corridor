@@ -1,0 +1,110 @@
+name: Build and publish the Windows installer
+
+# Pushing a v* tag produces a release with no further hand-holding: the
+# application is built, the installer compiled, both checksummed, the tests run,
+# and the result published. Nothing about a release depends on one machine or
+# one person remembering the order of the steps.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (e.g. v1.0.1)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install (Cellpose v3, pinned)
+        run: |
+          python -m pip install --upgrade pip
+          pip install "numpy==1.26.4" "torch==2.6.0" --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
+          pip install -e ".[dev]"
+
+      - name: Refuse to build against Cellpose 4
+        shell: python
+        run: |
+          import cellpose, sys
+          version = str(cellpose.version)
+          print("cellpose", version)
+          if not version.startswith("3."):
+              sys.exit(f"Corridor requires Cellpose 3.x; found {version}")
+
+      - name: Tests that need no microscopy
+        run: python -m pytest -q
+        # The real-data tests need the supplied TIFFs and the trained model,
+        # which are not published. They run locally before a release.
+
+  build:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install "numpy==1.26.4" "torch==2.6.0" --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
+          pip install -e ".[dev]"
+
+      - name: Fetch the Cellpose model
+        # The trained model is not in the repository. It is restored from the
+        # secret store, and its checksum is verified before it is bundled: a
+        # release must never ship a model other than the validated one.
+        env:
+          MODEL_URL: ${{ secrets.CORRIDOR_MODEL_URL }}
+        shell: pwsh
+        run: |
+          $dir = "src/corridor/assets/models"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $target = "$dir/cyto2_phase_microfluidic_KK1KK2_combi"
+          if (-not $env:MODEL_URL) {
+            Write-Error "CORRIDOR_MODEL_URL is not set; cannot build a usable installer."
+            exit 1
+          }
+          Invoke-WebRequest -Uri $env:MODEL_URL -OutFile $target
+          $hash = (Get-FileHash $target -Algorithm SHA256).Hash.ToLower()
+          $expected = "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6"
+          Write-Output "model sha256: $hash"
+          if ($hash -ne $expected) { Write-Error "model checksum mismatch"; exit 1 }
+
+      - name: Build the application and the installer
+        run: python scripts/build_release.py
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $manifest = Get-Content build/build_manifest.json | ConvertFrom-Json
+          $installer = "build/installer/$($manifest.installer.filename)"
+          Write-Output "installer: $installer"
+          Write-Output "sha256:    $($manifest.installer.sha256)"
+          $tag = if ($env:GITHUB_REF -like "refs/tags/*") { $env:GITHUB_REF -replace "refs/tags/","" }
+                 else { "${{ github.event.inputs.tag }}" }
+          gh release create $tag $installer "build/installer/$($manifest.installer.filename).sha256" `
+            --title "Corridor $($manifest.version)" `
+            --notes-file docs/RELEASE_NOTES.md `
+            --repo ${{ github.repository }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Corridor-installer
+          path: build/installer/*
+          retention-days: 30

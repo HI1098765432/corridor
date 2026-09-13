@@ -15,7 +15,12 @@ Notes that matter for this particular bundle:
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import (
+    collect_data_files,
+    collect_entry_point,
+    collect_submodules,
+    copy_metadata,
+)
 
 SPEC_DIR = Path(SPECPATH).resolve()
 ROOT = SPEC_DIR.parent
@@ -59,6 +64,52 @@ for package in ("cellpose", "skimage"):
         pass
 
 # --------------------------------------------------------------------------
+# Napari (optional deep-inspection viewer)
+# --------------------------------------------------------------------------
+# Napari finds its own components through entry points and npe2 manifests
+# rather than through imports, so PyInstaller cannot see them by static
+# analysis. Its package metadata has to be copied for the discovery to work at
+# all, and its YAML manifests are data files.
+NAPARI_AVAILABLE = False
+napari_hiddenimports = []
+try:
+    import napari  # noqa: F401
+
+    NAPARI_AVAILABLE = True
+except Exception:  # noqa: BLE001
+    pass
+
+if NAPARI_AVAILABLE:
+    for package in (
+        "napari", "napari_svg", "npe2", "vispy", "magicgui", "superqt",
+        "app_model", "psygnal", "in_n_out", "pint",
+    ):
+        try:
+            datas += collect_data_files(package, include_py_files=True)
+        except Exception:  # noqa: BLE001
+            pass
+    for distribution in (
+        "napari", "napari-svg", "npe2", "vispy", "magicgui", "superqt",
+        "app-model", "psygnal", "in-n-out", "pydantic", "pint",
+    ):
+        try:
+            datas += copy_metadata(distribution)
+        except Exception:  # noqa: BLE001
+            pass
+    for package in ("napari", "npe2", "vispy", "magicgui", "superqt", "app_model"):
+        try:
+            napari_hiddenimports += collect_submodules(package)
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        # Napari's own plugin manifests are registered as entry points.
+        ep_datas, ep_hidden = collect_entry_point("napari.manifest")[:2]
+        datas += ep_datas
+        napari_hiddenimports += ep_hidden
+    except Exception:  # noqa: BLE001
+        pass
+
+# --------------------------------------------------------------------------
 # Hidden imports
 # --------------------------------------------------------------------------
 
@@ -85,6 +136,8 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
+hiddenimports += napari_hiddenimports
+
 # --------------------------------------------------------------------------
 # Trim what is genuinely not used
 # --------------------------------------------------------------------------
@@ -102,8 +155,17 @@ excludes = [
     "PySide6.QtSensors", "PySide6.QtTextToSpeech", "PySide6.QtSpatialAudio",
     "PySide6.QtRemoteObjects", "PySide6.QtScxml", "PySide6.QtHelp",
     "PySide6.QtDesigner", "PySide6.QtUiTools", "PySide6.QtPdf", "PySide6.QtPdfWidgets",
-    "PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtQml",
+    # Napari's optional embedded IPython console pulls in Jupyter and adds
+    # well over a hundred megabytes. The viewer works without it; only the
+    # terminal button inside Napari is unavailable.
+    "napari_console", "qtconsole", "IPython", "ipykernel", "jupyter_client",
+    "jupyter_core", "debugpy", "pydevd",
 ]
+if NAPARI_AVAILABLE:
+    # Napari renders through Qt OpenGL and uses SVG icons.
+    for needed in ("PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtQml"):
+        if needed in excludes:
+            excludes.remove(needed)
 
 block_cipher = None
 

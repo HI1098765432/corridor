@@ -126,9 +126,12 @@ def test_t3_keeps_two_cells_apart(tmp_path, model_available):
 def test_t3_does_not_bridge_the_six_frame_gap(tmp_path, model_available):
     """The object at frame 10 is 6 frames after the last observation.
 
-    A constant-velocity prediction from frame 4 lands outside the image, so
-    linking it would override the motion model to make a prettier line. The
-    honest outcome is a separate, single-observation track.
+    With max_gap = 3 the tracker may bridge at most 4 frames, so this becomes a
+    separate single-observation track. Note that this is the *gap rule* acting,
+    not a judgement that the object is a different cell: measured, the pairing
+    would fit comfortably (see the unlinked-start test below). Raising max_gap
+    to 5 or more would join them, and that is the researcher's call to make on
+    the evidence, not a default the software should choose for them.
     """
     result = run("052924_t3_dual.tif", tmp_path)
     late = [t for t in result.tracks if t.observations[0].frame == 10]
@@ -189,3 +192,59 @@ def test_manifest_is_complete_and_reproducible(tmp_path, model_available):
     assert -4 < m["confinement"]["tilt_from_vertical_deg"] < -1
     assert m["tracking"]["max_delta_frames"] == m["tracking"]["max_gap"] + 1
     assert m["segmentation"]["removed_instances_total"] == 0
+
+
+def test_t3_late_object_is_reported_as_a_judgement_not_a_fact(tmp_path, model_available):
+    """The frame-10 object is refused only by the gap limit, and says so.
+
+    Measured: it sits about 6 px from where track 1 ended, in the same channel,
+    and would fit at a cost well under the rejection threshold. The only thing
+    refusing it is that 6 frames is longer than max_gap allows. That is a policy
+    choice, and the software has to present it as one rather than implying the
+    object is a different cell.
+    """
+    from corridor.core.tracking import explain_unlinked_starts
+
+    result = run("052924_t3_dual.tif", tmp_path)
+    unlinked = explain_unlinked_starts(
+        result.tracks, result.axis, result.scale, result.config.tracking
+    )
+    late = [u for u in unlinked if u.frame == 10]
+    assert len(late) == 1
+    evidence = late[0]
+
+    assert evidence.candidate_track_id is not None
+    assert evidence.gap_frames == 6
+    assert evidence.gap_frames > result.config.tracking.max_delta_frames()
+    assert evidence.refused_because == "gap_too_long"
+    assert evidence.distance_px is not None and evidence.distance_px < 20
+    assert evidence.cost_chi2 is not None
+    assert evidence.cost_chi2 < result.config.tracking.gate_chi2, (
+        "the fit itself is acceptable; only the gap refuses it, and the "
+        "software must not imply otherwise"
+    )
+    assert "gap" in evidence.describe().lower()
+
+    # It must still be reported to the reviewer, at warning level.
+    codes = {(i.code, i.severity) for i in result.issues}
+    assert ("unlinked_start", "warning") in codes
+
+
+def test_unlinked_starts_file_is_written(tmp_path, model_available):
+    result = run("052924_t3_dual.tif", tmp_path)
+    path = result.output_dir / pipeline.F_UNLINKED
+    assert path.exists()
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("track_id,starts_at_frame,")
+    assert "gap_too_long" in text
+
+
+def test_t1_has_no_unlinked_starts(tmp_path, model_available):
+    """One continuous cell leaves nothing to explain."""
+    from corridor.core.tracking import explain_unlinked_starts
+
+    result = run("052924_t1.tif", tmp_path)
+    unlinked = explain_unlinked_starts(
+        result.tracks, result.axis, result.scale, result.config.tracking
+    )
+    assert unlinked == [] or all(u.candidate_track_id is None for u in unlinked)

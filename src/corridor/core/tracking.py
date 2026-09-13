@@ -61,7 +61,7 @@ optimiser that the hard gate would have refused.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Iterable, Sequence
 
@@ -601,6 +601,123 @@ class ConfinementTracker:
                     flagged.append(tr.id)
                     break
         return flagged
+
+
+@dataclass
+class UnlinkedStart:
+    """A track that began mid-stack, and the best case for it being a continuation.
+
+    When a cell disappears and something appears later, the tracker's refusal
+    to join them is a judgement. Recording what that judgement was based on
+    turns it from an opaque verdict into evidence a reviewer can weigh: how far
+    apart, how long a gap, what the match would have cost, and which rule
+    refused it.
+    """
+
+    track_id: int
+    frame: int
+    candidate_track_id: int | None = None
+    candidate_last_frame: int | None = None
+    gap_frames: int | None = None
+    distance_px: float | None = None
+    along_px: float | None = None
+    across_px: float | None = None
+    speed_um_per_min: float | None = None
+    cost_chi2: float | None = None
+    refused_because: str | None = None
+
+    def describe(self) -> str:
+        if self.candidate_track_id is None:
+            return "No earlier track was a plausible source."
+        reason = {
+            GATE_GAP: (
+                f"the gap of {self.gap_frames} frames is longer than the "
+                "tracker is allowed to bridge"
+            ),
+            GATE_SPEED: "it would have had to move implausibly fast",
+            GATE_PERP: "it would have had to jump sideways out of the channel",
+            GATE_AREA: "the size change is too large",
+            GATE_CHANNEL: "it is in a different channel",
+            GATE_COST: "the overall fit was too poor",
+        }.get(self.refused_because or "", "the fit was not good enough")
+        detail = (
+            f"Track {self.candidate_track_id} ended at frame "
+            f"{self.candidate_last_frame}, {self.gap_frames} frames earlier"
+        )
+        if self.distance_px is not None:
+            detail += f" and {self.distance_px:.0f} px away"
+        if self.speed_um_per_min is not None:
+            detail += f" ({self.speed_um_per_min:.2f} um/min if joined)"
+        return f"{detail}. Not joined because {reason}."
+
+
+def explain_unlinked_starts(
+    tracks: Sequence[Track],
+    axis: ConfinementAxis,
+    scale: Scale,
+    cfg: TrackingConfig,
+) -> list[UnlinkedStart]:
+    """For every track that began mid-stack, why it was not joined to an earlier one.
+
+    The gap limit is deliberately ignored while costing, so that a pairing
+    refused *only* because it was too far apart in time is reported as exactly
+    that, rather than silently vanishing.
+    """
+    out: list[UnlinkedStart] = []
+    ordered = sorted(tracks, key=lambda t: t.observations[0].frame if t.observations else 0)
+    for track in ordered:
+        if not track.observations:
+            continue
+        start = track.observations[0]
+        if start.frame == 0:
+            continue
+
+        # Rebuild the first observation as a detection so the real cost model
+        # can be applied to it.
+        probe = Detection(
+            frame=start.frame, label=start.det_label, x=start.x, y=start.y,
+            area_px=start.area_px, bbox=(0, 0, 1, 1), extent_px=1,
+            eccentricity=start.eccentricity, orientation_rad=start.orientation_rad,
+            major_axis_px=1.0, minor_axis_px=start.minor_axis_px,
+            solidity=1.0, touches_border=False, channel=start.channel,
+        )
+
+        best: UnlinkedStart | None = None
+        for other in tracks:
+            if other is track or not other.observations:
+                continue
+            if other.last_frame >= start.frame:
+                continue
+            gap = start.frame - other.last_frame
+            relaxed = replace(cfg, max_gap=max(cfg.max_gap, gap))
+            breakdown = pair_cost(other, probe, axis, scale, relaxed)
+            step = probe.xy - other.last_xy
+            distance = float(np.linalg.norm(step))
+            elapsed = scale.frames_to_min(gap)
+            candidate = UnlinkedStart(
+                track_id=track.id,
+                frame=start.frame,
+                candidate_track_id=other.id,
+                candidate_last_frame=other.last_frame,
+                gap_frames=gap,
+                distance_px=distance,
+                along_px=float(step @ axis.unit),
+                across_px=float(step @ axis.normal),
+                speed_um_per_min=(
+                    scale.px_to_um(distance) / elapsed
+                    if scale.calibrated and elapsed > 0 else None
+                ),
+                cost_chi2=(None if breakdown.gated else breakdown.total),
+                refused_because=breakdown.gated or (
+                    GATE_GAP if gap > cfg.max_delta_frames() else None
+                ),
+            )
+            # Prefer the nearest in time, then the cheapest.
+            key = (candidate.gap_frames, candidate.cost_chi2 or FORBIDDEN)
+            if best is None or key < (best.gap_frames, best.cost_chi2 or FORBIDDEN):
+                best = candidate
+        out.append(best or UnlinkedStart(track_id=track.id, frame=start.frame))
+    return out
 
 
 def track_detections(

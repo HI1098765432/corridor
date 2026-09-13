@@ -81,6 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="analyse without opening the application (implied by --output)",
     )
+    p.add_argument(
+        "--self-test",
+        action="store_true",
+        help="check that this installation is complete and working",
+    )
     p.add_argument("--quiet", action="store_true")
     p.add_argument("--version", action="version", version=f"{app_meta.APP_NAME} {app_meta.APP_VERSION}")
     return p
@@ -143,6 +148,8 @@ def wants_interface(args: argparse.Namespace) -> bool:
     """
     if args.gui:
         return True
+    if args.self_test:
+        return False
     if not args.input:
         return True
     return not (args.headless or args.output)
@@ -150,6 +157,11 @@ def wants_interface(args: argparse.Namespace) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.self_test:
+        from .selftest import run as run_self_test
+
+        return run_self_test(verbose=not args.quiet)
 
     if wants_interface(args):
         from .ui.app import run_app

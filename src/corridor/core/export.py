@@ -70,6 +70,15 @@ EVENT_COLUMNS = [
 
 QC_COLUMNS = ["severity", "code", "title", "detail", "frame", "track_id"]
 
+#: Why each mid-stack track was not joined to an earlier one. This is the
+#: evidence behind a judgement the tracker made, not a result in itself.
+UNLINKED_COLUMNS = [
+    "track_id", "starts_at_frame", "nearest_earlier_track",
+    "that_track_ended_at_frame", "gap_frames", "distance_px",
+    "along_channel_px", "across_channel_px", "implied_speed_um_per_min",
+    "would_have_cost_chi2", "refused_because", "explanation",
+]
+
 
 # --------------------------------------------------------------------------
 # Primitives

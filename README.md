@@ -51,6 +51,10 @@ time-lapse TIFF
   the number of elapsed frames.
 - **Ambiguity is preserved.** When one mask covers two cells, no centroid is
   invented: the second identity goes dormant and the frame is flagged.
+- **Judgements show their evidence.** When a cell disappears and something
+  appears later, the refusal to join them is recorded with the distance, the
+  gap, the implied speed and what the match would have cost — so a reviewer can
+  disagree with it on the numbers rather than taking it on faith.
 - **Results are saved before any viewer opens.**
 
 ## Output files
@@ -63,6 +67,7 @@ time-lapse TIFF
 | `segmentation_diagnostics.csv` | raw vs kept instance counts per frame |
 | `tracking_events.csv` | matches, new tracks, dormancies, suspected merges per frame |
 | `qc_issues.csv` | everything worth a second look |
+| `unlinked_starts.csv` | for each track beginning mid-stack, why it was not joined to an earlier one |
 | `run.json` | full provenance: versions, model checksum, every parameter |
 | `masks.npz` | the label stack |
 
@@ -78,6 +83,15 @@ corridor stack.tif --pixel-size 0.4671 --frame-interval 20.0069
 ```
 
 `corridor --help` lists every parameter. The same analysis runs headless.
+
+## How well does the segmentation work?
+
+Measured, with a properly constructed held-out split, in
+[`docs/MODEL_EVALUATION.md`](docs/MODEL_EVALUATION.md). Short version: the
+bundled model scores F1 0.80–0.87 on its own training images, and **0.30–0.48
+on data it was not trained on**, where the failure mode is missing cells rather
+than inventing them. Trajectories fragment rather than go wrong, which is the
+safer failure but still biases anything computed over track lengths.
 
 ## Requirements
 

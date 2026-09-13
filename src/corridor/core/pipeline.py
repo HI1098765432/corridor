@@ -39,7 +39,13 @@ from .segmentation import (
     cellpose_version,
     gpu_available,
 )
-from .tracking import FrameEvent, Track, track_detections
+from .tracking import (
+    FrameEvent,
+    Track,
+    UnlinkedStart,
+    explain_unlinked_starts,
+    track_detections,
+)
 
 # File names inside a result directory. Stable: other tools may rely on them.
 F_DETECTIONS = "detections.csv"
@@ -48,6 +54,7 @@ F_SUMMARY = "track_summary.csv"
 F_DIAGNOSTICS = "segmentation_diagnostics.csv"
 F_EVENTS = "tracking_events.csv"
 F_QC = "qc_issues.csv"
+F_UNLINKED = "unlinked_starts.csv"
 F_MANIFEST = "run.json"
 F_MASKS = "masks.npz"
 F_RAW_MASKS = "masks_raw.npz"
@@ -88,6 +95,7 @@ class AnalysisResult:
     rows: list[dict[str, Any]]
     summaries: list[TrackSummary]
     issues: list[QCIssue]
+    unlinked: list[UnlinkedStart] = field(default_factory=list)
     manifest: dict[str, Any] = field(default_factory=dict)
     output_dir: Path | None = None
 
@@ -214,9 +222,10 @@ def run_analysis(
         source_frames=metadata.source_frames,
         min_observations=config.tracking.min_observations,
     )
+    unlinked = explain_unlinked_starts(tracks, axis, scale, config.tracking)
     issues = collect_issues(
         metadata, axis, scale, segmentation.diagnostics, events, tracks,
-        summaries, config.tracking,
+        summaries, config.tracking, unlinked,
     )
 
     manifest = build_manifest(
@@ -227,7 +236,8 @@ def run_analysis(
     result = AnalysisResult(
         config=config, metadata=metadata, scale=scale, axis=axis,
         segmentation=segmentation, tracks=tracks, events=events, rows=rows,
-        summaries=summaries, issues=issues, manifest=manifest, output_dir=out_dir,
+        summaries=summaries, issues=issues, unlinked=unlinked,
+        manifest=manifest, output_dir=out_dir,
     )
 
     if save and out_dir is not None:
@@ -267,6 +277,27 @@ def save_result(result: AnalysisResult, out_dir: Path) -> None:
     )
     export.write_csv(
         out_dir / F_QC, export.QC_COLUMNS, [i.to_row() for i in result.issues]
+    )
+    export.write_csv(
+        out_dir / F_UNLINKED,
+        export.UNLINKED_COLUMNS,
+        [
+            {
+                "track_id": u.track_id,
+                "starts_at_frame": u.frame,
+                "nearest_earlier_track": u.candidate_track_id,
+                "that_track_ended_at_frame": u.candidate_last_frame,
+                "gap_frames": u.gap_frames,
+                "distance_px": u.distance_px,
+                "along_channel_px": u.along_px,
+                "across_channel_px": u.across_px,
+                "implied_speed_um_per_min": u.speed_um_per_min,
+                "would_have_cost_chi2": u.cost_chi2,
+                "refused_because": u.refused_because,
+                "explanation": u.describe(),
+            }
+            for u in result.unlinked
+        ],
     )
     export.save_masks(out_dir / F_MASKS, result.segmentation.masks)
     export.write_json(out_dir / F_MANIFEST, result.manifest)

@@ -1,0 +1,241 @@
+{
+  "settings": {
+    "cellprob_threshold": 0.0,
+    "flow_threshold": 0.4,
+    "channels": [
+      0,
+      0
+    ],
+    "note": "These are the settings the researcher used when labelling, read from the _seg.npy files."
+  },
+  "evaluations": [
+    {
+      "model": "KK1Model",
+      "evaluated_on": "KK1",
+      "held_out": false,
+      "kind": "training-set fit",
+      "n_images": 40,
+      "n_ground_truth_instances": 138,
+      "n_predicted_instances": 138,
+      "by_iou_threshold": {
+        "0.5": {
+          "tp": 113,
+          "fp": 25,
+          "fn": 25,
+          "precision": 0.8188,
+          "recall": 0.8188,
+          "f1": 0.8188,
+          "mean_iou_of_matches": 0.6964
+        },
+        "0.75": {
+          "tp": 31,
+          "fp": 107,
+          "fn": 107,
+          "precision": 0.2246,
+          "recall": 0.2246,
+          "f1": 0.2246,
+          "mean_iou_of_matches": 0.7886
+        },
+        "0.9": {
+          "tp": 0,
+          "fp": 138,
+          "fn": 138,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "mean_iou_of_matches": null
+        }
+      }
+    },
+    {
+      "model": "KK1Model",
+      "evaluated_on": "KK2",
+      "held_out": true,
+      "kind": "HELD OUT",
+      "n_images": 31,
+      "n_ground_truth_instances": 108,
+      "n_predicted_instances": 87,
+      "by_iou_threshold": {
+        "0.5": {
+          "tp": 47,
+          "fp": 40,
+          "fn": 61,
+          "precision": 0.5402,
+          "recall": 0.4352,
+          "f1": 0.4821,
+          "mean_iou_of_matches": 0.6592
+        },
+        "0.75": {
+          "tp": 7,
+          "fp": 80,
+          "fn": 101,
+          "precision": 0.0805,
+          "recall": 0.0648,
+          "f1": 0.0718,
+          "mean_iou_of_matches": 0.7801
+        },
+        "0.9": {
+          "tp": 0,
+          "fp": 87,
+          "fn": 108,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "mean_iou_of_matches": null
+        }
+      }
+    },
+    {
+      "model": "KK2Model",
+      "evaluated_on": "KK1",
+      "held_out": true,
+      "kind": "HELD OUT",
+      "n_images": 40,
+      "n_ground_truth_instances": 138,
+      "n_predicted_instances": 47,
+      "by_iou_threshold": {
+        "0.5": {
+          "tp": 28,
+          "fp": 19,
+          "fn": 110,
+          "precision": 0.5957,
+          "recall": 0.2029,
+          "f1": 0.3027,
+          "mean_iou_of_matches": 0.6164
+        },
+        "0.75": {
+          "tp": 2,
+          "fp": 45,
+          "fn": 136,
+          "precision": 0.0426,
+          "recall": 0.0145,
+          "f1": 0.0216,
+          "mean_iou_of_matches": 0.8405
+        },
+        "0.9": {
+          "tp": 1,
+          "fp": 46,
+          "fn": 137,
+          "precision": 0.0213,
+          "recall": 0.0072,
+          "f1": 0.0108,
+          "mean_iou_of_matches": 0.914
+        }
+      }
+    },
+    {
+      "model": "KK2Model",
+      "evaluated_on": "KK2",
+      "held_out": false,
+      "kind": "training-set fit",
+      "n_images": 31,
+      "n_ground_truth_instances": 108,
+      "n_predicted_instances": 105,
+      "by_iou_threshold": {
+        "0.5": {
+          "tp": 79,
+          "fp": 26,
+          "fn": 29,
+          "precision": 0.7524,
+          "recall": 0.7315,
+          "f1": 0.7418,
+          "mean_iou_of_matches": 0.6869
+        },
+        "0.75": {
+          "tp": 16,
+          "fp": 89,
+          "fn": 92,
+          "precision": 0.1524,
+          "recall": 0.1481,
+          "f1": 0.1502,
+          "mean_iou_of_matches": 0.8012
+        },
+        "0.9": {
+          "tp": 0,
+          "fp": 105,
+          "fn": 108,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "mean_iou_of_matches": null
+        }
+      }
+    },
+    {
+      "model": "combi",
+      "evaluated_on": "KK1",
+      "held_out": false,
+      "kind": "training-set fit",
+      "n_images": 40,
+      "n_ground_truth_instances": 138,
+      "n_predicted_instances": 142,
+      "by_iou_threshold": {
+        "0.5": {
+          "tp": 122,
+          "fp": 20,
+          "fn": 16,
+          "precision": 0.8592,
+          "recall": 0.8841,
+          "f1": 0.8714,
+          "mean_iou_of_matches": 0.7053
+        },
+        "0.75": {
+          "tp": 42,
+          "fp": 100,
+          "fn": 96,
+          "precision": 0.2958,
+          "recall": 0.3043,
+          "f1": 0.3,
+          "mean_iou_of_matches": 0.7896
+        },
+        "0.9": {
+          "tp": 0,
+          "fp": 142,
+          "fn": 138,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "mean_iou_of_matches": null
+        }
+      }
+    },
+    {
+      "model": "combi",
+      "evaluated_on": "KK2",
+      "held_out": false,
+      "kind": "training-set fit",
+      "n_images": 31,
+      "n_ground_truth_instances": 108,
+      "n_predicted_instances": 108,
+      "by_iou_threshold": {
+        "0.5": {
+          "tp": 86,
+          "fp": 22,
+          "fn": 22,
+          "precision": 0.7963,
+          "recall": 0.7963,
+          "f1": 0.7963,
+          "mean_iou_of_matches": 0.7275
+        },
+        "0.75": {
+          "tp": 43,
+          "fp": 65,
+          "fn": 65,
+          "precision": 0.3981,
+          "recall": 0.3981,
+          "f1": 0.3981,
+          "mean_iou_of_matches": 0.7969
+        },
+        "0.9": {
+          "tp": 1,
+          "fp": 107,
+          "fn": 107,
+          "precision": 0.0093,
+          "recall": 0.0093,
+          "f1": 0.0093,
+          "mean_iou_of_matches": 0.9113
+        }
+      }
+    }
+  ]
+}

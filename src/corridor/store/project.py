@@ -63,6 +63,7 @@ class SavedAnalysis:
     summaries: list[dict[str, Any]] = field(default_factory=list)
     diagnostics: list[dict[str, Any]] = field(default_factory=list)
     issues: list[dict[str, Any]] = field(default_factory=list)
+    unlinked: list[dict[str, Any]] = field(default_factory=list)
     _masks: np.ndarray | None = None
 
     # -- lazy pixel data ---------------------------------------------------
@@ -140,6 +141,7 @@ def load_analysis(directory: str | Path) -> SavedAnalysis:
         summaries=read_table(directory / pipeline.F_SUMMARY),
         diagnostics=read_table(directory / pipeline.F_DIAGNOSTICS),
         issues=read_table(directory / pipeline.F_QC),
+        unlinked=read_table(directory / pipeline.F_UNLINKED),
     )
 
 
@@ -163,6 +165,7 @@ def export_bundle(analysis: SavedAnalysis, destination: str | Path) -> list[Path
         pipeline.F_DIAGNOSTICS,
         pipeline.F_EVENTS,
         pipeline.F_QC,
+        pipeline.F_UNLINKED,
         pipeline.F_MANIFEST,
         pipeline.F_MASKS,
         "preview.png",
