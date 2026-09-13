@@ -1,0 +1,15 @@
+# Supplied microscopy, training data and models are the researchers' data.
+# They are deliberately never committed or published.
+data/
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.DS_Store
+Thumbs.db
+
+# The bundled model is staged here at build time from data/.
+src/corridor/assets/models/
