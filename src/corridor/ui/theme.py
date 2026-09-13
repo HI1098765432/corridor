@@ -102,6 +102,15 @@ QWidget#Root, QMainWindow, QStackedWidget {{
     background: {p.canvas};
 }}
 
+/* Dialogs are separate top-level windows and do not inherit the shell's
+   background, so they have to be told as well. */
+QDialog, QMessageBox, QFileDialog {{
+    background: {p.canvas};
+}}
+QMessageBox QLabel {{
+    color: {p.text};
+}}
+
 /* Scroll areas must not introduce a grey plate behind white content. */
 QScrollArea, QScrollArea > QWidget, QScrollArea > QWidget > QWidget {{
     background: transparent;

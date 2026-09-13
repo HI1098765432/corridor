@@ -56,7 +56,7 @@ def _spin(
     box.setSuffix(suffix)
     box.setKeyboardTracking(False)
     box.setAlignment(Qt.AlignRight)
-    box.setMinimumWidth(128)
+    box.setMinimumWidth(104)
     return box
 
 
@@ -66,7 +66,7 @@ def _int_spin(minimum: int, maximum: int, suffix: str = "") -> QSpinBox:
     box.setSuffix(suffix)
     box.setKeyboardTracking(False)
     box.setAlignment(Qt.AlignRight)
-    box.setMinimumWidth(128)
+    box.setMinimumWidth(104)
     return box
 
 
@@ -116,7 +116,10 @@ class AdvancedPanel(QWidget):
         form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
         form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        form.setHorizontalSpacing(SPACE["xl"])
+        # When the panel is narrow, a label sits above its control rather than
+        # being squeezed against it until the value is cut off.
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        form.setHorizontalSpacing(SPACE["lg"])
         form.setVerticalSpacing(SPACE["md"])
         form.setContentsMargins(0, 0, 0, 0)
         return form
@@ -151,7 +154,7 @@ class AdvancedPanel(QWidget):
         self.axis_angle_row = self.axis_angle
         form.addRow("Angle", self.axis_angle)
 
-        self.enforce_channels = QCheckBox("Never track a cell across a channel wall")
+        self.enforce_channels = QCheckBox("Keep cells in their own channel")
         self.enforce_channels.toggled.connect(self._emit)
         form.addRow("", self.enforce_channels)
         return form
@@ -200,7 +203,7 @@ class AdvancedPanel(QWidget):
         )
         form.addRow("Smallest object", self.min_extent)
 
-        self.use_gpu = QCheckBox("Use the GPU when one is available")
+        self.use_gpu = QCheckBox("Use the GPU if available")
         self.use_gpu.toggled.connect(self._emit)
         form.addRow("", self.use_gpu)
         return form

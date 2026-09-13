@@ -297,3 +297,28 @@ def test_config_tolerates_unknown_and_missing_keys():
     assert config.tracking.max_gap == 2
     assert config.tracking.max_speed_um_per_min == 5.0  # default preserved
     assert config.segmentation.flow_threshold == 0.4
+
+
+# --------------------------------------------------------------------------
+# Command line behaviour
+# --------------------------------------------------------------------------
+
+
+def test_a_bare_file_argument_opens_the_application():
+    """What a double-click and the file association do must show the app."""
+    from corridor.cli import build_parser, wants_interface
+
+    parser = build_parser()
+    assert wants_interface(parser.parse_args([])) is True
+    assert wants_interface(parser.parse_args(["movie.tif"])) is True
+    assert wants_interface(parser.parse_args(["--gui", "movie.tif"])) is True
+
+
+def test_naming_an_output_directory_runs_headless():
+    from corridor.cli import build_parser, wants_interface
+
+    parser = build_parser()
+    assert wants_interface(parser.parse_args(["movie.tif", "-o", "out"])) is False
+    assert wants_interface(parser.parse_args(["movie.tif", "--headless"])) is False
+    # An explicit --gui still wins, even with an output directory.
+    assert wants_interface(parser.parse_args(["--gui", "movie.tif", "-o", "out"])) is True

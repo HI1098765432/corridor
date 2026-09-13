@@ -3,8 +3,8 @@
 
 Notes that matter for this particular bundle:
 
-*   Cellpose reads several data files at runtime and imports parts of itself
-    lazily, so it needs both ``collect_data_files`` and ``collect_submodules``.
+*   Cellpose reads data files at runtime and imports parts of itself lazily,
+    so it needs both ``collect_data_files`` and ``collect_submodules``.
 *   Torch must not be pruned: PyInstaller cannot see through its dynamic
     imports, and a missing operator module only fails when a user presses
     Analyse.
@@ -52,7 +52,7 @@ else:
     )
 
 # Third-party data files.
-for package in ("cellpose", "skimage", "scipy", "numba", "llvmlite", "torch"):
+for package in ("cellpose", "skimage"):
     try:
         datas += collect_data_files(package)
     except Exception:  # noqa: BLE001 - absent optional package
@@ -76,11 +76,14 @@ hiddenimports = [
     "imagecodecs",
     "PIL.Image",
 ]
-for package in ("cellpose", "torch"):
-    try:
-        hiddenimports += collect_submodules(package)
-    except Exception:  # noqa: BLE001
-        pass
+# Only Cellpose is walked explicitly. PyInstaller already ships a hook for
+# torch that collects what it needs; calling collect_submodules("torch") here
+# *imports* every torch submodule as well, which doubles an already slow
+# analysis and can stall it entirely.
+try:
+    hiddenimports += collect_submodules("cellpose")
+except Exception:  # noqa: BLE001
+    pass
 
 # --------------------------------------------------------------------------
 # Trim what is genuinely not used
@@ -105,12 +108,12 @@ excludes = [
 block_cipher = None
 
 a = Analysis(
-    [str(SRC / "corridor" / "__main__.py")],
+    [str(SPEC_DIR / "entry.py")],
     pathex=[str(SRC)],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
-    hookspath=[],
+    hookspath=[str(SPEC_DIR / "hooks")],
     hooksconfig={},
     runtime_hooks=[],
     excludes=excludes,

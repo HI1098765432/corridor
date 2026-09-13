@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...store.project import SavedAnalysis
-from ..icons import icon
+from ..icons import icon, pixmap
 from ..theme import PALETTE, RADIUS, SPACE, TYPE, track_color
 from ..widgets.common import (
     Badge,
@@ -284,7 +284,7 @@ class ResultsScreen(QWidget):
         self.toggle_masks = layer_toggle("Outlines", "layers", True)
         self.toggle_points = layer_toggle("Centroids", "target", True)
         self.toggle_trails = layer_toggle("Tracks", "route", True)
-        self.toggle_labels = layer_toggle("IDs", "plus", True)
+        self.toggle_labels = layer_toggle("IDs", "hash", True)
         self.toggle_axis = layer_toggle("Channels", "grid", False)
 
         for button in (
@@ -397,6 +397,22 @@ class ResultsScreen(QWidget):
         self.checks_list.itemActivated.connect(self._on_check_activated)
         self.checks_list.itemClicked.connect(self._on_check_activated)
         layout.addWidget(self.checks_list, 1)
+
+        # An empty bordered box is not an empty state. When there is nothing to
+        # review, say so once and leave the space quiet.
+        self.checks_empty = QWidget()
+        empty_layout = QVBoxLayout(self.checks_empty)
+        empty_layout.setContentsMargins(0, SPACE["3xl"], 0, 0)
+        empty_layout.setSpacing(SPACE["sm"])
+        empty_layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        glyph = QLabel()
+        glyph.setPixmap(pixmap("check", PALETTE.text_tertiary, 30))
+        glyph.setAlignment(Qt.AlignCenter)
+        message = label("Nothing needs attention", "secondary")
+        message.setAlignment(Qt.AlignCenter)
+        empty_layout.addWidget(glyph)
+        empty_layout.addWidget(message)
+        layout.addWidget(self.checks_empty, 1)
         return page
 
     def _build_run_tab(self) -> QWidget:
@@ -441,7 +457,7 @@ class ResultsScreen(QWidget):
     # --------------------------------------------------------------- loading
     def load(self, analysis: SavedAnalysis, stack: np.ndarray) -> None:
         self.analysis = analysis
-        self._selected_track = None
+        self._reset_selection()
 
         source = analysis.source_path
         self.title.setText(source.name if source else analysis.directory.name)
@@ -471,6 +487,25 @@ class ResultsScreen(QWidget):
         self._populate_checks()
         self._populate_run()
         self._sync_layers()
+
+    def _reset_selection(self) -> None:
+        """Clear everything that belonged to the previous dataset.
+
+        Without this, the inspector keeps showing the last dataset's track
+        statistics next to the new dataset's image, which is exactly the kind
+        of stale result that makes a measurement untrustworthy.
+        """
+        self._selected_track = None
+        self.canvas.selected_track = None
+        self.track_list.clearSelection()
+        self.detail_box.hide()
+        self.detail_title.setText("")
+        self.detail_flags.setText("")
+        for field in self.detail_fields.values():
+            field.set_value("—")
+        self.sparkline.set_series([], PALETTE.accent, None)
+        self.warning_badge.hide()
+        self.timeline.stop()
 
     def _populate_tracks(self) -> None:
         analysis = self.analysis
@@ -514,9 +549,10 @@ class ResultsScreen(QWidget):
         self.checks_list.clear()
         issues = analysis.issues
         severe = [i for i in issues if i.get("severity") in ("critical", "warning")]
-        if not issues:
-            self.checks_summary.setText("Nothing needs attention.")
-        else:
+        self.checks_list.setVisible(bool(issues))
+        self.checks_empty.setVisible(not issues)
+        self.checks_summary.setVisible(bool(issues))
+        if issues:
             self.checks_summary.setText(
                 f"{len(severe)} to look at, {len(issues) - len(severe)} for information."
             )

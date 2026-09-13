@@ -45,6 +45,11 @@ class DatasetScreen(QWidget):
     analyse_requested = Signal()
     cancel_requested = Signal()
 
+    #: The panel grows when the advanced parameters are shown, so the controls
+    #: have room instead of being clipped.
+    PANEL_WIDTH = 384
+    PANEL_WIDTH_ADVANCED = 492
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.metadata: StackMetadata | None = None
@@ -105,7 +110,8 @@ class DatasetScreen(QWidget):
     def _build_side_panel(self) -> QWidget:
         panel = QWidget()
         panel.setObjectName("SidePanel")
-        panel.setFixedWidth(384)
+        self._panel = panel
+        panel.setFixedWidth(self.PANEL_WIDTH)
         outer = QVBoxLayout(panel)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -270,6 +276,9 @@ class DatasetScreen(QWidget):
     def _toggle_advanced(self, shown: bool) -> None:
         self.advanced.setVisible(shown)
         self._advanced_divider.setVisible(shown)
+        self._panel.setFixedWidth(
+            self.PANEL_WIDTH_ADVANCED if shown else self.PANEL_WIDTH
+        )
 
     # ----------------------------------------------------------------- status
     def set_busy(self, busy: bool, message: str = "") -> None:

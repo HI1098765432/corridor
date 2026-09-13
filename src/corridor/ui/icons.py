@@ -184,6 +184,12 @@ def _draw(name: str, painter: QPainter, colour: str) -> None:
         painter.drawPath(path)
         painter.drawLine(QPointF(5.5, 12.0), QPointF(19.0, 12.0))
 
+    elif name == "hash":
+        painter.drawLine(QPointF(9.5, 5.0), QPointF(7.8, 19.0))
+        painter.drawLine(QPointF(16.0, 5.0), QPointF(14.3, 19.0))
+        painter.drawLine(QPointF(5.2, 9.5), QPointF(18.8, 9.5))
+        painter.drawLine(QPointF(4.7, 14.5), QPointF(18.3, 14.5))
+
     elif name == "plus":
         painter.drawLine(QPointF(12, 6.0), QPointF(12, 18.0))
         painter.drawLine(QPointF(6.0, 12), QPointF(18.0, 12))

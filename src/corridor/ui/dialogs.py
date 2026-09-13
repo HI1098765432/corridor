@@ -103,6 +103,7 @@ class SettingsDialog(QDialog):
         self.export_dir = QLineEdit(
             str(store.get_setting("export_dir", str(Path.home() / "Documents")))
         )
+        self.export_dir.setCursorPosition(0)
         browse = ghost_button("Change", "folder", self._choose_export)
         export_row.addWidget(self.export_dir, 1)
         export_row.addWidget(browse)
@@ -116,6 +117,8 @@ class SettingsDialog(QDialog):
             str(resources.bundled_model_path() or "")
         )
         self.model_path = QLineEdit(default_model)
+        self.model_path.setToolTip(default_model)
+        self.model_path.setCursorPosition(0)
         model_browse = ghost_button("Change", "folder", self._choose_model)
         model_row.addWidget(self.model_path, 1)
         model_row.addWidget(model_browse)
@@ -154,6 +157,8 @@ class SettingsDialog(QDialog):
         )
         if path:
             self.model_path.setText(path)
+            self.model_path.setToolTip(path)
+            self.model_path.setCursorPosition(0)
 
     def _save_and_close(self) -> None:
         self.store.set_setting("export_dir", self.export_dir.text())

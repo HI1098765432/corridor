@@ -127,6 +127,43 @@ class Metric(QWidget):
         self._value.setText(value)
 
 
+class ElidedLabel(QLabel):
+    """A right-aligned value that shortens itself rather than being cut off.
+
+    A clipped value is worse than a shortened one: "cyto2_phase_microflui" of a
+    model name reads as a different model, whereas an ellipsis says plainly
+    that there is more, and the full text stays in the tooltip.
+    """
+
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self._full = text
+        self.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.setMinimumWidth(40)
+
+    def setText(self, text: str) -> None:  # noqa: N802
+        self._full = text
+        self._apply()
+
+    def full_text(self) -> str:
+        return self._full
+
+    def _apply(self) -> None:
+        from PySide6.QtGui import QFontMetrics
+
+        metrics = QFontMetrics(self.font())
+        available = max(20, self.width())
+        shown = metrics.elidedText(self._full, Qt.ElideMiddle, available)
+        super().setText(shown)
+        if shown != self._full and not self.toolTip():
+            self.setToolTip(self._full)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._apply()
+
+
 class Field(QWidget):
     """A labelled value shown as one quiet row."""
 
@@ -138,15 +175,15 @@ class Field(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SPACE["md"])
         self._name = label(name, "secondary")
-        self._value = label(value)
-        self._value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        layout.addWidget(self._name)
-        layout.addStretch(1)
-        layout.addWidget(self._value)
+        self._name.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self._value = ElidedLabel(value)
+        layout.addWidget(self._name, 0)
+        layout.addWidget(self._value, 1)
         if hint:
             self.setToolTip(hint)
 
     def set_value(self, value: str, hint: str = "") -> None:
+        self._value.setToolTip(hint or "")
         self._value.setText(value)
         if hint:
             self.setToolTip(hint)
@@ -168,11 +205,9 @@ class StackedField(QWidget):
         top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(SPACE["md"])
         self._name = label(name, "secondary")
-        self._value = label("—")
-        self._value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        top.addWidget(self._name)
-        top.addStretch(1)
-        top.addWidget(self._value)
+        self._value = ElidedLabel("—")
+        top.addWidget(self._name, 0)
+        top.addWidget(self._value, 1)
         layout.addLayout(top)
         self._source = label("", "tertiary")
         self._source.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -196,13 +231,18 @@ class Badge(QLabel):
 
     def __init__(self, text: str, tone: str = "neutral", parent: QWidget | None = None) -> None:
         super().__init__(text, parent)
+        # A pill must keep its own size. Left to expand inside a layout it
+        # stretches to the full height of the bar and stops looking like a pill.
+        self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        self.setFixedHeight(24)
+        self.setAlignment(Qt.AlignCenter)
         self.set_tone(tone)
 
     def set_tone(self, tone: str) -> None:
         background, foreground = self.TONES.get(tone, self.TONES["neutral"])
         self.setStyleSheet(
             f"background: {background}; color: {foreground};"
-            f"border-radius: {RADIUS['pill']}px; padding: 3px 10px;"
+            f"border-radius: 12px; padding: 0 11px;"
             f"font-size: {TYPE['caption']}px; font-weight: 600;"
         )
 

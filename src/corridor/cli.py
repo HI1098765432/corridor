@@ -75,7 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
     geo.add_argument("--frame-interval", type=float, default=None, help="minutes")
 
     p.add_argument("--napari", action="store_true", help="open Napari after saving")
-    p.add_argument("--gui", action="store_true", help="launch the desktop application")
+    p.add_argument("--gui", action="store_true", help="force the desktop application")
+    p.add_argument(
+        "--headless",
+        action="store_true",
+        help="analyse without opening the application (implied by --output)",
+    )
     p.add_argument("--quiet", action="store_true")
     p.add_argument("--version", action="version", version=f"{app_meta.APP_NAME} {app_meta.APP_VERSION}")
     return p
@@ -128,10 +133,25 @@ def config_from_args(args: argparse.Namespace) -> RunConfig:
     )
 
 
+def wants_interface(args: argparse.Namespace) -> bool:
+    """Decide between opening the application and running an analysis.
+
+    Opening a TIFF is what a double-click and a file association do, so a bare
+    file argument must show the application. Running silently is the unusual
+    request, and is asked for explicitly -- by naming an output directory, or
+    with --headless.
+    """
+    if args.gui:
+        return True
+    if not args.input:
+        return True
+    return not (args.headless or args.output)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
-    if args.gui or not args.input:
+    if wants_interface(args):
         from .ui.app import run_app
 
         return run_app([] if not args.input else [args.input])
