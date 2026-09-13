@@ -45,7 +45,7 @@ def _coerce(key: str, value: str) -> Any:
 def read_table(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    with open(path, "r", encoding="utf-8", newline="") as fh:
+    with open(path, "r", encoding="utf-8-sig", newline="") as fh:
         return [
             {k: _coerce(k, v) for k, v in row.items()}
             for row in csv.DictReader(fh)
@@ -130,7 +130,7 @@ def load_analysis(directory: str | Path) -> SavedAnalysis:
     manifest: dict[str, Any] = {}
     if manifest_path.exists():
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
         except json.JSONDecodeError:
             manifest = {}
     return SavedAnalysis(

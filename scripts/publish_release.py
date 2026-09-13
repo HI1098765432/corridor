@@ -101,7 +101,7 @@ def main() -> int:
     manifest_path = BUILD / "build_manifest.json"
     if not manifest_path.exists():
         raise SystemExit("No build manifest. Run scripts/build_release.py first.")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
     version = manifest["version"]
     tag = args.tag or f"v{version}"
 
@@ -123,7 +123,7 @@ def main() -> int:
         raise SystemExit("No GitHub credential available.")
 
     notes_path = Path(args.notes)
-    notes = notes_path.read_text(encoding="utf-8") if notes_path.exists() else ""
+    notes = notes_path.read_text(encoding="utf-8-sig") if notes_path.exists() else ""
 
     # Replace an existing release for this tag so re-publishing is safe.
     try:
