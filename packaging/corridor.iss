@@ -8,7 +8,7 @@
 ;     leave a user's analyses intact.
 
 #define AppName        "Corridor"
-#define AppVersion     "1.0.0"
+#define AppVersion     "1.1.0"
 #define AppPublisher   "Corridor"
 #define AppExeName     "Corridor.exe"
 #define AppId          "{6F4B1D0E-2C7A-4F63-9E11-0A5C8B3D7A21}"

@@ -1,8 +1,8 @@
 # Windows version resource. Keep in sync with corridor.app_meta.
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 0, 0),
-    prodvers=(1, 0, 0, 0),
+    filevers=(1, 1, 0, 0),
+    prodvers=(1, 1, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -18,12 +18,12 @@ VSVersionInfo(
           [
             StringStruct('CompanyName', 'Corridor'),
             StringStruct('FileDescription', 'Corridor - confined cell migration analysis'),
-            StringStruct('FileVersion', '1.0.0.0'),
+            StringStruct('FileVersion', '1.1.0.0'),
             StringStruct('InternalName', 'Corridor'),
             StringStruct('LegalCopyright', 'MIT licensed'),
             StringStruct('OriginalFilename', 'Corridor.exe'),
             StringStruct('ProductName', 'Corridor'),
-            StringStruct('ProductVersion', '1.0.0.0'),
+            StringStruct('ProductVersion', '1.1.0.0'),
           ],
         )
       ]

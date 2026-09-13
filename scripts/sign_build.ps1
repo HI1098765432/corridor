@@ -63,7 +63,7 @@ $timestamp = "http://timestamp.digicert.com"
 
 $targets = @(
   (Join-Path $Root "build\dist\Corridor\Corridor.exe"),
-  (Join-Path $Root "build\installer\Corridor-1.0.0-Setup.exe")
+  (Get-ChildItem (Join-Path $Root "build\installer") -Filter "Corridor-*-Setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
 ) | Where-Object { Test-Path $_ }
 
 foreach ($target in $targets) {
@@ -72,7 +72,23 @@ foreach ($target in $targets) {
   & $signtool.FullName sign /fd SHA256 /td SHA256 /tr $timestamp `
       /sha1 $cert.Thumbprint "$target"
   if ($LASTEXITCODE -ne 0) { throw "signing failed for $target" }
-  & $signtool.FullName verify /pa /v "$target" 2>&1 | Select-String -Pattern "Successfully verified|Hash of file|Signing Certificate|The signature is timestamped" | ForEach-Object { "  $_" }
+  # `signtool verify /pa` checks the chain against Windows' trusted roots, so
+  # it always fails for a self-signed certificate. That is the expected result
+  # and not a signing failure. What matters here is that the signature is
+  # present, intact, and attributable, which Get-AuthenticodeSignature reports
+  # without requiring the root to be trusted.
+  $sig = Get-AuthenticodeSignature -FilePath $target
+  $signer = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { "none" }
+  $stamped = if ($sig.TimeStamperCertificate) { "yes" } else { "no" }
+  Write-Output "  signature status : $($sig.Status)"
+  Write-Output "  signer           : $signer"
+  Write-Output "  timestamped      : $stamped"
+  if (-not $sig.SignerCertificate) { throw "no signature was attached to $target" }
+  if ($sig.Status -eq "HashMismatch") { throw "the signature does not match $target" }
+  if ($sig.Status -notin @("Valid", "UnknownError")) {
+    # UnknownError is what Windows reports for an untrusted (self-signed) root.
+    throw "unexpected signature status for $target : $($sig.Status)"
+  }
 }
 
 Write-Output ""

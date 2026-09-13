@@ -4,7 +4,7 @@ from __future__ import annotations
 
 APP_NAME = "Corridor"
 APP_TAGLINE = "Confined cell migration analysis"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 APP_PUBLISHER = "Corridor"
 APP_ID = "Corridor"
 

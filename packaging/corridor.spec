@@ -102,10 +102,14 @@ if NAPARI_AVAILABLE:
         except Exception:  # noqa: BLE001
             pass
     try:
-        # Napari's own plugin manifests are registered as entry points.
+        # Napari's own plugin manifests are registered as entry points. The
+        # console plugin is excluded from this build, so shipping its manifest
+        # would leave Napari announcing a plugin it cannot import.
         ep_datas, ep_hidden = collect_entry_point("napari.manifest")[:2]
-        datas += ep_datas
-        napari_hiddenimports += ep_hidden
+        datas += [d for d in ep_datas if "napari_console" not in str(d[0]).lower()]
+        napari_hiddenimports += [
+            h for h in ep_hidden if "napari_console" not in h.lower()
+        ]
     except Exception:  # noqa: BLE001
         pass
 

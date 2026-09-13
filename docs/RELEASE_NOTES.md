@@ -3,9 +3,45 @@ time-lapse, get cell trajectories and migration velocities you can check.
 
 ## Install
 
-Download **Corridor-1.0.0-Setup.exe** below and run it. It installs for the
-current user, so no administrator is needed. Python, PyTorch, Cellpose and the
-trained segmentation model are all included — there is nothing else to install.
+Download **Corridor-1.1.0-Setup.exe** below and run it. It installs for the
+current user, so no administrator is needed. Python, PyTorch, Cellpose, Napari
+and the trained segmentation model are all included — there is nothing else to
+install.
+
+After installing, `Corridor.exe --self-test` checks that the installation is
+complete: it loads the model, verifies its checksum, runs the full
+torch/Cellpose path, tracks a known trajectory and checks the velocity
+arithmetic, round-trips every output format, and exercises Napari.
+
+## New in 1.1.0
+
+- **Napari is bundled.** No longer an optional extra to install separately.
+- **`corridor --self-test`** verifies an installation end to end.
+- **`unlinked_starts.csv`.** When a cell disappears and something appears
+  later, the tracker's refusal to join them is recorded with the distance, the
+  gap, the implied speed, what the match would have cost and which rule refused
+  it — so the judgement can be disagreed with on the numbers.
+- **Inferred channel boundaries are marked as inferred.** Where a channel wall
+  was too faint to see and its position was filled in from the spacing of the
+  others, that is now flagged rather than presented as an observation.
+- **A measured answer to "how good is the segmentation?"** — see
+  `docs/MODEL_EVALUATION.md` in the repository.
+
+## How well does the segmentation work
+
+Measured with a properly constructed held-out split, because the combined model
+was trained on all 71 labelled images and has no held-out data of its own:
+
+| Model | Evaluated on | Kind | F1 | Recall |
+|---|---|---|---:|---:|
+| combined | its own training images | fit | 0.80–0.87 | 0.80–0.88 |
+| KK1-only | KK2 | **held out** | **0.48** | 0.44 |
+| KK2-only | KK1 | **held out** | **0.30** | 0.20 |
+
+Generalisation is roughly half of fit, and the failure mode is **missing
+cells, not inventing them** (precision holds at 0.54–0.60). Trajectories
+fragment rather than go wrong — the safer failure, but it still biases anything
+computed over track lengths. Plan for it.
 
 ## What it does
 
@@ -15,7 +51,7 @@ locally and reopen without recomputing.
 
 ## Corrections to the original analysis
 
-This release fixes defects that changed the numbers:
+This software fixes defects that changed the numbers:
 
 - **Frame interval.** The research code assumed 10 minutes per frame. The
   sample data records **20.0069 min/frame**, so reported velocities were about
@@ -34,9 +70,7 @@ This release fixes defects that changed the numbers:
 - **Assignment.** The unmatched cost was declared but never used; links were
   forced and then discarded. The assignment problem now contains real dummy
   blocks, so "no match" is a decision the optimiser weighs.
-- **Gaps.** Prediction, velocity and gating now all scale with elapsed frames,
-  so a cell reacquired after an absence no longer acquires several times its
-  real speed.
+- **Gaps.** Prediction, velocity and gating now all scale with elapsed frames.
 - **Save order.** Results were written after the viewer opened, which blocks;
   they are now saved first.
 
@@ -47,14 +81,21 @@ Velocity columns state their units: `speed_um_per_min`, `v_along_um_per_min`,
 
 ## Requires
 
-Windows 10 or 11, 64-bit. About 900 MB of disk. Runs on the CPU; a CUDA GPU is
+Windows 10 or 11, 64-bit. About 1 GB of disk. Runs on the CPU; a CUDA GPU is
 used if one is present.
 
-## Verify the download
+## Verifying the download
 
-The SHA-256 of the installer is published beside it in
-`Corridor-1.0.0-Setup.exe.sha256`.
+The SHA-256 is published beside the installer in
+`Corridor-1.1.0-Setup.exe.sha256`:
 
 ```powershell
-Get-FileHash Corridor-1.0.0-Setup.exe -Algorithm SHA256
+Get-FileHash Corridor-1.1.0-Setup.exe -Algorithm SHA256
 ```
+
+The installer is also digitally signed, so any modification after build breaks
+the signature. The certificate is self-signed, which means it proves the file
+has not been altered since it was built but does **not** stop Windows
+SmartScreen warning you on first run — that needs a commercially issued
+certificate tied to a verified legal identity. Check the SHA-256 above; do not
+rely on the absence of a warning.
