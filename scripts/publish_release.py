@@ -96,6 +96,12 @@ def main() -> int:
     parser.add_argument("--tag", default=None)
     parser.add_argument("--notes", default=str(ROOT / "docs" / "RELEASE_NOTES.md"))
     parser.add_argument("--draft", action="store_true")
+    parser.add_argument(
+        "--no-source",
+        action="store_true",
+        help="skip the source archive, which is otherwise published beside the "
+             "installer so the code is downloadable without a git client",
+    )
     args = parser.parse_args()
 
     manifest_path = BUILD / "build_manifest.json"
@@ -153,6 +159,27 @@ def main() -> int:
     )
     upload_asset(token, release["upload_url"], checksum_file, "text/plain")
     print(f"uploaded:  {asset['browser_download_url']}")
+
+    # The source archive is published beside the installer so that the code can
+    # be read and rebuilt without a git client. It is built by
+    # scripts/make_source_zip.py, which refuses to pack research data or the
+    # trained model, so publishing it here cannot leak either.
+    source_asset = None
+    source_zip = BUILD / f"Corridor-{version}-source.zip"
+    if not args.no_source:
+        if not source_zip.exists():
+            raise SystemExit(
+                f"{source_zip.name} is missing. Run scripts/make_source_zip.py, "
+                "or pass --no-source to publish without it."
+            )
+        print("uploading source archive...")
+        source_asset = upload_asset(
+            token, release["upload_url"], source_zip, "application/zip"
+        )
+        source_sha = source_zip.with_suffix(".zip.sha256")
+        if source_sha.exists():
+            upload_asset(token, release["upload_url"], source_sha, "text/plain")
+        print(f"uploaded:  {source_asset['browser_download_url']}")
 
     # -- verify by downloading it back, unauthenticated ---------------------
     print("\nverifying the published download...")

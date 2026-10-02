@@ -61,10 +61,30 @@ Write-Output "public cert: $cerPath"
 # A timestamp keeps signatures valid after the certificate expires.
 $timestamp = "http://timestamp.digicert.com"
 
+# The installer to sign is named by the build manifest, never by globbing the
+# output folder. `Get-ChildItem ... | Select-Object -First 1` returns whichever
+# file sorts first, so as soon as one previous release is left lying there it
+# signs the OLD installer and reports success -- which is exactly what happened
+# once. A release step that can silently act on last release's artefact is
+# worse than one that fails.
+$manifestPath = Join-Path (Join-Path $Root "build") "build_manifest.json"
+if (-not (Test-Path $manifestPath)) {
+  throw "No build manifest at $manifestPath. Run scripts/build_release.py first."
+}
+$manifest = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$installerName = $manifest.installer.filename
+if (-not $installerName) { throw "The build manifest does not name an installer." }
+$installerPath = Join-Path $Root "build\installer\$installerName"
+Write-Output "manifest names: $installerName (version $($manifest.version))"
+
 $targets = @(
   (Join-Path $Root "build\dist\Corridor\Corridor.exe"),
-  (Get-ChildItem (Join-Path $Root "build\installer") -Filter "Corridor-*-Setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
+  $installerPath
 ) | Where-Object { Test-Path $_ }
+
+if ($targets.Count -lt 2) {
+  Write-Output "NOTE: $installerPath is not present yet; signing the application only."
+}
 
 foreach ($target in $targets) {
   Write-Output ""
@@ -92,5 +112,15 @@ foreach ($target in $targets) {
 }
 
 Write-Output ""
+# Signing rewrote the installer, so the checksum in the build manifest now
+# describes a file that no longer exists. Record the real one, or the publish
+# step will refuse to run -- correctly.
+$stamp = Join-Path (Join-Path $Root "scripts") "stamp_signature.py"
+$python = Join-Path (Join-Path (Join-Path $Root ".venv") "Scripts") "python.exe"
+if ((Test-Path $stamp) -and (Test-Path $python)) {
+  & $python $stamp --thumbprint $cert.Thumbprint --subject $Subject --self-signed
+  if ($LASTEXITCODE -ne 0) { throw "could not stamp the signature into the manifest" }
+}
+
 Write-Output "THUMBPRINT (publish this alongside the checksum):"
 Write-Output "  $($cert.Thumbprint)"
