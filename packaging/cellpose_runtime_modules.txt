@@ -1,0 +1,19 @@
+# Cellpose modules loaded by Corridor's segmentation path. MEASURED, not
+# written by hand: regenerate with
+#   python scripts/measure_runtime_imports.py --model <production model>
+# cellpose 3.1.1.3, torch 2.6.0+cpu, Python 3.12.10, win32
+# model cyto2_phase_microfluidic_KK1KK2_combi sha256 b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6
+# measured 2026-10-02T19:39:39+00:00; provenance in runtime_imports.json
+# packaging/corridor.spec ships exactly these as hidden imports, and
+# tests/test_packaging.py fails if its list stops covering them.
+cellpose
+cellpose.core
+cellpose.dynamics
+cellpose.io
+cellpose.metrics
+cellpose.models
+cellpose.plot
+cellpose.resnet_torch
+cellpose.transforms
+cellpose.utils
+cellpose.version

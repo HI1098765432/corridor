@@ -4,6 +4,25 @@ name: Build and publish the Windows installer
 # application is built, the installer compiled, both checksummed, the tests run,
 # and the result published. Nothing about a release depends on one machine or
 # one person remembering the order of the steps.
+#
+# Nothing release-specific is written in this file. The version comes from
+# src/corridor/_version.py (the tag must match it), the model's file name and
+# SHA-256 from src/corridor/assets/model_registry.json, and every package
+# version from packaging/requirements-locked.txt -- the same pins a local
+# release build uses. 1.x hard-coded the model name and hash here, a seventh
+# copy of each.
+#
+# CI and a local build still differ. This environment has only the lock; the
+# project's dev venv also has Napari and everything it brings. Since 2.0 Napari
+# is bundled only on request (CORRIDOR_BUNDLE_NAPARI=1), but PyInstaller still
+# follows optional try-imports, and the runtime measurement shows Cellpose and
+# numba probing QtPy, PyYAML and pywin32: a local default build ships those
+# when the venv has them, and this one cannot. The two default bundles match
+# only when the local venv was installed from packaging/requirements-locked.txt;
+# build_release.py prints and records (build_manifest.json, environment_drift)
+# every installed package the lock does not pin. The Napari paths
+# (viz/napari_qc.py, the self-test's optional Napari check,
+# scripts/napari_check.py) are exercised only locally.
 
 on:
   push:
@@ -11,7 +30,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to publish (e.g. v1.0.1)"
+        description: "Tag to publish (e.g. v2.0.0); must equal v + src/corridor/_version.py"
         required: true
 
 permissions:
@@ -27,11 +46,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install (Cellpose v3, pinned)
+      - name: Install the locked build environment (Cellpose v3)
         run: |
           python -m pip install --upgrade pip
-          pip install "numpy==1.26.4" "torch==2.6.0" --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
-          pip install -e ".[dev]"
+          pip install -r packaging/requirements-locked.txt
+          pip install -e . --no-deps
 
       - name: Refuse to build against Cellpose 4
         shell: python
@@ -41,6 +60,27 @@ jobs:
           print("cellpose", version)
           if not version.startswith("3."):
               sys.exit(f"Corridor requires Cellpose 3.x; found {version}")
+
+      - name: The version, the tag and the release notes agree
+        # --check fails if packaging/version_info.txt or the Inno Setup define
+        # disagrees with src/corridor/_version.py; --release requires the
+        # release notes to describe this version; --tag requires the tag to be
+        # v<version> (1.x tags v1.2.0 and v1.3.0 both pointed at 1.1.0 code).
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF -like "refs/tags/*") { $env:GITHUB_REF -replace "refs/tags/","" } else { $env:INPUT_TAG }
+          python scripts/sync_version.py --check --release --tag "$tag"
+
+      - name: What the research tests need beyond the lock
+        # tests/ also covers training/ (research code the installer never
+        # contains), and training.predict.dataset imports pandas, which the
+        # lock leaves out because the application never loads it. research.txt
+        # is app.txt -- the same pins as the lock, which test_packaging checks
+        # -- plus the research packages, so this adds and never changes. The
+        # build job below installs the lock alone.
+        run: pip install -r requirements/research.txt
 
       - name: Tests that need no microscopy
         run: python -m pytest -q
@@ -57,47 +97,60 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install
+      - name: Install the locked build environment
         run: |
           python -m pip install --upgrade pip
-          pip install "numpy==1.26.4" "torch==2.6.0" --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
-          pip install -e ".[dev]"
+          pip install -r packaging/requirements-locked.txt
+          pip install -e . --no-deps
 
-      - name: Fetch the Cellpose model
+      - name: Fetch the production Cellpose model named by the registry
         # The trained model is not in the repository. It is restored from the
-        # secret store, and its checksum is verified before it is bundled: a
-        # release must never ship a model other than the validated one.
+        # secret store, and its checksum is verified against the registry
+        # before it is bundled: a release must never ship a model other than
+        # the validated one. CORRIDOR_MODEL_URL must point at the file the
+        # registry's production entry names; if the registry changes model,
+        # the secret has to change with it, and the hash check below says so.
         env:
           MODEL_URL: ${{ secrets.CORRIDOR_MODEL_URL }}
         shell: pwsh
         run: |
-          $dir = "src/corridor/assets/models"
-          New-Item -ItemType Directory -Force -Path $dir | Out-Null
-          $target = "$dir/cyto2_phase_microfluidic_KK1KK2_combi"
           if (-not $env:MODEL_URL) {
             Write-Error "CORRIDOR_MODEL_URL is not set; cannot build a usable installer."
             exit 1
           }
+          $json = python packaging/bundle_plan.py model
+          if ($LASTEXITCODE -ne 0 -or -not $json) {
+            Write-Error "The model registry could not be read; see the error above."
+            exit 1
+          }
+          $model = $json | ConvertFrom-Json
+          $dir = "src/corridor/assets/models"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $target = Join-Path $dir $model.filename
           Invoke-WebRequest -Uri $env:MODEL_URL -OutFile $target
           $hash = (Get-FileHash $target -Algorithm SHA256).Hash.ToLower()
-          $expected = "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6"
-          Write-Output "model sha256: $hash"
-          if ($hash -ne $expected) { Write-Error "model checksum mismatch"; exit 1 }
+          Write-Output "model $($model.model_id) ($($model.filename)) sha256: $hash"
+          if ($hash -ne $model.sha256) {
+            Write-Error "model checksum mismatch: the registry expects $($model.sha256)"
+            exit 1
+          }
 
       - name: Build the application and the installer
+        # No --napari: the default bundle. A local build is the same bundle
+        # only from a lock-only venv (see the note at the top).
         run: python scripts/build_release.py
 
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
         shell: pwsh
         run: |
           $manifest = Get-Content build/build_manifest.json | ConvertFrom-Json
           $installer = "build/installer/$($manifest.installer.filename)"
           Write-Output "installer: $installer"
           Write-Output "sha256:    $($manifest.installer.sha256)"
-          $tag = if ($env:GITHUB_REF -like "refs/tags/*") { $env:GITHUB_REF -replace "refs/tags/","" }
-                 else { "${{ github.event.inputs.tag }}" }
+          $tag = if ($env:GITHUB_REF -like "refs/tags/*") { $env:GITHUB_REF -replace "refs/tags/","" } else { $env:INPUT_TAG }
           gh release create $tag $installer "build/installer/$($manifest.installer.filename).sha256" `
             --title "Corridor $($manifest.version)" `
             --notes-file docs/RELEASE_NOTES.md `

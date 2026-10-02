@@ -17,12 +17,21 @@ import hashlib
 import json
 import mimetypes
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 API = "https://api.github.com"
+
+if str(ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(ROOT / "scripts"))
+from sync_version import read_version  # noqa: E402
+
+#: The release this checkout builds. A literal here went stale at v1.2.0 and
+#: kept pointing uploads at an older release than the files being uploaded.
+DEFAULT_TAG = f"v{read_version(ROOT)}"
 
 
 def credential(host: str = "github.com") -> str:
@@ -61,7 +70,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("file")
     ap.add_argument("--repo", default="HI1098765432/corridor")
-    ap.add_argument("--tag", default="v1.2.0")
+    ap.add_argument("--tag", default=DEFAULT_TAG)
     args = ap.parse_args()
 
     path = Path(args.file)

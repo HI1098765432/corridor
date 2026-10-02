@@ -1,18 +1,34 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller build for Corridor.
 
-Notes that matter for this particular bundle:
+*What* is bundled is decided in ``bundle_plan.py`` beside this file, where the
+tests and the release workflow read the same lists without running
+PyInstaller; this file applies the plan and refuses to build when its evidence
+is missing or stale. Notes that matter for this particular bundle:
 
-*   Cellpose reads data files at runtime and imports parts of itself lazily,
-    so it needs both ``collect_data_files`` and ``collect_submodules``.
-*   Torch must not be pruned: PyInstaller cannot see through its dynamic
-    imports, and a missing operator module only fails when a user presses
-    Analyse.
-*   The custom Cellpose model ships inside the bundle so the application works
-    the moment it is installed.
+*   Cellpose's hidden imports are the modules its inference path was measured
+    to load (``cellpose_runtime_modules.txt``, from
+    ``scripts/measure_runtime_imports.py``), not ``collect_submodules``, which
+    shipped the GUI, training and Dask trees. The build stops if the installed
+    Cellpose is not the one that was measured.
+*   Torch is collected by ``hooks/hook-torch.py``, scoped to CPU inference.
+    Never call ``collect_submodules("torch")`` here: it *imports* every torch
+    submodule, which doubles an already slow analysis and can stall it.
+*   The production model is the one ``src/corridor/assets/model_registry.json``
+    names, and its SHA-256 is checked here, so running PyInstaller directly no
+    longer skips the hash gate. It ships inside the bundle so the application
+    works the moment it is installed. Nothing under ``data/``, ``training/`` or
+    ``build/`` is ever collected.
+*   Napari is bundled only with ``CORRIDOR_BUNDLE_NAPARI=1``. Before 2.0 it was
+    bundled whenever the build venv happened to have it, so CI and local builds
+    of one version differed.
+*   The Windows version resource must match ``src/corridor/_version.py``
+    (``scripts/sync_version.py`` writes it).
 *   ``console=False`` so launching the app never flashes a terminal.
 """
 
+import importlib.metadata
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import (
@@ -24,62 +40,58 @@ from PyInstaller.utils.hooks import (
 
 SPEC_DIR = Path(SPECPATH).resolve()
 ROOT = SPEC_DIR.parent
-SRC = ROOT / "src"
-ASSETS = SRC / "corridor" / "assets"
+for helper_dir in (SPEC_DIR, ROOT / "scripts"):
+    if str(helper_dir) not in sys.path:
+        sys.path.insert(0, str(helper_dir))
+
+import bundle_plan as plan  # noqa: E402
+import sync_version  # noqa: E402
+
+SRC = plan.SRC
+ASSETS = plan.ASSETS
 
 # --------------------------------------------------------------------------
-# Data files
+# Evidence the plan rests on
 # --------------------------------------------------------------------------
 
-datas = []
+try:
+    stale = sync_version.out_of_sync(ROOT)
+    if stale:
+        raise plan.BundleError(
+            "out of date with src/corridor/_version.py: "
+            + ", ".join(p.as_posix() for p in stale)
+            + "; run python scripts/sync_version.py"
+        )
+    BUNDLE_NAPARI = plan.napari_requested()
+    measurement = plan.load_measurement()
+    plan.check_measurement_current(measurement, importlib.metadata.version("cellpose"))
+    model = plan.production_model()
+    # Icons and the model registry, then the hash-checked weights.
+    datas = plan.asset_datas() + plan.model_datas(model)
+except (plan.BundleError, sync_version.VersionError) as exc:
+    raise SystemExit(f"corridor.spec: {exc}")
 
-# Application assets (icon).
-for asset in ASSETS.glob("*"):
-    if asset.is_file():
-        datas.append((str(asset), "assets"))
-
-# The trained Cellpose model. Bundling it is what makes the installed app
-# usable without any further downloads or configuration.
-MODEL_NAME = "cyto2_phase_microfluidic_KK1KK2_combi"
-model_candidates = [
-    ASSETS / "models" / MODEL_NAME,
-    ROOT / "data" / "confinedmig_cellTrack" / "CellPose_TrainData"
-    / "KK1KK2_combiModel" / "models" / MODEL_NAME,
-]
-for candidate in model_candidates:
-    if candidate.exists():
-        datas.append((str(candidate), "assets/models"))
-        break
-else:
-    raise SystemExit(
-        f"The Cellpose model {MODEL_NAME} was not found. Looked in:\n  "
-        + "\n  ".join(str(c) for c in model_candidates)
-    )
-
-# Third-party data files.
-for package in ("cellpose", "skimage"):
-    try:
-        datas += collect_data_files(package)
-    except Exception:  # noqa: BLE001 - absent optional package
-        pass
+# scikit-image resolves its public API through lazy-loader ``.pyi`` stubs, which
+# are data files. Cellpose's own data files (GUI help pages and a logo) are not
+# collected: only cellpose.gui reads them, and it is excluded.
+datas += collect_data_files("skimage")
 
 # --------------------------------------------------------------------------
-# Napari (optional deep-inspection viewer)
+# Napari (optional deep-inspection viewer), opt-in
 # --------------------------------------------------------------------------
 # Napari finds its own components through entry points and npe2 manifests
 # rather than through imports, so PyInstaller cannot see them by static
 # analysis. Its package metadata has to be copied for the discovery to work at
 # all, and its YAML manifests are data files.
-NAPARI_AVAILABLE = False
 napari_hiddenimports = []
-try:
-    import napari  # noqa: F401
-
-    NAPARI_AVAILABLE = True
-except Exception:  # noqa: BLE001
-    pass
-
-if NAPARI_AVAILABLE:
+if BUNDLE_NAPARI:
+    try:
+        import napari  # noqa: F401
+    except Exception as exc:  # noqa: BLE001
+        raise SystemExit(
+            f"corridor.spec: {plan.NAPARI_ENV}=1 but napari cannot be imported "
+            f"in this build environment ({exc})."
+        )
     for package in (
         "napari", "napari_svg", "npe2", "vispy", "magicgui", "superqt",
         "app_model", "psygnal", "in_n_out", "pint",
@@ -114,62 +126,30 @@ if NAPARI_AVAILABLE:
         pass
 
 # --------------------------------------------------------------------------
-# Hidden imports
+# Hidden imports and exclusions, from the plan
 # --------------------------------------------------------------------------
 
-hiddenimports = [
-    "corridor",
-    "corridor.cli",
-    "corridor.ui.app",
-    "corridor.ui.main_window",
-    "scipy.optimize",
-    "scipy.special",
-    "scipy._lib.array_api_compat.numpy.fft",
-    "skimage.measure",
-    "skimage.morphology",
-    "skimage.filters",
-    "imagecodecs",
-    "PIL.Image",
-]
-# Only Cellpose is walked explicitly. PyInstaller already ships a hook for
-# torch that collects what it needs; calling collect_submodules("torch") here
-# *imports* every torch submodule as well, which doubles an already slow
-# analysis and can stall it entirely.
+hiddenimports = plan.hidden_imports(measurement) + napari_hiddenimports
 try:
-    hiddenimports += collect_submodules("cellpose")
-except Exception:  # noqa: BLE001
-    pass
+    excludes = plan.excludes(measurement, napari=BUNDLE_NAPARI)
+except plan.BundleError as exc:
+    raise SystemExit(f"corridor.spec: {exc}")
 
-hiddenimports += napari_hiddenimports
-
-# --------------------------------------------------------------------------
-# Trim what is genuinely not used
-# --------------------------------------------------------------------------
-
-excludes = [
-    "tkinter", "matplotlib", "pytest", "IPython", "jupyter", "notebook",
-    "PyQt5", "PyQt6", "PySide2", "wx",
-    # Qt modules a scientific desktop app has no use for. Each is tens of MB.
-    "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
-    "PySide6.QtWebView", "PySide6.QtQuick3D", "PySide6.Qt3DCore", "PySide6.Qt3DRender",
-    "PySide6.Qt3DAnimation", "PySide6.Qt3DExtras", "PySide6.Qt3DInput", "PySide6.Qt3DLogic",
-    "PySide6.QtMultimedia", "PySide6.QtMultimediaWidgets", "PySide6.QtCharts",
-    "PySide6.QtDataVisualization", "PySide6.QtBluetooth", "PySide6.QtNfc",
-    "PySide6.QtPositioning", "PySide6.QtLocation", "PySide6.QtSerialPort",
-    "PySide6.QtSensors", "PySide6.QtTextToSpeech", "PySide6.QtSpatialAudio",
-    "PySide6.QtRemoteObjects", "PySide6.QtScxml", "PySide6.QtHelp",
-    "PySide6.QtDesigner", "PySide6.QtUiTools", "PySide6.QtPdf", "PySide6.QtPdfWidgets",
-    # Napari's optional embedded IPython console pulls in Jupyter and adds
-    # well over a hundred megabytes. The viewer works without it; only the
-    # terminal button inside Napari is unavailable.
-    "napari_console", "qtconsole", "IPython", "ipykernel", "jupyter_client",
-    "jupyter_core", "debugpy", "pydevd",
+forbidden = plan.forbidden_sources(datas)
+forbidden += [
+    h for h in hiddenimports if h.split(".")[0] in plan.NEVER_BUNDLED_IMPORTS
 ]
-if NAPARI_AVAILABLE:
-    # Napari renders through Qt OpenGL and uses SVG icons.
-    for needed in ("PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtQml"):
-        if needed in excludes:
-            excludes.remove(needed)
+if forbidden:
+    raise SystemExit(
+        "corridor.spec: refusing to bundle research code or data:\n  "
+        + "\n  ".join(forbidden)
+    )
+
+print(
+    f"corridor.spec: model {model.model_id} ({model.sha256[:12]}), "
+    f"{len(measurement.cellpose_modules)} measured cellpose modules, "
+    f"napari {'bundled' if BUNDLE_NAPARI else 'not bundled'}"
+)
 
 block_cipher = None
 

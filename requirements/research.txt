@@ -1,0 +1,41 @@
+# Research environment: the application plus what training/ needs that the
+# application must never ship (design §9; nothing in src/corridor imports
+# training/, and the installer never contains it).
+#
+#   pip install -r requirements/research.txt
+#   pip install -e . --no-deps
+#
+# The release workflow's test job installs this on top of the lock, because
+# tests/ covers training/ too. Every pin below the -r line is therefore an
+# addition, never a second version of an app.txt package.
+
+-r app.txt
+
+# pandas: training/predict/dataset.py imports it at module level and
+# training/predict/synthetic.py inside a function (read 2026-10-02), so without
+# it training.predict and its tests do not import. app.txt and pyproject.toml
+# leave it out on purpose (the application never imports it). The pins are the
+# ones the project's .venv has, where Napari brought them (requirements/napari.txt);
+# python-dateutil and tzdata are pandas 3.0.5's requirements on Windows, six is
+# python-dateutil's.
+pandas==3.0.5
+python-dateutil==2.9.0.post0
+six==1.17.0
+tzdata==2026.4
+
+# scikit-learn: nothing in training/ imports it (read 2026-10-02).
+# training/predict/models.py writes its estimators in numpy precisely so that
+# its tests run in the app venv, and checks them against closed forms rather
+# than against scikit-learn. It is here as the reference implementation for
+# checking those estimators by hand in this environment; if that is never
+# wanted it can go. Not yet installed in any venv here: 1.9.1 is the PyPI
+# release current on 2026-10-02, whose declared requirements (Python >= 3.11,
+# numpy >= 1.24.1, scipy >= 1.10.0, joblib, narwhals, threadpoolctl) app.txt's
+# pins satisfy; freeze its three dependencies into this file the first time it
+# is installed, as app.txt is.
+scikit-learn==1.9.1
+
+# Optional, for figures only. Never imported by src/corridor or by anything the
+# installer ships; the spec excludes it outright. Install it when wanted:
+#   pip install matplotlib==3.11.2
+# (current release on 2026-10-02; declares numpy >= 1.25, which app.txt meets).
