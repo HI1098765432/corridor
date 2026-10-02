@@ -94,14 +94,15 @@ def path_metrics(
     rows: Sequence[dict[str, Any]],
     summary: dict[str, Any] | None,
     pixel_size_um: float | None,
+    z_step_um: float | None = None,
 ) -> PathMetrics:
     """Len and D2S at the track's last observation.
 
     Preference order: the v2 per-observation columns at the last row
     (``cumulative_path_um``, ``distance_from_start_um``), then the summary's
     ``path_length_um`` / ``net_displacement_um``, then a sum over the rows'
-    positions. The last is in µm only if the run was calibrated, and in px
-    otherwise -- a px distance is never labelled µm.
+    positions (see :func:`_computed`). The last is in µm only if the run was
+    calibrated, and in px otherwise -- a px distance is never labelled µm.
     """
     ordered = sorted(rows, key=lambda r: (finite(r.get("frame")) or 0.0))
     last = ordered[-1] if ordered else {}
@@ -113,18 +114,53 @@ def path_metrics(
         start = finite((summary or {}).get("net_displacement_um"))
     if length is not None or start is not None:
         if length is None or start is None:
-            computed = _computed(ordered, pixel_size_um)
+            computed = _computed(ordered, pixel_size_um, z_step_um)
             if computed.unit == "µm":
                 length = length if length is not None else computed.length
                 start = start if start is not None else computed.from_start
         return PathMetrics(length, start, "µm")
-    return _computed(ordered, pixel_size_um)
+    return _computed(ordered, pixel_size_um, z_step_um)
 
 
-def _computed(rows: Sequence[dict[str, Any]], pixel_size_um: float | None) -> PathMetrics:
-    points = [p for p in (row_xy(r) for r in rows) if p is not None]
+def _computed(
+    rows: Sequence[dict[str, Any]],
+    pixel_size_um: float | None,
+    z_step_um: float | None = None,
+) -> PathMetrics:
+    """Len and D2S summed from the rows' own positions, when that is honest.
+
+    A 3-D track moves in Z too. Summing only x and y would report a cell
+    that moved purely between slices as Len 0.0 µm, and the µm label would
+    be a lie whenever the Z step is unknown -- which is exactly when the
+    store leaves the µm path columns empty, because Z spacing is never
+    assumed (contract §4). So a 3-D track is measured in µm with the real Z
+    step, or not at all (None, shown as an em dash). Without an XY pixel size
+    there is no common unit for slices and pixels either, so an uncalibrated
+    3-D track is not measured in px.
+    """
     calibrated = finite(pixel_size_um) is not None and float(pixel_size_um) > 0
     unit = "µm" if calibrated else "px"
+    three_d = any(row_z(r) is not None for r in rows)
+    if three_d:
+        z_step = finite(z_step_um)
+        if not calibrated or z_step is None or z_step <= 0:
+            return PathMetrics(None, None, unit)
+        pixel = float(pixel_size_um)
+        points3: list[tuple[float, float, float]] = []
+        for r in rows:
+            xy, z = row_xy(r), row_z(r)
+            if xy is None:
+                continue
+            if z is None:
+                # A 3-D track with a row that has no Z cannot be summed in 3-D.
+                return PathMetrics(None, None, unit)
+            points3.append((xy[0] * pixel, xy[1] * pixel, z * z_step))
+        if not points3:
+            return PathMetrics(None, None, unit)
+        length = sum(math.dist(a, b) for a, b in zip(points3, points3[1:]))
+        return PathMetrics(length, math.dist(points3[0], points3[-1]), unit)
+
+    points = [p for p in (row_xy(r) for r in rows) if p is not None]
     if not points:
         return PathMetrics(None, None, unit)
     factor = float(pixel_size_um) if calibrated else 1.0
@@ -133,6 +169,42 @@ def _computed(rows: Sequence[dict[str, Any]], pixel_size_um: float | None) -> Pa
     )
     start = math.hypot(points[-1][0] - points[0][0], points[-1][1] - points[0][1])
     return PathMetrics(length * factor, start * factor, unit)
+
+
+def reference_distance_um(
+    row: dict[str, Any],
+    point: Sequence[float],
+    pixel_size_um: float | None,
+    z_step_um: float | None = None,
+) -> float | None:
+    """D2R for one track row: its distance to ``point``, in µm, or None.
+
+    ``point`` is (x, y[, z]) in the frame of ``x_px``/``y_px`` and slices.
+    The column is ``_um``, so without a pixel size there is no value; a 3-D
+    row needs the point's Z and the real Z step for the same reason Len does
+    (:func:`_computed`).
+    """
+    pixel = finite(pixel_size_um)
+    xy = row_xy(row)
+    if pixel is None or pixel <= 0 or xy is None or len(point) < 2:
+        return None
+    dx, dy = (xy[0] - float(point[0])) * pixel, (xy[1] - float(point[1])) * pixel
+    z = row_z(row)
+    if z is None:
+        return math.hypot(dx, dy)
+    z_step = finite(z_step_um)
+    if len(point) < 3 or z_step is None or z_step <= 0:
+        return None
+    return math.hypot(dx, dy, (z - float(point[2])) * z_step)
+
+
+def z_step_um_of(analysis: Any) -> float | None:
+    """The run's Z step in µm, or None when it was 2-D or never established."""
+    value = finite(getattr(analysis, "z_step_um", None))
+    if value is None:
+        calibration = (getattr(analysis, "manifest", None) or {}).get("calibration") or {}
+        value = finite(calibration.get("z_step_um"))
+    return value if value is not None and value > 0 else None
 
 
 # --------------------------------------------------------------------------

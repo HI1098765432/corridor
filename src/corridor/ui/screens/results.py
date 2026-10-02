@@ -60,6 +60,7 @@ from ..analysis_view import (
     save_reference_point,
     schema_version_of,
     speed_um_per_hr,
+    z_step_um_of,
 )
 from ..icons import icon, pixmap
 from ..lanes import lanes_for_manifest
@@ -90,6 +91,9 @@ from ..workers import (
 )
 
 SEVERITY_TONE = {"critical": "danger", "warning": "warning", "info": "neutral"}
+
+#: The MSD plot's text for an analysis that carries no MSD curves at all.
+MSD_NONE_TEXT = "no MSD in this analysis"
 
 #: The order of the Export menu: the selected track first, because that is
 #: what a reviewer is looking at, then the whole analysis.
@@ -410,6 +414,13 @@ class ResultsScreen(QWidget):
         self.clear_reference_button.setToolTip("Remove the reference point")
         self.clear_reference_button.hide()
         layout.addWidget(self.clear_reference_button)
+        # Shown only when the point could not be written beside the analysis:
+        # it is still used for this session's exports, but it will not be
+        # there next time, and the user has to be told so.
+        self.reference_warning = label("Reference point not saved")
+        self.reference_warning.setStyleSheet(f"color: {PALETTE.warning};")
+        self.reference_warning.hide()
+        layout.addWidget(self.reference_warning)
 
         layout.addStretch(1)
         reset = ghost_button("", "zoom-reset", self.canvas_reset)
@@ -637,6 +648,10 @@ class ResultsScreen(QWidget):
         self.subtitle.setText(str(source.parent) if source else "")
 
         dimensionality = dimensionality_of(analysis, stack)
+        if dimensionality == "3D" and stack is not None and stack.ndim == 3:
+            # A single-time-point ZYX volume. Shown as 2-D, its slices would
+            # play as time frames -- the T/Z confusion the importer refuses.
+            stack = stack[np.newaxis]
         self._three_d = dimensionality == "3D" and stack is not None and stack.ndim == 4
         size = (float(stack.shape[-1]), float(stack.shape[-2])) if stack is not None else (0.0, 0.0)
         if self._three_d:
@@ -682,7 +697,7 @@ class ResultsScreen(QWidget):
     def _anisotropy(analysis) -> float | None:
         """Z step over pixel size, when both are calibrated; else None."""
         cal = (analysis.manifest or {}).get("calibration") or {}
-        z_step = finite(cal.get("z_step_um"))
+        z_step = z_step_um_of(analysis)
         pixel = finite(cal.get("pixel_size_um"))
         if z_step and pixel and z_step > 0 and pixel > 0:
             return z_step / pixel
@@ -1106,7 +1121,7 @@ class ResultsScreen(QWidget):
         )
         self.detail_fields["duration"].set_value(_duration_text(summary.get("duration_min")))
 
-        metrics = path_metrics(rows, summary, analysis.pixel_size_um)
+        metrics = path_metrics(rows, summary, analysis.pixel_size_um, z_step_um_of(analysis))
         self.detail_fields["len"].set_value(fmt_number(metrics.length, 1, f" {metrics.unit}"))
         self.detail_fields["d2s"].set_value(fmt_number(metrics.from_start, 1, f" {metrics.unit}"))
         self.detail_fields["mean"].set_value(
@@ -1143,7 +1158,12 @@ class ResultsScreen(QWidget):
             if r.get("frame") is not None and speed_um_per_hr(r) is not None
         ]
         self.sparkline.set_series(series, colour, float(self.active_view().frame))
-        self.msd_plot.set_series(msd_series(msd_rows, analysis.frame_interval_min), colour)
+        # "not enough lags" claims a fit was attempted; an analysis with no
+        # MSD curves at all never attempted one, and must not say it did.
+        empty = MSD_EMPTY_TEXT if (msd_rows or has_msd(analysis)) else MSD_NONE_TEXT
+        self.msd_plot.set_series(
+            msd_series(msd_rows, analysis.frame_interval_min), colour, empty_message=empty
+        )
         self.detail_box.show()
 
     def _on_check_activated(self, item: QListWidgetItem) -> None:
@@ -1177,7 +1197,7 @@ class ResultsScreen(QWidget):
         self.canvas.reference_point = (
             (point[0], point[1]) if point is not None else None  # type: ignore[assignment]
         )
-        self.ortho.reference_point = self.reference_point_px
+        self.ortho.set_reference_point(self.reference_point_px)
         self.canvas.update()
         self.clear_reference_button.setVisible(point is not None)
         self.reference_button.setToolTip(
@@ -1201,3 +1221,5 @@ class ResultsScreen(QWidget):
                     # beats pretending it was stored.
                     self.reference_error = f"The reference point could not be saved: {exc}"
             self.reference_point_changed.emit(self.reference_point_px)
+        self.reference_warning.setToolTip(self.reference_error)
+        self.reference_warning.setVisible(bool(self.reference_error))

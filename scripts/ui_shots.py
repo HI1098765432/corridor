@@ -143,11 +143,9 @@ def main() -> int:
             if want("results_reference"):
                 height, width = stack.shape[-2:]
                 # Shown, not saved: a screenshot must not change the run it shows.
-                window.results.reference_point_px = (width / 2.0, height / 3.0)
-                window.results.canvas.reference_point = (width / 2.0, height / 3.0)
+                window.results._set_reference((width / 2.0, height / 3.0), persist=False)
                 shoot(window, "results_reference")
-                window.results.canvas.reference_point = None
-                window.results.reference_point_px = None
+                window.results._set_reference(None, persist=False)
             if want("results_export_menu"):
                 menu = window.results.export_menu
                 menu.adjustSize()

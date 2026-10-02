@@ -8,9 +8,9 @@ Three 2.0 rules are enforced here, because this is where a run starts:
     KK1 and KK2 are 0.639 and 0.467 µm/px; a silent carry-over is a wrong
     answer with nothing on screen to show it.
 *   **No validated model, no analysis.** The model is resolved and
-    hash-checked before the worker starts; a ModelUnavailable is shown with
-    the contract's own sentence and the paths tried, and nothing falls back
-    to another model.
+    hash-checked before the worker starts, and the run is pinned to the file
+    that was checked; a ModelUnavailable is shown with the contract's own
+    sentence and the paths tried, and nothing falls back to another model.
 *   **An ambiguous file is asked about, not guessed.** When the importer
     cannot tell T from Z it refuses (AmbiguousAxes); the window asks which
     order the file has, records it in ``ImportConfig.axes`` and reads again.
@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
 
 from .. import app_meta
 from ..core import pipeline, updates
-from ..core.config import RunConfig
+from ..core.config import ImportConfig, RunConfig
 from ..store import db
 from ..store.project import SavedAnalysis, analysis_is_complete
 from .dialogs import AboutDialog, AxisOrderDialog, ErrorDialog, SettingsDialog, _gpu_available
@@ -53,12 +53,14 @@ from .workers import (
     EXPORT_TRACK_CSV,
     EXPORT_TRACK_XLSX,
     EXPORT_TRACKS_CSV,
+    LABELS_UNSUPPORTED,
     TRACK_EXPORTS,
     AnalysisWorker,
     DatasetWorker,
     ExportWorker,
     Job,
     ResultsWorker,
+    labels_supported,
 )
 
 SCREEN_HOME = 0
@@ -73,6 +75,20 @@ _EXPORT_FILES: dict[str, tuple[str, str]] = {
     EXPORT_SUMMARIES_CSV: ("_track_summary.csv", "CSV (*.csv)"),
     EXPORT_MSD_CSV: ("_track_msd.csv", "CSV (*.csv)"),
 }
+
+
+def _exec_once(dialog: QDialog) -> int:
+    """Run a modal dialog, then schedule it for deletion.
+
+    A dialog parented to the window lives as long as the window unless it is
+    deleted, so each one exec'd and dropped was a small leak per use. The
+    deletion is deferred (``deleteLater``), so the caller can still read
+    ``clickedButton()`` or a chosen value straight after this returns.
+    """
+    try:
+        return dialog.exec()
+    finally:
+        dialog.deleteLater()
 
 
 class MainWindow(QMainWindow):
@@ -95,6 +111,8 @@ class MainWindow(QMainWindow):
         self._export_destination: Path | None = None
         self._last_export: list[Path] = []
         self._export_box: QMessageBox | None = None
+        #: The model ``_model_ready`` verified for the run being started.
+        self._resolved_model: Any = None
 
         root = QWidget()
         root.setObjectName("Root")
@@ -136,6 +154,7 @@ class MainWindow(QMainWindow):
         self.dataset.analyse_requested.connect(self.start_analysis)
         self.dataset.cancel_requested.connect(self.cancel_analysis)
         self.dataset.advanced.changed.connect(self._config_edited)
+        self.dataset.labels_requested.connect(self._labels_requested)
 
         self.results.back_requested.connect(self.go_home)
         self.results.export_requested.connect(self.export_results)
@@ -273,7 +292,7 @@ class MainWindow(QMainWindow):
     def _ask_axis_order(self, choices: Sequence[str], message: str) -> str | None:
         """Modal question; replaced in tests."""
         dialog = AxisOrderDialog(choices, message, self)
-        if dialog.exec() == QDialog.Accepted:
+        if _exec_once(dialog) == QDialog.Accepted:
             return dialog.choice
         return None
 
@@ -315,6 +334,32 @@ class MainWindow(QMainWindow):
     def _config_edited(self) -> None:
         self.dataset.advanced.apply_to(self._config)
 
+    def _ask_open_path(self, title: str, start: str, file_filter: str) -> str:
+        """Modal file chooser; replaced in tests."""
+        path, _ = QFileDialog.getOpenFileName(self, title, start, file_filter)
+        return path
+
+    def _labels_requested(self, use_labels: bool) -> None:
+        """Set or clear ``ImportConfig.labels_path`` for the open file.
+
+        Whether this build can actually analyse the labels is checked when
+        Analyse is pressed (``_model_ready``), not here: the choice is
+        recorded either way, and refused with a reason rather than ignored.
+        """
+        if use_labels:
+            start = str(Path(self._config.input_path).parent) if self._config.input_path else ""
+            path = self._ask_open_path(
+                "Choose a label image",
+                start,
+                "Label images (*.tif *.tiff *.npy *.npz);;All files (*)",
+            )
+            if not path:
+                return
+            self._config.import_.labels_path = str(path)
+        else:
+            self._config.import_.labels_path = None
+        self.dataset.show_model(self._config, self._dimensionality())
+
     def _dimensionality(self) -> str:
         """'3D' when the open file has a Z axis, by its metadata or its pixels."""
         axes = str(getattr(self._metadata, "axes", "") or "")
@@ -326,19 +371,41 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ analyse
     def _model_ready(self) -> bool:
-        """Resolve and hash-check the validated model before anything runs.
+        """Resolve and hash-check the validated model, and pin the run to it.
 
-        Imported labels need no model. Otherwise a ModelUnavailable is shown
-        verbatim -- the contract's sentence, then the paths tried -- and the
-        analysis does not start. There is no fallback to try.
+        Imported labels need no model, but only a pipeline that can read them
+        may be given them (see :func:`labels_supported`). Otherwise a
+        ModelUnavailable is shown verbatim -- the contract's sentence, then
+        the paths tried -- and the analysis does not start. There is no
+        fallback to try.
+
+        Checking the model is not enough on its own: the run has to load the
+        file that was checked. A new project's configuration has no
+        ``model_path`` (``for_new_project`` drops it), and the 1.x
+        segmentation service turns that into Cellpose's built-in ``cyto3``;
+        a reopened 1.x project may still name a model picked with the old
+        picker. So the verified ResolvedModel goes to the worker (for a
+        pipeline that takes ``model=``, the 2.0 seam), and its path is written
+        over the legacy fields (for one that still reads them). Whichever
+        pipeline runs, it loads the hash-checked file and nothing else.
         """
+        self._resolved_model = None
         if self._config.import_.labels_path:
-            return True
+            if labels_supported():
+                return True
+            self._show_error(LABELS_UNSUPPORTED, "")
+            return False
         status = verified_model(self._dimensionality())
-        if status.verified:
-            return True
-        self._show_error(status.message, "")
-        return False
+        if not status.verified or status.path is None:
+            self._show_error(status.message, "")
+            return False
+        seg = self._config.segmentation
+        seg.model_path = str(status.path)
+        seg.use_custom_model = True
+        # Companion models were the 1.x "models" rungs; 2.0 runs one model.
+        seg.ensemble_model_paths = ()
+        self._resolved_model = status.resolved
+        return True
 
     def start_analysis(self) -> None:
         if self._metadata is None or self._project is None:
@@ -355,7 +422,7 @@ class MainWindow(QMainWindow):
         self.store.update_project(self._project)
 
         self.dataset.set_busy(True, "Starting")
-        worker = AnalysisWorker(self._config)
+        worker = AnalysisWorker(self._config, model=self._resolved_model)
         # Explicitly queued: these arrive from the analysis thread.
         worker.stage_changed.connect(self.dataset.set_stage, Qt.QueuedConnection)
         worker.progressed.connect(self.dataset.set_progress, Qt.QueuedConnection)
@@ -432,10 +499,26 @@ class MainWindow(QMainWindow):
     def _open_results(self, directory: Path) -> None:
         """Load a saved analysis. Every file read happens off the UI thread."""
         self._start_job(
-            ResultsWorker(directory),
+            ResultsWorker(directory, self._recorded_import(directory)),
             finished=self._results_ready,
             failed=self._show_error,
         )
+
+    def _recorded_import(self, directory: Path) -> ImportConfig | None:
+        """The axis order this project's user chose, to read its source again.
+
+        Read from the project's own saved configuration, never from
+        ``self._config``, which can still hold the previous project's
+        settings. Only an explicit order is returned: without one the
+        metadata decides (see ``workers.import_config_for``).
+        """
+        project = self._project
+        if project is None or not project.config:
+            return None
+        if Path(project.path) != Path(directory):
+            return None
+        recorded = RunConfig.from_dict(project.config).import_
+        return recorded if recorded.axes else None
 
     def _results_ready(self, analysis: SavedAnalysis, metadata, stack: np.ndarray) -> None:
         self._analysis = analysis
@@ -525,7 +608,17 @@ class MainWindow(QMainWindow):
         if destination is None:
             return
         folder = destination if destination.is_dir() else destination.parent
+        previous = self._export_box
+        if previous is not None:
+            # A newer export supersedes the last report. Without this every
+            # export left one more hidden QMessageBox parented to the window.
+            try:
+                previous.close()
+                previous.deleteLater()
+            except RuntimeError:  # already deleted by Qt (closed by the user)
+                pass
         box = QMessageBox(self)
+        box.setAttribute(Qt.WA_DeleteOnClose, True)
         box.setWindowTitle("Exported")
         box.setIcon(QMessageBox.NoIcon)
         box.setText(f"{len(written)} file{'s' if len(written) != 1 else ''} written.")
@@ -575,11 +668,10 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ dialogs
     def show_settings(self) -> None:
-        dialog = SettingsDialog(self.store, self)
-        dialog.exec()
+        _exec_once(SettingsDialog(self.store, self))
 
     def show_about(self) -> None:
-        AboutDialog(self).exec()
+        _exec_once(AboutDialog(self))
 
     def remove_project(self, project_id: str) -> None:
         record = self.store.get_project(project_id)
@@ -595,7 +687,7 @@ class MainWindow(QMainWindow):
         )
         remove = box.addButton("Remove", QMessageBox.DestructiveRole)
         box.addButton("Keep", QMessageBox.RejectRole)
-        box.exec()
+        _exec_once(box)
         if box.clickedButton() is remove:
             self.store.delete_project(project_id, remove_files=True)
             self.refresh_recent()
@@ -607,10 +699,10 @@ class MainWindow(QMainWindow):
         box.setText(message)
         if detail:
             box.setInformativeText(detail)
-        box.exec()
+        _exec_once(box)
 
     def _show_error(self, message: str, detail: str = "") -> None:
-        ErrorDialog(message, detail, self).exec()
+        _exec_once(ErrorDialog(message, detail, self))
 
     # ------------------------------------------------------------ updates
     def _offer_update_check(self) -> None:
@@ -712,7 +804,7 @@ class MainWindow(QMainWindow):
             box.setInformativeText("Closing now will stop it. Finished stages stay saved.")
             stop = box.addButton("Stop and close", QMessageBox.DestructiveRole)
             box.addButton("Keep running", QMessageBox.RejectRole)
-            box.exec()
+            _exec_once(box)
             if box.clickedButton() is not stop:
                 event.ignore()
                 return

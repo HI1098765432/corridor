@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from ..core import model_registry
 
@@ -43,6 +44,11 @@ class ModelStatus:
     #: Why it is not verified (the ModelUnavailable text), or "" when it is.
     message: str
     developer_override: bool = False
+    #: The ``model_registry.ResolvedModel`` that was verified, or None. This,
+    #: not a path re-derived later, is what an analysis must be handed: the
+    #: hash check is only worth anything if the file it checked is the file
+    #: that gets loaded.
+    resolved: Any = None
 
     @property
     def sha_prefix(self) -> str | None:
@@ -107,4 +113,5 @@ def verified_model(dimensionality: str = "2D") -> ModelStatus:
         resolved.path,
         "",
         developer_override=bool(resolved.developer_override),
+        resolved=resolved,
     )

@@ -70,6 +70,9 @@ class DatasetScreen(QWidget):
     back_requested = Signal()
     analyse_requested = Signal()
     cancel_requested = Signal()
+    #: Measure and track a label image instead of segmenting (``True``), or
+    #: go back to the validated model (``False``).
+    labels_requested = Signal(bool)
 
     #: The panel grows when the advanced parameters are shown, so the controls
     #: have room instead of being clipped.
@@ -175,6 +178,15 @@ class DatasetScreen(QWidget):
             self.field_source, self.field_model,
         ):
             self._panel_layout.addWidget(field)
+        # The only route for 3-D data (no 3-D model is validated), and the way
+        # to analyse a segmentation made elsewhere. ImportConfig.labels_path.
+        self.labels_button = ghost_button("Use a label image…", "", self._labels_clicked)
+        self.labels_button.setToolTip(
+            "Measure and track an existing label image (one integer label per "
+            "cell, same frames as this file) instead of segmenting with the model."
+        )
+        self._labels_set = False
+        self._panel_layout.addWidget(self.labels_button, 0, Qt.AlignLeft)
 
         self.notes = label("", "tertiary")
         self.notes.setWordWrap(True)
@@ -317,6 +329,10 @@ class DatasetScreen(QWidget):
         is hashed here; the check happens when Analyse is pressed.
         """
         labels_path = getattr(getattr(config, "import_", None), "labels_path", None)
+        self._labels_set = bool(labels_path)
+        self.labels_button.setText(
+            "Segment with the model instead" if labels_path else "Use a label image…"
+        )
         if labels_path:
             self.field_model.set_value(
                 f"imported labels: {Path(labels_path).name}", str(labels_path)
@@ -331,6 +347,9 @@ class DatasetScreen(QWidget):
         else:
             self.field_model.set_value("none validated for " + dimensionality, status.message)
 
+    def _labels_clicked(self) -> None:
+        self.labels_requested.emit(not self._labels_set)
+
     def _toggle_advanced(self, shown: bool) -> None:
         self.advanced.setVisible(shown)
         self._advanced_divider.setVisible(shown)
@@ -341,6 +360,7 @@ class DatasetScreen(QWidget):
     # ----------------------------------------------------------------- status
     def set_busy(self, busy: bool, message: str = "") -> None:
         self.analyse_button.setEnabled(not busy)
+        self.labels_button.setEnabled(not busy)
         self.advanced.setEnabled(not busy)
         self.status_row.setVisible(busy)
         self.cancel_button.setVisible(busy)

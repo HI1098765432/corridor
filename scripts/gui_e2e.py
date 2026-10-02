@@ -235,6 +235,25 @@ def main() -> int:
     check("the bundle carries track_msd.csv", (export_dir / "track_msd.csv").exists())
     menu = [a.text() for a in window.results.export_menu.actions() if not a.isSeparator()]
     check("the Export menu offers six exports", len(menu) == 6, ", ".join(menu))
+    # The window's bundle export, with the reference point set above: the
+    # bundle is what gets shared, so it must carry D2R and the point itself.
+    from corridor.ui.workers import EXPORT_BUNDLE, run_export
+
+    shared = export_dir.parent / f"{export_dir.name}_with_reference"
+    run_export(
+        analysis, shared, kind=EXPORT_BUNDLE,
+        reference_point_px=window.results.reference_point_px,
+    )
+    check("the bundle carries the reference point", (shared / "reference_point.json").exists())
+    if (shared / "tracks.csv").exists():
+        import csv
+
+        with open(shared / "tracks.csv", encoding="utf-8-sig", newline="") as fh:
+            bundle_rows = list(csv.DictReader(fh))
+        check(
+            "the bundle's tracks.csv has D2R filled",
+            bool(bundle_rows) and all(r.get("distance_from_reference_um") for r in bundle_rows),
+        )
     if ids:
         target = export_dir / f"track_{ids[0]}.csv"
         window._ask_save_path = lambda *_a: str(target)  # the save dialog, answered

@@ -24,7 +24,9 @@ SHAPE_TYX = (6, 48, 64)
 MODEL_SHA = "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6"
 
 #: track_id -> list of (frame, x_px, y_px). Track 2 skips frame 3, so it has a
-#: gap and its MSD has the lag set {1, 2, 3, 4} from actual frame differences.
+#: gap; its frames 0, 1, 2, 4, 5 give the lag set {1, 2, 3, 4, 5} from actual
+#: frame differences (not the {1, 2, 3, 4} its five observations would give
+#: by index).
 POSITIONS = {
     1: [(f, 20.0, 5.0 + 6.0 * f) for f in range(6)],
     2: [(f, 44.0 + 1.0 * f, 40.0 - 4.0 * f) for f in (0, 1, 2, 4, 5)],

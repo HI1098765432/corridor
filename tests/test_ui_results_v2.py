@@ -96,9 +96,13 @@ def test_a_track_whose_alpha_was_not_fitted_says_so(qt_app, v2):
     screen = _screen(qt_app, v2)
     screen.select_track(2)
     assert detail(screen, "alpha") == "not enough lags"
-    # Track 2 skips frame 3: its lags are the actual frame differences 1..5.
-    lags = sorted(int(r["lag_frames"]) for r in analysis_view.msd_rows_for(v2, 2))
-    assert lags == [1, 2, 3, 4, 5]
+    # Track 2 skips frame 3. What the plot draws is what the UI derived from
+    # the rows: lags in hours, one per actual frame difference 1..5 at the
+    # run's 20 min interval -- not five index lags, and not left in frames.
+    assert screen.msd_plot.lag_unit == "h"
+    assert screen.msd_plot.lags == pytest.approx(
+        [lag * syn.INTERVAL_MIN / 60.0 for lag in (1, 2, 3, 4, 5)]
+    )
     assert detail(screen, "gaps") == "1 in 1 gap(s)"
 
 
@@ -111,9 +115,23 @@ def test_v1_analysis_reports_per_hour_speeds_and_no_invented_msd(qt_app, v1):
     # A 1.x run has no MSD at all (until the store upgrades it): an em dash,
     # not "not enough lags", which would claim a fit was attempted.
     v1.msd = []
+    v1.msd_for_track = lambda tid: []
     screen.select_track(2)
     assert detail(screen, "alpha") == "—"
     assert screen.msd_plot.is_empty
+    # ...and the plot below it must not claim a fit was attempted either.
+    assert screen.msd_plot.empty_message == "no MSD in this analysis"
+
+
+def test_an_msd_curve_too_short_to_plot_says_not_enough_lags(qt_app, v2):
+    # The analysis has MSD curves, this track's is just empty.
+    v2.msd = [r for r in v2.msd if int(r["track_id"]) != 2]
+    # The 2.0 store's accessor, if it has one, must see the same rows.
+    v2.msd_for_track = lambda tid: [r for r in v2.msd if int(r["track_id"]) == int(tid)]
+    screen = _screen(qt_app, v2)
+    screen.select_track(2)
+    assert screen.msd_plot.is_empty
+    assert screen.msd_plot.empty_message == "not enough lags"
 
 
 def test_the_track_list_reads_per_hour(qt_app, v2):
@@ -401,3 +419,233 @@ def test_three_d_analysis_shows_the_orthogonal_viewer(qt_app, tmp_path):
     _assert_no_none(run_rows(screen))
     assert run_rows(screen)["dimensionality"][0] == "3D"
     assert run_rows(screen)["z_step"][0] == "1.5 µm"
+
+
+def test_a_single_time_point_volume_is_shown_in_three_d(qt_app, tmp_path):
+    """A ZYX stack (ndim 3) of a 3-D run must not play its slices as frames."""
+    analysis = syn.load_saved(syn.write_v2_analysis(tmp_path / "zyx", three_d=True))
+    volume = syn.stack_3d()[0]  # Z, Y, X
+    screen = _screen(qt_app, analysis, volume)
+    assert screen.three_d
+    assert screen.view_stack.currentWidget() is screen.ortho
+    assert screen.ortho.n_frames == 1 and screen.ortho.n_slices == volume.shape[0]
+
+
+# --------------------------------------------------------------------------
+# Len / D2S in 3-D: never an XY-only number labelled µm
+# --------------------------------------------------------------------------
+
+
+def _bare(rows):
+    """Track rows without the store's µm path columns (the 3-D, no-Z-step case)."""
+    drop = {"cumulative_path_um", "distance_from_start_um"}
+    return [{k: v for k, v in r.items() if k not in drop} for r in rows]
+
+
+def test_a_cell_moving_only_in_z_is_not_reported_as_still():
+    rows = [
+        {"frame": 0, "x_px": 10.0, "y_px": 10.0, "z": 0.0},
+        {"frame": 1, "x_px": 10.0, "y_px": 10.0, "z": 5.0},
+    ]
+    # Z step unknown: no µm path can be measured, so nothing is shown.
+    metrics = analysis_view.path_metrics(rows, {}, 0.5)
+    assert (metrics.length, metrics.from_start) == (None, None)
+    # Uncalibrated: slices and pixels have no common unit either.
+    metrics = analysis_view.path_metrics(rows, {}, None, 2.0)
+    assert (metrics.length, metrics.from_start) == (None, None)
+    # With the real Z step, the 5 slices x 2.0 µm are the whole path.
+    metrics = analysis_view.path_metrics(rows, {}, 0.5, 2.0)
+    assert metrics.unit == "µm"
+    assert metrics.length == pytest.approx(10.0)
+    assert metrics.from_start == pytest.approx(10.0)
+
+
+def test_three_d_path_uses_x_y_and_z_in_microns():
+    rows = [
+        {"frame": 0, "x_px": 0.0, "y_px": 0.0, "z_px": 0.0},
+        {"frame": 1, "x_px": 6.0, "y_px": 0.0, "z_px": 0.0},  # 3 µm in x
+        {"frame": 2, "x_px": 6.0, "y_px": 0.0, "z_px": 2.0},  # 4 µm in z
+    ]
+    metrics = analysis_view.path_metrics(rows, {}, 0.5, 2.0)
+    assert metrics.length == pytest.approx(7.0)
+    assert metrics.from_start == pytest.approx(5.0)  # the 3-4-5 triangle
+
+
+def test_three_d_detail_shows_a_dash_when_the_z_step_is_unknown(qt_app, tmp_path):
+    analysis = syn.load_saved(syn.write_v2_analysis(tmp_path / "v3d", three_d=True))
+    analysis.tracks = _bare(analysis.tracks)
+    for summary in analysis.summaries:
+        summary.pop("path_length_um", None)
+        summary.pop("net_displacement_um", None)
+    analysis.manifest["calibration"].pop("z_step_um")
+    screen = _screen(qt_app, analysis, syn.stack_3d())
+    screen.select_track(1)
+    assert detail(screen, "len") == "—"
+    assert detail(screen, "d2s") == "—"
+
+    # With the Z step back, the fallback measures in 3-D: track 1 alternates
+    # z 2, 3, 2, ... so each step adds 1.5 µm of Z to its 3 µm in y.
+    analysis.manifest["calibration"]["z_step_um"] = 1.5
+    screen.select_track(1)
+    step = (3.0**2 + 1.5**2) ** 0.5
+    assert detail(screen, "len") == f"{5 * step:.1f} µm"
+
+
+# --------------------------------------------------------------------------
+# D2R reaches every export that carries tracks
+# --------------------------------------------------------------------------
+
+
+def _tracks_writer(analysis_rows):
+    """A stand-in for the agreed ``export_tracks_csv(saved, path)``: no D2R."""
+    import csv
+
+    def write(saved, path):
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        columns = ["track_id", "frame", "x_px", "y_px", "speed_um_per_hr"]
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            out = csv.DictWriter(fh, fieldnames=columns, extrasaction="ignore", lineterminator="\n")
+            out.writeheader()
+            for row in analysis_rows:
+                out.writerow({k: ("" if row.get(k) is None else row.get(k)) for k in columns})
+        return path
+
+    return write
+
+
+def _read(path):
+    import csv
+
+    with open(path, encoding="utf-8", newline="") as fh:
+        return list(csv.DictReader(fh))
+
+
+def test_all_tracks_csv_gets_d2r_from_the_reference_point(v2, tmp_path, monkeypatch):
+    from corridor.store import project
+
+    monkeypatch.setattr(project, "export_tracks_csv", _tracks_writer(v2.tracks), raising=False)
+    destination = tmp_path / "all.csv"
+    written = workers.run_export(
+        v2, destination, kind=workers.EXPORT_TRACKS_CSV, reference_point_px=(20.0, 5.0)
+    )
+    assert written == [destination]
+    rows = _read(destination)
+    assert "distance_from_reference_um" in rows[0]
+    for row in rows:
+        expected = (
+            (float(row["x_px"]) - 20.0) ** 2 + (float(row["y_px"]) - 5.0) ** 2
+        ) ** 0.5 * syn.PIXEL_UM
+        assert float(row["distance_from_reference_um"]) == pytest.approx(expected)
+    # Every other cell is the writer's own text, untouched.
+    before = _read(_tracks_writer(v2.tracks)(v2, tmp_path / "plain.csv"))
+    for a, b in zip(before, rows):
+        assert {k: a[k] for k in a} == {k: b[k] for k in a}
+    # Track 1 starts at the reference point: D2R 0 there.
+    assert float(rows[0]["distance_from_reference_um"]) == 0.0
+
+
+def test_no_reference_point_leaves_the_tracks_csv_alone(v2, tmp_path, monkeypatch):
+    from corridor.store import project
+
+    monkeypatch.setattr(project, "export_tracks_csv", _tracks_writer(v2.tracks), raising=False)
+    destination = tmp_path / "all.csv"
+    workers.run_export(v2, destination, kind=workers.EXPORT_TRACKS_CSV)
+    assert "distance_from_reference_um" not in _read(destination)[0]
+
+
+def test_the_bundle_carries_d2r_and_the_reference_point(v2, tmp_path, monkeypatch):
+    from corridor.store import project
+
+    def export_bundle(saved, destination):
+        destination = Path(destination)
+        destination.mkdir(parents=True, exist_ok=True)
+        tracks = _tracks_writer(saved.tracks)(saved, destination / "tracks.csv")
+        return [tracks]
+
+    monkeypatch.setattr(project, "export_bundle", export_bundle)
+    destination = tmp_path / "bundle"
+    written = workers.run_export(
+        v2, destination, kind=workers.EXPORT_BUNDLE, reference_point_px=(44.0, 40.0)
+    )
+    assert destination / "reference_point.json" in written
+    assert analysis_view.load_reference_point(destination) == (44.0, 40.0)
+    rows = _read(destination / "tracks.csv")
+    first_of_track_2 = [r for r in rows if r["track_id"] == "2"][0]
+    assert float(first_of_track_2["distance_from_reference_um"]) == 0.0
+    assert all(r["distance_from_reference_um"] != "" for r in rows)
+
+
+def test_a_writer_that_takes_the_reference_point_is_given_it(v2, tmp_path, monkeypatch):
+    from corridor.store import project
+
+    seen = []
+
+    def export_tracks_csv(saved, path, *, reference_point_px=None):
+        seen.append(reference_point_px)
+        Path(path).write_text("track_id,x_px,y_px\n1,0,0\n", encoding="utf-8")
+        return Path(path)
+
+    monkeypatch.setattr(project, "export_tracks_csv", export_tracks_csv, raising=False)
+    destination = tmp_path / "all.csv"
+    workers.run_export(
+        v2, destination, kind=workers.EXPORT_TRACKS_CSV, reference_point_px=(1.0, 2.0)
+    )
+    assert seen == [(1.0, 2.0)]
+    # The writer owns D2R then; its file is not rewritten.
+    assert "distance_from_reference_um" not in _read(destination)[0]
+
+
+def test_three_d_d2r_needs_the_points_z_and_the_z_step():
+    row = {"x_px": 6.0, "y_px": 0.0, "z": 2.0}
+    assert analysis_view.reference_distance_um(row, (0.0, 0.0, 0.0), 0.5, 2.0) == pytest.approx(5.0)
+    assert analysis_view.reference_distance_um(row, (0.0, 0.0, 0.0), 0.5, None) is None
+    assert analysis_view.reference_distance_um(row, (0.0, 0.0), 0.5, 2.0) is None
+    assert analysis_view.reference_distance_um(row, (0.0, 0.0, 0.0), None, 2.0) is None
+    assert analysis_view.reference_distance_um(
+        {"x_px": 6.0, "y_px": 8.0}, (0.0, 0.0), 0.5
+    ) == pytest.approx(5.0)
+
+
+# --------------------------------------------------------------------------
+# Reference point: shown in 3-D, and a failed save is said out loud
+# --------------------------------------------------------------------------
+
+
+def test_the_reference_point_is_drawn_in_the_orthogonal_panes(qt_app, tmp_path):
+    analysis = syn.load_saved(syn.write_v2_analysis(tmp_path / "v3d", three_d=True))
+    screen = _screen(qt_app, analysis, syn.stack_3d())
+    ortho = screen.ortho
+    cx, cy, cz = ortho.cursor
+    screen._reference_picked(cx, cy, float(cz))
+    assert ortho.xy.reference == (cx, cy, True)
+    assert ortho.xz.reference == (cx, float(cz), True)
+    assert ortho.yz.reference == (float(cz), cy, True)
+    ortho.xy.grab()  # paints the marker without error
+
+    # Another slice: still findable on XY (faint), gone from planes far from it.
+    ortho.set_z(0 if cz else 1)
+    ortho.set_cursor(cx + 20.0, cy + 20.0)
+    assert ortho.xy.reference is not None and ortho.xy.reference[2] is False
+    assert ortho.xz.reference is None and ortho.yz.reference is None
+
+    screen.clear_reference_point()
+    assert ortho.xy.reference is None
+
+
+def test_a_reference_point_that_cannot_be_saved_says_so(qt_app, v2, monkeypatch):
+    from corridor.ui.screens import results
+
+    def refuse(directory, point):
+        raise PermissionError(13, "Access is denied", str(directory))
+
+    monkeypatch.setattr(results, "save_reference_point", refuse)
+    screen = _screen(qt_app, v2)
+    screen._reference_picked(30.0, 12.0)
+    assert screen.reference_point_px == (30.0, 12.0), "kept for this session's exports"
+    assert screen.reference_warning.isVisibleTo(screen)
+    assert "could not be saved" in screen.reference_warning.toolTip()
+
+    monkeypatch.setattr(results, "save_reference_point", lambda d, p: Path(d))
+    screen._reference_picked(31.0, 12.0)
+    assert not screen.reference_warning.isVisibleTo(screen)

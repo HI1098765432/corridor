@@ -147,14 +147,190 @@ def test_a_missing_model_stops_the_analysis_with_the_contract_text(window, tmp_p
 
 
 def test_imported_labels_need_no_model(window, tmp_path, monkeypatch):
+    from corridor.core import segmentation
+
     def forbidden(dimensionality="2D"):
         raise AssertionError("the model must not be resolved for imported labels")
 
     monkeypatch.setattr(model_registry, "resolve_model", forbidden)
+    # The 2.0 segmentation module (work package D) can read label images.
+    monkeypatch.setattr(segmentation, "load_label_stack", lambda *a, **k: None, raising=False)
     win = window.win
     win._config.import_.labels_path = str(tmp_path / "labels.tif")
     win._metadata = SimpleNamespace(path=tmp_path / "x.tif", axes="TZYX")
     assert win._model_ready()
+
+
+def test_labels_are_refused_by_a_pipeline_that_would_segment_anyway(window, tmp_path, monkeypatch):
+    """The 1.x pipeline ignores labels_path and would run cyto3 instead."""
+    from corridor.core import segmentation
+    from corridor.ui import workers
+
+    monkeypatch.delattr(segmentation, "load_label_stack", raising=False)
+    monkeypatch.setattr(
+        model_registry, "resolve_model", lambda d="2D": pytest.fail("no model for labels")
+    )
+    win = window.win
+    win._config.import_.labels_path = str(tmp_path / "labels.tif")
+    assert not win._model_ready()
+    assert window.errors == [(workers.LABELS_UNSUPPORTED, "")]
+
+
+def _verified(monkeypatch, tmp_path):
+    spec = model_registry.production_spec("2D")
+    resolved = model_registry.ResolvedModel(
+        spec=spec, path=tmp_path / "models" / spec.filename, sha256=spec.sha256
+    )
+    monkeypatch.setattr(model_registry, "resolve_model", lambda dimensionality="2D": resolved)
+    return resolved
+
+
+def test_the_run_is_pinned_to_the_verified_model(window, tmp_path, monkeypatch):
+    """No silent cyto3: a new project's config has no model_path, and a
+    reopened 1.x one may name a file chosen with the old picker."""
+    resolved = _verified(monkeypatch, tmp_path)
+    win = window.win
+    win._metadata = SimpleNamespace(path=tmp_path / "x.tif", axes="TYX")
+    seg = win._config.segmentation
+    seg.model_path = "C:/old-picker/some_other_model"  # a 1.x leftover
+    seg.use_custom_model = False
+    seg.ensemble_model_paths = ("C:/old-picker/sibling",)
+
+    assert win._model_ready()
+    assert seg.model_path == str(resolved.path)
+    assert seg.use_custom_model is True
+    assert seg.ensemble_model_paths == ()
+    assert seg.resolved_model() == str(resolved.path), "the 1.x service loads this file"
+    assert win._resolved_model is resolved
+
+
+def test_the_worker_hands_the_verified_model_to_a_pipeline_that_takes_it(
+    tmp_path, monkeypatch
+):
+    from corridor.core import pipeline
+    from corridor.ui.workers import AnalysisWorker
+
+    resolved = _verified(monkeypatch, tmp_path)
+    calls = []
+
+    def run_analysis(config, progress=None, *, save=True, keep_raw_masks=True, model=None):
+        calls.append(model)
+        return "result"
+
+    monkeypatch.setattr(pipeline, "run_analysis", run_analysis)
+    worker = AnalysisWorker(RunConfig(), model=resolved)
+    results = []
+    worker.finished.connect(results.append)
+    worker.run()
+    assert calls == [resolved] and results == ["result"]
+
+    # A 1.x pipeline has no model= parameter: it is not passed (the config
+    # carries the verified path instead).
+    def legacy(config, progress=None, *, save=True, keep_raw_masks=True):
+        calls.append("legacy")
+        return "old"
+
+    monkeypatch.setattr(pipeline, "run_analysis", legacy)
+    AnalysisWorker(RunConfig(), model=resolved).run()
+    assert calls[-1] == "legacy"
+
+
+def test_start_analysis_passes_the_verified_model_to_the_worker(window, tmp_path, monkeypatch):
+    from corridor.ui import main_window
+
+    resolved = _verified(monkeypatch, tmp_path)
+    created = []
+
+    class Recorder(main_window.AnalysisWorker):
+        def __init__(self, config, *, model=None):
+            super().__init__(config, model=model)
+            created.append((config, model))
+
+        def run(self):  # nothing heavy in a test
+            self.cancelled_signal.emit()
+
+    monkeypatch.setattr(main_window, "AnalysisWorker", Recorder)
+    win = window.win
+    source = tmp_path / "movie.tif"
+    source.write_bytes(b"")
+    win._project = window.store.create_project(source)
+    win._metadata = SimpleNamespace(path=source, axes="TYX")
+    win._stack = np.zeros((2, 8, 8), dtype=np.float32)
+    win.start_analysis()
+    job = win._analysis_job
+    assert created and created[0][1] is resolved
+    assert created[0][0].segmentation.model_path == str(resolved.path)
+    assert job is not None
+    job.wait()
+
+
+# --------------------------------------------------------------------------
+# Reopening: only a user-chosen axis order is replayed
+# --------------------------------------------------------------------------
+
+
+def test_a_canonical_input_axes_is_not_forced_on_the_importer():
+    from corridor.ui.workers import import_config_for
+
+    # v2 writes input.axes for every run (canonical, C reduced).
+    assert import_config_for({"input": {"axes": "TYX"}}) is None
+    config = import_config_for({"input": {"axes": "TYX", "channel_index": 2}})
+    assert config.axes is None and config.channel_index == 2
+
+
+def test_a_user_chosen_axis_order_is_replayed():
+    from corridor.core.config import ImportConfig
+    from corridor.ui.workers import import_config_for
+
+    manifest = {"input": {"axes": "ZYX", "axes_source": "user"}}
+    assert import_config_for(manifest).axes == "ZYX"
+    assert import_config_for({"import": {"axes": "TZCYX", "channel_index": 1}}).axes == "TZCYX"
+    assert import_config_for({"config": {"import": {"axes": "ZYX"}}}).axes == "ZYX"
+    # The project's own recorded choice (the raw file order) outranks all.
+    recorded = ImportConfig(axes="TZCYX", channel_index=1)
+    config = import_config_for({"input": {"axes": "TZYX"}}, recorded)
+    assert (config.axes, config.channel_index) == ("TZCYX", 1)
+
+
+def test_reopening_reads_with_the_projects_own_axis_order(window, tmp_path):
+    win = window.win
+    source = tmp_path / "planes.tif"
+    source.write_bytes(b"")
+    project = window.store.create_project(source)
+    own = RunConfig()
+    own.import_.axes = "ZYX"
+    project.config = own.to_dict()
+    win._project = project
+    recorded = win._recorded_import(project.path)
+    assert recorded is not None and recorded.axes == "ZYX"
+    # Another project's directory, or a project with no choice: nothing.
+    assert win._recorded_import(tmp_path / "elsewhere") is None
+    project.config = RunConfig().to_dict()
+    assert win._recorded_import(project.path) is None
+
+
+# --------------------------------------------------------------------------
+# Label image chooser
+# --------------------------------------------------------------------------
+
+
+def test_a_label_image_can_be_chosen_and_cleared(window, tmp_path, monkeypatch):
+    win = window.win
+    labels = tmp_path / "labels.tif"
+    monkeypatch.setattr(win, "_ask_open_path", lambda title, start, f: str(labels))
+    win.dataset.labels_button.click()
+    assert win._config.import_.labels_path == str(labels)
+    assert win.dataset.field_model._value.full_text() == "imported labels: labels.tif"
+    assert win.dataset.labels_button.text() == "Segment with the model instead"
+
+    win.dataset.labels_button.click()
+    assert win._config.import_.labels_path is None
+    assert win.dataset.labels_button.text() == "Use a label image…"
+
+    # Cancelling the chooser changes nothing.
+    monkeypatch.setattr(win, "_ask_open_path", lambda title, start, f: "")
+    win.dataset.labels_button.click()
+    assert win._config.import_.labels_path is None
 
 
 # --------------------------------------------------------------------------
@@ -302,6 +478,32 @@ def test_bundle_export_goes_to_a_named_folder(window, tmp_path, monkeypatch, qt_
     assert pump_until(qt_app, lambda: bool(win._last_export))
     assert seen == [(analysis, tmp_path / "out" / "synthetic_corridor")]
     assert window.store.get_setting("export_dir") == str(tmp_path / "out")
+
+
+def test_export_reports_do_not_pile_up(window, tmp_path, monkeypatch, qt_app):
+    from PySide6.QtCore import QCoreApplication, QEvent, Qt
+    from PySide6.QtWidgets import QMessageBox
+
+    from corridor.store import project
+
+    def export_msd_csv(saved, path):
+        Path(path).write_text("track_id\n", encoding="utf-8")
+        return Path(path)
+
+    monkeypatch.setattr(project, "export_msd_csv", export_msd_csv, raising=False)
+    win, _ = _open_v2(window, tmp_path)
+    for index in range(3):
+        target = tmp_path / f"msd_{index}.csv"
+        monkeypatch.setattr(win, "_ask_save_path", lambda *a, t=target: str(t))
+        win._last_export = []
+        win.export_results("msd_csv")
+        assert pump_until(qt_app, lambda: bool(win._last_export))
+    for _ in range(10):
+        qt_app.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    boxes = [b for b in win.findChildren(QMessageBox) if b.windowTitle() == "Exported"]
+    assert len(boxes) == 1, "each export replaces the last report instead of adding one"
+    assert boxes[0].testAttribute(Qt.WA_DeleteOnClose)
 
 
 def test_a_track_export_with_no_selection_warns_and_writes_nothing(window, tmp_path, monkeypatch):

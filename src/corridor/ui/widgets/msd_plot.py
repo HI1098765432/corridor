@@ -67,6 +67,20 @@ class MsdPlot(QWidget):
         return len(self._series.points)
 
     @property
+    def empty_message(self) -> str:
+        """What the plot says when it has no point to draw."""
+        return self._message
+
+    @property
+    def lags(self) -> tuple[float, ...]:
+        """The plotted lags, in the series' lag unit, in drawing order."""
+        return tuple(p.lag for p in self._series.points)
+
+    @property
+    def lag_unit(self) -> str:
+        return self._series.lag_unit
+
+    @property
     def is_empty(self) -> bool:
         return not self._series.points
 

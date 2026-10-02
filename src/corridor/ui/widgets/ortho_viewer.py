@@ -83,6 +83,8 @@ class SlicePane(QWidget):
         self._cursor: tuple[float, float] | None = None
         self._cursor_colour = PALETTE.text_tertiary
         self._markers: list[tuple[float, float, str, bool, str]] = []
+        #: The D2R reference point in this plane, as (u, v, solid), or None.
+        self._reference: tuple[float, float, bool] | None = None
         self.show_image = True
         self.show_labels = True
 
@@ -112,6 +114,15 @@ class SlicePane(QWidget):
     @property
     def markers(self) -> list[tuple[float, float, str, bool, str]]:
         return list(self._markers)
+
+    def set_reference(self, uv: tuple[float, float] | None, solid: bool = True) -> None:
+        """Where the reference point lies in this plane, or None to hide it."""
+        self._reference = (float(uv[0]), float(uv[1]), bool(solid)) if uv is not None else None
+        self.update()
+
+    @property
+    def reference(self) -> tuple[float, float, bool] | None:
+        return self._reference
 
     # ------------------------------------------------------------ transform
     def _target(self) -> QRectF:
@@ -194,6 +205,9 @@ class SlicePane(QWidget):
                 painter.setPen(QColor(255, 255, 255, 230))
                 painter.drawText(QPointF(centre.x() + 6, centre.y() - 5), text)
 
+        if self._reference is not None:
+            self._paint_reference(painter)
+
         if self._cursor is not None:
             pen = QPen(QColor(self._cursor_colour), 1.0, Qt.DashLine)
             pen.setCosmetic(True)
@@ -206,6 +220,26 @@ class SlicePane(QWidget):
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(target)
         painter.end()
+
+    def _paint_reference(self, painter: QPainter) -> None:
+        """The same ringed crosshair the 2-D canvas draws, faint off-slice."""
+        u, v, solid = self._reference  # type: ignore[misc]
+        centre = self.to_widget(u + 0.5, v + 0.5)
+        alpha = 255 if solid else 110
+        painter.setBrush(Qt.NoBrush)
+        marker = QColor(PALETTE.reference_marker)
+        marker.setAlpha(alpha)
+        for colour, width in ((QColor(0, 0, 0, int(170 * alpha / 255)), 4.0), (marker, 2.0)):
+            pen = QPen(colour, width)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.drawEllipse(centre, 7, 7)
+            cx, cy = centre.x(), centre.y()
+            for (x0, y0, x1, y1) in (
+                (cx - 13, cy, cx - 4, cy), (cx + 4, cy, cx + 13, cy),
+                (cx, cy - 13, cx, cy - 4), (cx, cy + 4, cx, cy + 13),
+            ):
+                painter.drawLine(QPointF(x0, y0), QPointF(x1, y1))
 
 
 class OrthoViewer(QWidget):
@@ -228,6 +262,8 @@ class OrthoViewer(QWidget):
         self.layers = Layers()
         self.rows_for_frame: Callable[[int], list[dict[str, Any]]] = lambda _f: []
         self.selected_track: int | None = None
+        #: The D2R reference point (x, y[, z]) in pixels and slices, or None.
+        #: Set through :meth:`set_reference_point` so the panes redraw it.
         self.reference_point: tuple[float, ...] | None = None
 
         self.xy = SlicePane("XY")
@@ -352,6 +388,11 @@ class OrthoViewer(QWidget):
         self._follow_selection()
         self._refresh()
 
+    def set_reference_point(self, point: tuple[float, ...] | None) -> None:
+        """Show the D2R reference point in every pane it lies in."""
+        self.reference_point = tuple(float(v) for v in point) if point is not None else None
+        self._update_reference()
+
     def set_picking(self, enabled: bool) -> None:
         self._picking = bool(enabled)
         cursor = QCursor(Qt.CrossCursor if self._picking else Qt.ArrowCursor)
@@ -432,6 +473,7 @@ class OrthoViewer(QWidget):
         self.xz.set_cursor(x, z, colour)
         self.yz.set_cursor(z, y, colour)
         self._update_markers()
+        self._update_reference()
 
         step = (
             f"drawn to scale ({z_scale:.2f} px per slice)"
@@ -494,6 +536,30 @@ class OrthoViewer(QWidget):
         self.xy.set_markers(xy_markers)
         self.xz.set_markers(xz_markers)
         self.yz.set_markers(yz_markers)
+
+    def _update_reference(self) -> None:
+        """Place the reference point on the panes, by the markers' tolerances.
+
+        XY always shows it (solid on its own slice, faint elsewhere, so the
+        user can find it from any Z); XZ and YZ show it only when their plane
+        passes near it, as for a cell. A point set on the 2-D canvas has no Z
+        and is drawn on XY only.
+        """
+        point = self.reference_point
+        if point is None or self._stack is None or not getattr(self.layers, "reference", True):
+            for pane in (self.xy, self.xz, self.yz):
+                pane.set_reference(None)
+            return
+        x, y = point[0], point[1]
+        z = point[2] if len(point) > 2 else None
+        cx, cy, cz = self._cursor
+        self.xy.set_reference((x, y), solid=z is None or abs(z - cz) <= SLICE_TOLERANCE)
+        self.xz.set_reference(
+            (x, z) if z is not None and abs(y - cy) <= PLANE_TOLERANCE_PX else None
+        )
+        self.yz.set_reference(
+            (z, y) if z is not None and abs(x - cx) <= PLANE_TOLERANCE_PX else None
+        )
 
     # --------------------------------------------------------------- clicks
     def _pick_or_move(self, x: float, y: float, z: float, *, select: bool) -> None:

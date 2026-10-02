@@ -15,7 +15,8 @@ What is deliberately *not* here in 2.0:
 *   **No hard-gate control.** The gate is derived, ``2 x unmatched cost``
     (``TrackingConfig.effective_gate_chi2``), so it is shown, never edited --
     the 1.x panel ratcheted a stored gate upwards, which is how the two
-    drifted apart.
+    drifted apart. The legacy ``gate_chi2`` is written equal to it on every
+    apply, for the 1.x tracker that still reads it.
 """
 
 from __future__ import annotations
@@ -324,6 +325,7 @@ class AdvancedPanel(QWidget):
         self.pixel_size.setValue(cal.pixel_size_um or 0.0)
         self.frame_interval.setValue(cal.frame_interval_min or 0.0)
         self.z_step.setValue(getattr(cal, "z_step_um", None) or 0.0)
+        self._shown_at_load["z_step"] = self.z_step.value()
         three_d = _is_3d(metadata)
         self.z_step.setVisible(three_d)
         self.z_step_label.setVisible(three_d)
@@ -358,6 +360,7 @@ class AdvancedPanel(QWidget):
             getattr(trk, "channel_constraint", CHANNEL_CONSTRAINT_AUTO) != CHANNEL_CONSTRAINT_OFF
         )
         self.position_sigma.setValue(trk.position_sigma_um)
+        self._shown_at_load["position_sigma"] = self.position_sigma.value()
         self.max_speed.setValue(trk.max_speed_um_per_min * MIN_PER_HR)
         self._shown_at_load["max_speed"] = self.max_speed.value()
         self.max_gap.setValue(trk.max_gap)
@@ -398,8 +401,11 @@ class AdvancedPanel(QWidget):
             self.frame_interval.value() if self.frame_interval.value() > 0 else None
         )
         if hasattr(config.calibration, "z_step_um"):
+            shown = self.z_step.value()
             config.calibration.z_step_um = (
-                self.z_step.value() if self.z_step.value() > 0 else None
+                self._converted("z_step", shown, config.calibration.z_step_um, 1.0)
+                if shown > 0
+                else None
             )
 
         seg = config.segmentation
@@ -421,27 +427,36 @@ class AdvancedPanel(QWidget):
         )
         # Kept in step for the 1.x tracker until the integration removes it.
         trk.enforce_channel_identity = self.respect_walls.isChecked()
-        trk.position_sigma_um = self.position_sigma.value()
+        trk.position_sigma_um = self._converted(
+            "position_sigma", self.position_sigma.value(), trk.position_sigma_um, 1.0
+        )
         trk.max_speed_um_per_min = self._converted(
             "max_speed", self.max_speed.value(), trk.max_speed_um_per_min, MIN_PER_HR
         )
         trk.max_gap = self.max_gap.value()
         trk.unmatched_chi2 = self.unmatched.value()
-        # gate_chi2 is not written: v2 derives it (effective_gate_chi2 = 2U),
-        # and the legacy field stays as loaded for the 1.x tracker until the
-        # integration removes it.
+        # v2 derives the gate (effective_gate_chi2 = 2U) and never reads
+        # gate_chi2, but the 1.x tracker still running on this branch rejects
+        # every link costing more than gate_chi2. Leaving it as loaded would
+        # make raising the unmatched cost silently do nothing above the old
+        # gate, while the note under the control says 2U. So the legacy field
+        # is set to exactly the derived value -- assigned, not max()'d: the
+        # 1.x ratchet is how the two drifted apart in the first place.
+        trk.gate_chi2 = trk.effective_gate_chi2
         trk.min_observations = self.min_observations.value()
         return config
 
-    def _converted(self, key: str, shown: float, stored: float, factor: float) -> float:
+    def _converted(self, key: str, shown: float, stored: Any, factor: float) -> Any:
         """The stored value, unless the user actually changed the shown one.
 
-        A per-hour spin box rounds what it displays; writing the rounded
-        number back on every apply would silently change a saved parameter
-        just because the panel was opened (4.6712 µm/min -> 280.3 µm/h ->
-        4.67167 µm/min). So an untouched control keeps the exact stored value.
+        A spin box rounds what it displays; writing the rounded number back
+        on every apply would silently change a saved parameter just because
+        the panel was opened (4.6712 µm/min -> 280.3 µm/h -> 4.67167 µm/min;
+        a position uncertainty of 0.375 µm -> 0.38; a Z step of 0.123456 µm
+        -> 0.1235). So an untouched control keeps the exact stored value, and
+        ``factor`` is 1 for a control shown in its stored unit.
         """
-        if abs(shown - self._shown_at_load.get(key, float("nan"))) < 1e-9:
+        if stored is not None and abs(shown - self._shown_at_load.get(key, float("nan"))) < 1e-9:
             return stored
         return shown / factor
 
