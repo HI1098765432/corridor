@@ -40,6 +40,10 @@ class Detection:
     Every field after ``confidence`` is optional, so a detection built by hand
     (tests, recovery probes) or read back from a v1 CSV is still valid; a
     morphology value that was not measured is None, never a placeholder.
+
+    :meth:`to_row` is the tabular form.  ``dataclasses.asdict`` is not: it
+    deep-copies ``mask_crop`` like any other field, which v1's ``to_row``
+    (built on ``asdict``) never had to consider.
     """
 
     frame: int
@@ -71,7 +75,11 @@ class Detection:
     # -- 2-D morphology ------------------------------------------------------
     perimeter_px: float | None = None
     #: 4 pi A / P^2, clipped to [0, 1]. 1 for a disk, about 0.26 for a
-    #: supplied confined cell (an ellipse 100 x 11 px).
+    #: supplied confined cell (an ellipse 100 x 11 px). Not orientation-free
+    #: on a pixel grid: that ellipse measured 0.250-0.279 against the exact
+    #: 0.262 over 10 angles x 5 sub-pixel placements, highest along the pixel
+    #: axes and diagonals and lowest between them -- a bias correlated with
+    #: the cell's angle, which a model reading circularity must not learn.
     circularity: float | None = None
     #: major / minor axis length; None for a one-pixel-wide object.
     aspect_ratio: float | None = None
@@ -134,6 +142,19 @@ class Detection:
         if self.ndim == 3 and self.volume_vox is not None:
             return float(self.volume_vox)
         return float(self.area_px)
+
+    @property
+    def z_slices(self) -> int | None:
+        """How many Z planes the object occupies; None in 2-D.
+
+        Every 3-D shape measurement is only as good as this number (see
+        ``extract_detections_3d``): below :data:`MIN_RELIABLE_Z_SLICES` the
+        volume alone was measured up to 5.3 % off at 4-5 slices, 10.5 % at 3
+        and 20.5 % at 2.
+        """
+        if len(self.bbox) != 6:
+            return None
+        return int(self.bbox[3] - self.bbox[0])
 
     @property
     def axis_unit(self) -> np.ndarray:
@@ -252,9 +273,11 @@ def extract_detections(
     shape): the boundary walk reads -6.7 to +5.5 % and drifts with size, so
     a perfect disk's circularity is 0.92-0.93 at radius 30 px but 0.95-1.00
     at 10 px; Crofton reads -3.1 to +1.5 %, and 0.97-1.00 (after clipping)
-    for every disk from radius 10 px. Its one weakness, axis-aligned
-    rectangles (-4 % against the pixel-centre outline of 100 x 12 px), is not
-    a cell shape.
+    for every disk from radius 10 px. A later sweep of the 100 x 11 px
+    ellipse over ten angles reached +1.9 %, and showed its circularity
+    following the angle (see ``Detection.circularity``). Crofton's one
+    weakness, axis-aligned rectangles (-4 % against the pixel-centre outline
+    of 100 x 12 px), is not a cell shape.
     """
     if mask is None or mask.size == 0:
         return []
@@ -329,6 +352,13 @@ def extract_detections(
 # --------------------------------------------------------------------------
 # 3-D
 # --------------------------------------------------------------------------
+
+#: The fewest Z planes an object must occupy for its 3-D volume to be within
+#: 3 % and its surface area within 5 % (measured; the table is in
+#: ``extract_detections_3d``). Below it every value is still reported, and
+#: quality control is what says it is coarse: a confined cell about 5 µm tall
+#: sampled every 2 µm occupies 2-3 planes.
+MIN_RELIABLE_Z_SLICES = 6
 
 #: Zero padding around a crop before meshing: three smoothing sigmas, so the
 #: smoothed object falls to ~0 before the edge and the mesh always closes.
@@ -434,6 +464,12 @@ def _solidity_3d(crop: np.ndarray, mesh: tuple[np.ndarray, np.ndarray, float] | 
     the one used. Without a mesh (an object too small to survive smoothing),
     the corner hull: exact for a cuboid, and never coplanar, not even for a
     single voxel or a one-slice sheet. NaN only if Qhull still refuses.
+
+    "0.95-1.00" held for those shapes at one placement. Swept later over 32
+    Z phases at 2.0 x 0.5 x 0.5 µm, convex objects occupying four or more
+    slices read 0.906-0.995 -- the low end a 4.8 µm-thick rod lying oblique
+    to Z, whose slice terraces survive smoothing as ripples -- and objects
+    two or three slices tall as low as 0.77.
     """
     from scipy import ndimage as ndi
     from scipy.spatial import ConvexHull, QhullError
@@ -483,10 +519,27 @@ def extract_detections_3d(
     ``sqrt(20 * eigenvalue)``: regionprops' own 3-D convention, which returns
     2a, 2b, 2c for a solid ellipsoid. (Its 2-D ``4 * sqrt(eigenvalue)`` would
     read 0.89 of the true length in 3-D.) Surface area comes from
-    ``_volume_matched_mesh`` scaled by the spacing. Measured on digitised
-    ellipsoids at 2.0 x 0.5 x 0.5 µm voxels when this was written: volume
-    within 1.6 %, surface area +2.0 to +3.5 % against Knud Thomsen's formula,
-    a sphere's sphericity 0.974 (0.997 at isotropic 0.5 µm).
+    ``_volume_matched_mesh`` scaled by the spacing.
+
+    Accuracy is set by how many Z planes the object occupies
+    (``Detection.z_slices``), because a binary mask says nothing about the
+    shape between planes. Measured on digitised ellipsoids and rods at
+    2.0 x 0.5 x 0.5 µm voxels, 32 Z phases x 2 XY offsets each, against
+    4/3 pi abc, Knud Thomsen's area and the true axes 2a, 2b, 2c:
+
+        slices  volume             surface area      principal axes
+        >= 8    -1.7 to +1.1 %     -0.2 to +3.7 %    within 2.6 %
+        6-7     -2.3 to +1.8 %     +0.5 to +4.2 %    within 4.7 %
+        4-5     -5.3 to +3.0 %     -0.1 to +4.7 %    within 10.5 %
+        3       -10.5 to +6.9 %    -10.2 to +6.4 %   within 19.4 %
+        2       -20.5 to +13.0 %   -11.9 to +0.4 %   within 47.7 %
+
+    Hence :data:`MIN_RELIABLE_Z_SLICES`. A single fixed placement hides the
+    lower rows -- the figures first written here came from one, and missed
+    them -- which is why the tests sweep the Z phase. Where reliable, the
+    area's bias of up to +4 % makes sphericity read 1-3 % low: 0.973-0.980
+    for a sphere at these voxels (0.997 at isotropic 0.5 µm), 0.943-0.954
+    for an ellipsoid whose true value is 0.965.
 
     An object cut by the top or bottom slice is flagged ``touches_border``
     like one cut by the image edge: its mesh is closed across the cut, so its

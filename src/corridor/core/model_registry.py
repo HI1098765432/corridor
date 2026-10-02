@@ -3,8 +3,9 @@
 Corridor 1.x let the model be a setting: a file picker, ``--model``, a
 built-in Cellpose name, companion models found beside the primary one, and a
 ``CORRIDOR_MODEL`` variable that outranked all of them.  A result could
-therefore come from a model nobody had validated, and nothing in it said so;
-the SHA-256 was computed after the run and never compared with anything.
+therefore come from a model nobody had validated, and nothing in it said so:
+an analysis computed the SHA-256 after the run and never compared it.  Only
+the self-test checked the bundled file against its pinned hash.
 
 In 2.0 the model is not a choice.  ``assets/model_registry.json`` lists every
 validated model with its checksum, and production resolves exactly one per
@@ -20,8 +21,11 @@ dimensionality:
     ``developer_override=True``, which run.json records and quality control
     raises as a critical issue, so such a result can never pass for a
     validated one.
-*   No model is validated on 3-D data, so a 3-D request is refused here.
-    3-D measurement and tracking still work on an imported label image.
+*   No model is validated on 3-D data, so a 3-D request is refused here --
+    with or without the developer override, which swaps the file behind a
+    dimensionality the registry validates and cannot open one it does not.
+    A 3-D model experiment goes through :func:`research_model`.  3-D
+    measurement and tracking still work on an imported label image.
 
 The check runs at resolution time.  The caller must hand the returned path to
 Cellpose straight away; a file swapped between the two would not be noticed.
@@ -322,15 +326,18 @@ def _sha256_cached(path: Path) -> str:
 def resolve_model(dimensionality: str = "2D") -> ResolvedModel:
     """The verified model file for production, or ModelUnavailable.
 
-    A developer override (both environment variables) wins over everything,
-    and says so in its result.  Otherwise each candidate is hashed in order
-    and the first exact match is returned; mismatches and absences are
-    collected so the error names every path and why it was refused.
+    The registry is consulted first, so a dimensionality with no validated
+    model (3-D) is refused even under the developer override: the contract
+    refuses a 3-D stack for segmentation outright.  Then a developer
+    override (both environment variables) replaces the registered file, and
+    says so in its result.  Otherwise each candidate is hashed in order and
+    the first exact match is returned; mismatches and absences are collected
+    so the error names every path and why it was refused.
     """
+    spec = production_spec(dimensionality)
     override = _developer_override(dimensionality)
     if override is not None:
         return override
-    spec = production_spec(dimensionality)
     tried: list[tuple[Path, str]] = []
     for path in candidate_paths(spec):
         if not path.exists():

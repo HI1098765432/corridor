@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import copy
 import json
+import re
+from dataclasses import fields
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -15,6 +18,7 @@ import pytest
 from corridor.core.config import (
     CHANNEL_CONSTRAINT_AUTO,
     CHANNEL_CONSTRAINT_OFF,
+    TRACKING_V2_ONLY_FIELDS,
     CalibrationConfig,
     GeometryConfig,
     ImportConfig,
@@ -120,10 +124,100 @@ def test_every_v2_tracking_field_exists():
 def test_a_saved_channel_identity_opt_out_becomes_constraint_off():
     cfg = RunConfig.from_dict({"tracking": {"enforce_channel_identity": False}}).tracking
     assert cfg.channel_constraint == CHANNEL_CONSTRAINT_OFF
-    explicit = RunConfig.from_dict(
-        {"tracking": {"enforce_channel_identity": False, "channel_constraint": "auto"}}
-    ).tracking
-    assert explicit.channel_constraint == CHANNEL_CONSTRAINT_AUTO
+
+
+def test_an_opt_out_saved_beside_a_default_constraint_is_kept():
+    """What a build that wrote both fields stored after the 1.x panel's
+    unchecked box: the legacy False beside an "auto" nobody chose."""
+    data = {"tracking": {"enforce_channel_identity": False, "channel_constraint": "auto"}}
+    cfg = RunConfig.from_dict(data).tracking
+    assert cfg.channel_constraint == CHANNEL_CONSTRAINT_OFF
+    assert cfg.enforce_channel_identity is False
+    v2_opt_out = RunConfig.from_dict({"tracking": {"channel_constraint": "off"}}).tracking
+    assert v2_opt_out.enforce_channel_identity is False
+
+
+def test_the_v1_panel_opt_out_survives_a_save():
+    """The real UI path: advanced.apply_to writes only the legacy field."""
+    config = RunConfig()
+    config.tracking.enforce_channel_identity = False
+    assert config.tracking.channel_constraint == CHANNEL_CONSTRAINT_OFF
+    restored = json_round_trip(config).tracking
+    assert restored.enforce_channel_identity is False
+    assert restored.channel_constraint == CHANNEL_CONSTRAINT_OFF
+
+
+def test_a_re_enable_after_an_opt_out_survives_a_save():
+    """Whichever field the writer knows, turning the gate back on sticks."""
+    for field_name, value in (("enforce_channel_identity", True), ("channel_constraint", "auto")):
+        config = RunConfig.from_dict({"tracking": {"enforce_channel_identity": False}})
+        setattr(config.tracking, field_name, value)
+        restored = json_round_trip(config).tracking
+        assert restored.enforce_channel_identity is True, field_name
+        assert restored.channel_constraint == CHANNEL_CONSTRAINT_AUTO, field_name
+
+
+def test_the_channel_sync_stores_nothing_beside_the_fields():
+    """run.json dumps tracking.__dict__; a helper attribute would land in it."""
+    cfg = TrackingConfig(enforce_channel_identity=False)
+    cfg.channel_constraint = "auto"
+    assert set(cfg.__dict__) == {f.name for f in fields(TrackingConfig)}
+
+
+def test_v2_only_fields_are_fields_and_no_v1_code_reads_them():
+    """If this fails, a stage now reads the named field: take it out of
+    TRACKING_V2_ONLY_FIELDS so run.json can record it as applied."""
+    assert TRACKING_V2_ONLY_FIELDS <= {f.name for f in fields(TrackingConfig)}
+    core = Path(__file__).resolve().parents[1] / "src" / "corridor" / "core"
+    for path in core.glob("*.py"):
+        if path.name == "config.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        for name in TRACKING_V2_ONLY_FIELDS:
+            assert not re.search(rf"\.{name}\b", text), f"{path.name} reads {name}"
+
+
+# --------------------------------------------------------------------------
+# Process noise in physical time (contract §5)
+# --------------------------------------------------------------------------
+
+
+def physical(q: tuple[float, float, float], scale: Scale) -> tuple[float, float, float]:
+    """(um^2, um^2/min, (um/min)^2) from process_noise_px's image units."""
+    p, t = scale.pixel_size_um, scale.frame_interval_min
+    return (q[0] * p * p, q[1] * p * p / t, q[2] * (p / t) ** 2)
+
+
+def test_process_noise_means_the_same_motion_at_any_frame_interval():
+    """40 minutes is one 40 min frame, two 20 min frames or four 10 min
+    frames; the prediction's covariance after it must not care which."""
+    cfg = TrackingConfig()
+    results = [
+        physical(cfg.process_noise_px(Scale.from_values(0.467, interval), 40.0 / interval),
+                 Scale.from_values(0.467, interval))
+        for interval in (10.0, 20.0, 40.0)
+    ]
+    for r in results[1:]:
+        assert r == pytest.approx(results[0], rel=1e-12)
+    sigma2 = cfg.velocity_sigma_um_per_min**2
+    assert results[0] == pytest.approx((sigma2 * 40**3 / 3, sigma2 * 40**2 / 2, sigma2 * 40))
+
+
+def test_process_noise_does_not_depend_on_the_pixel_size_physically():
+    cfg = TrackingConfig()
+    kk1 = Scale.from_values(0.639, 15.0)
+    kk2 = Scale.from_values(0.467, 15.0)
+    assert physical(cfg.process_noise_px(kk1, 2), kk1) == pytest.approx(
+        physical(cfg.process_noise_px(kk2, 2), kk2), rel=1e-12
+    )
+    # ...while in image units it does: the same motion is more KK2 pixels.
+    assert cfg.process_noise_px(kk2, 2)[2] > cfg.process_noise_px(kk1, 2)[2]
+
+
+def test_uncalibrated_process_noise_is_read_in_pixels_and_frames():
+    cfg = TrackingConfig(velocity_sigma_um_per_min=0.3)
+    q = cfg.process_noise_px(Scale.from_values(None, None), 3)
+    assert q == pytest.approx((0.09 * 27 / 3, 0.09 * 9 / 2, 0.09 * 3))
 
 
 # --------------------------------------------------------------------------
@@ -204,12 +298,62 @@ def test_a_geometry_only_dict_keeps_the_legacy_reader_in_step():
     assert config.confinement.detect_walls is False
 
 
-def test_geometry_wins_when_both_blocks_are_present():
+def test_an_edited_walls_value_wins_from_either_block():
+    """to_dict writes both blocks, so a default beside an edited value is
+    not a choice; the edited one is, whichever block holds it."""
+    for block in ("confinement", "geometry"):
+        data = {"confinement": {}, "geometry": {}}
+        data[block]["detect_walls"] = False
+        config = RunConfig.from_dict(data)
+        assert config.geometry.detect_walls is False, block
+        assert config.confinement.detect_walls is False, block
+
+
+def test_geometry_breaks_a_tie_between_two_edited_values():
     config = RunConfig.from_dict(
-        {"confinement": {"detect_walls": False}, "geometry": {"detect_walls": True}}
+        {"confinement": {"min_channel_pitch_um": 20.0}, "geometry": {"min_channel_pitch_um": 25.0}}
     )
-    assert config.geometry.detect_walls is True
+    assert config.geometry.min_channel_pitch_um == 25.0
+    assert config.confinement.min_channel_pitch_um == 25.0
+
+
+def test_the_two_walls_blocks_mirror_each_other_in_memory():
+    """A v1 reader of confinement sees what a v2 writer put in geometry, and
+    back; and a re-enable after a saved opt-out sticks."""
+    config = RunConfig()
+    config.geometry.detect_walls = False
     assert config.confinement.detect_walls is False
+    config.confinement.min_channel_pitch_um = 22.0
+    assert config.geometry.min_channel_pitch_um == 22.0
+    config.confinement.mode = "vertical"  # an axis key has no v2 twin
+    assert not hasattr(config.geometry, "mode")
+
+    restored = json_round_trip(config)
+    restored.geometry.detect_walls = True
+    again = json_round_trip(restored)
+    assert again.confinement.detect_walls is True and again.geometry.detect_walls is True
+
+
+def test_a_replaced_walls_block_wins_and_the_old_one_is_unlinked():
+    config = RunConfig()
+    old = config.geometry
+    config.geometry = GeometryConfig(detect_walls=False)
+    assert config.confinement.detect_walls is False
+    old.detect_walls = True
+    assert config.confinement.detect_walls is False
+    config.confinement = type(config.confinement)(detect_walls=True)
+    assert config.geometry.detect_walls is True
+
+
+def test_the_walls_link_is_invisible_and_does_not_leak_into_copies():
+    config = RunConfig()
+    assert "_walls_partner" not in repr(config)
+    assert "_walls_partner" not in json.dumps(config.to_dict())
+    twin = copy.deepcopy(config)
+    assert twin == config
+    twin.geometry.detect_walls = False
+    assert twin.confinement.detect_walls is False
+    assert config.geometry.detect_walls is True and config.confinement.detect_walls is True
 
 
 def test_from_dict_never_mutates_its_input():
@@ -255,6 +399,12 @@ def saved_default_config() -> dict:
     config.segmentation.use_custom_model = False
     config.segmentation.ensemble_model_paths = ("D:/kk1_model",)
     config.segmentation.cellprob_threshold = -1.0
+    config.segmentation.diameter = 45.0
+    config.segmentation.min_extent_px = 30
+    config.segmentation.min_area_px = 50
+    config.segmentation.ensemble_min_fragment_px = 35
+    config.segmentation.apply_normalisation_preset("local_sharpen")
+    config.geometry.min_channel_pitch_px = 52.0
     config.tracking.max_gap = 5
     config.geometry.detect_walls = False
     config.import_ = ImportConfig(axes="TZYX", channel_index=2, labels_path="D:/labels.tif")
@@ -279,14 +429,33 @@ def test_a_new_project_inherits_no_calibration_paths_or_model():
 def test_a_new_project_keeps_the_tuning():
     config = RunConfig.for_new_project(saved_default_config())
     assert config.segmentation.cellprob_threshold == -1.0
+    assert config.segmentation.normalisation_mode == "local_sharpen"
     assert config.tracking.max_gap == 5
     assert config.geometry.detect_walls is False
     assert config.measurement.msd_min_pairs == 6
 
 
+def test_a_new_project_inherits_no_size_in_pixels():
+    """KK1's pixel is 0.639 um and KK2's 0.467 um: a size tuned in pixels on
+    one is a different physical size on the other."""
+    config = RunConfig.for_new_project(saved_default_config())
+    seg, defaults = config.segmentation, RunConfig().segmentation
+    for name in ("diameter", "min_extent_px", "min_area_px", "ensemble_min_fragment_px"):
+        assert getattr(seg, name) == getattr(defaults, name), name
+    assert config.geometry.min_channel_pitch_px == GeometryConfig().min_channel_pitch_px
+    assert config.confinement.min_channel_pitch_px == GeometryConfig().min_channel_pitch_px
+
+
 def test_a_new_project_from_nothing_is_the_default():
     assert RunConfig.for_new_project(None) == RunConfig()
     assert RunConfig.for_new_project({}) == RunConfig()
+
+
+@pytest.mark.parametrize("bad", [None, [1, 2], "x", 3])
+def test_a_block_that_is_not_an_object_loads_as_the_default(bad):
+    data = {name: bad for name in ("segmentation", "tracking", "geometry", "recovery", "import")}
+    assert RunConfig.from_dict(data) == RunConfig()
+    assert RunConfig.for_new_project({"segmentation": bad}) == RunConfig()
 
 
 def test_for_new_project_does_not_touch_the_saved_dict():
@@ -320,3 +489,29 @@ def test_interfaces_are_structural_and_intervals_are_checked():
         Prediction(1.0, 2.0, 0.5, 0.9)
     with pytest.raises(ValueError):
         Prediction(1.0, 0.5, 1.5, 1.0)
+
+
+@pytest.mark.parametrize(
+    "value, lower, upper",
+    [
+        pytest.param(1.0, float("nan"), float("nan"), id="nan-bounds"),
+        pytest.param(1.0, float("-inf"), float("inf"), id="infinite-bounds"),
+        pytest.param(float("nan"), 0.0, 1.0, id="nan-value"),
+        pytest.param(5.0, 0.0, 1.0, id="value-above"),
+        pytest.param(-0.1, 0.0, 1.0, id="value-below"),
+    ],
+)
+def test_a_point_prediction_cannot_pass_as_an_interval(value, lower, upper):
+    from corridor.core.interfaces import Prediction
+
+    with pytest.raises(ValueError):
+        Prediction(value, lower, upper, 0.9)
+
+
+def test_the_interval_bounds_are_inclusive():
+    """Whether a zero-width interval is calibrated is for the coverage test
+    to say; the container only refuses what cannot be an interval at all."""
+    from corridor.core.interfaces import Prediction
+
+    assert Prediction(2.0, 2.0, 2.0, 0.9).upper == 2.0
+    assert Prediction(0.0, 0.0, 1.0, 0.9).lower == 0.0

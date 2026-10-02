@@ -292,6 +292,23 @@ def test_3d_is_refused_because_no_model_is_validated_for_it(fake):
             call("3D")
 
 
+def test_3d_is_refused_even_under_the_developer_override(fake, dev_model, monkeypatch):
+    """The override swaps the file behind a validated dimensionality; it
+    cannot open one the registry does not validate. 2-D still overrides."""
+    fake.place(("bundle", fake.good))
+    monkeypatch.setenv(ENV_DEVELOPER, "1")
+    monkeypatch.setenv(ENV_DEVELOPER_MODEL, str(dev_model))
+    with pytest.raises(ModelUnavailable, match="No 3D-validated segmentation model"):
+        mr.resolve_model("3D")
+    assert mr.resolve_model("2D").developer_override is True
+
+
+def test_a_3d_experiment_goes_through_research_model(dev_model):
+    resolved = mr.research_model(dev_model, label="3d-trial")
+    assert resolved.developer_override is True
+    assert resolved.spec.dimensions == ()
+
+
 def test_the_shipped_registry_also_refuses_3d():
     with pytest.raises(ModelUnavailable, match="3D"):
         mr.production_spec("3d")
