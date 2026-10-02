@@ -90,9 +90,12 @@ def test_measurement_noise_uses_the_3d_principal_axes(scale3d):
     R = model.measurement_cov(det)
     assert R.shape == (3, 3)
     # The body is longest in x (28 px), 12 px in y and in z once Z is scaled:
-    # R = sigma_p^2 I + (0.06 * 28)^2 x x^T + (0.12 * 12)^2 (y y^T + z z^T).
+    # R = sigma_p^2 I + (0.065 * 28)^2 x x^T + (0.12 * 12)^2 (y y^T + z z^T),
+    # 0.065 being TrackingConfig's shape_position_fraction (0.06 when this was
+    # written; the contract config measured 3.09 um along 48.2 um bodies).
     sigma_p2 = model.position_sigma_px**2
-    assert R[0, 0] == pytest.approx(sigma_p2 + (0.06 * 28) ** 2, rel=0.1)
+    assert TrackingConfig().shape_position_fraction == 0.065
+    assert R[0, 0] == pytest.approx(sigma_p2 + (0.065 * 28) ** 2, rel=0.1)
     assert R[1, 1] == pytest.approx(sigma_p2 + (0.12 * 12) ** 2, rel=0.15)
     # Five slices sample the Z extent coarsely (10.5 px measured against 12).
     assert R[2, 2] == pytest.approx(R[1, 1], rel=0.3)

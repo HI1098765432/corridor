@@ -14,17 +14,20 @@ Stage 1, frame to frame
 Each track carries a constant-velocity Kalman state ``[r, v]`` (pixels and
 pixels per frame) with covariance ``P``.  Prediction over ``dt`` frames uses
 ``F = [[I, dt I], [0, I]]`` and isotropic white-noise-acceleration process
-noise of spectral density ``q`` (px^2 per frame^3):
+noise of intensity ``q`` (px^2 per frame^3):
 
     Q(dt) = q * [[dt^3/3 I, dt^2/2 I], [dt^2/2 I, dt I]]
 
 so the predicted position widens like dt^3 over a gap, not like sqrt(dt).
-``velocity_sigma_um_per_min`` is the 1-sigma velocity change over one
-*20.0 min* frame, the interval it was measured on (``TrackingConfig``), so
-``q`` is a physical rate, ``sigma^2 / 20 min`` in um^2/min^3, converted per run
-to ``q * frame_min^3 / pixel_size^2``: the same cells imaged every 5 min get
-the same velocity diffusion per hour as every 20 min.  (An uncalibrated
-time axis reads the value per frame, like every other physical default.)
+``q`` is defined in physical time: ``velocity_sigma_um_per_min`` is
+``sqrt(q)`` in um/min per sqrt(min) (0.1: 0.45 um/min of velocity change
+over one 20 min frame), and ``TrackingConfig.process_noise_px`` -- the one
+place Q is computed -- converts it through the Scale to
+``q * frame_min^3 / pixel_size^2``.  The tracker binds that method once per
+run (``MotionModel.process_noise_px``) and never reads the field itself, so
+the same cells imaged every 5 min get the same velocity diffusion per hour as
+every 20 min.  (An uncalibrated time axis reads the value in px and frames,
+like every other physical default.)
 
 ``Q`` and the fresh-track prior are isotropic, as the contract (§5) says.  A
 body-shaped ``Q`` (across-body acceleration scaled by the body's aspect, the
@@ -73,8 +76,8 @@ made a mask-less detection up to ``w_overlap`` cheaper than a primary one:
 measured on 052924_2 frame 11 (with the earlier body-shaped noise), a
 recovered duplicate came within 0.16 chi2 of taking a track from its primary
 detection, which carried a 0.87 overlap charge the duplicate was spared.  With
-the term withheld there the primary wins by 0.99
-(``docs/tracking_v2_vs_v1_baseline.json``).
+the term withheld there the primary wins by 1.71 (0.99 under WP-B's smaller
+process noise; ``docs/tracking_v2_vs_v1_baseline.json``).
 
 Hard gates, checked in this order: gap (``dt > max_gap + 1``), lane, physical
 speed, size ratio, the motion gate (``d^2`` above the chi-square 0.999
@@ -138,7 +141,7 @@ import functools
 import math
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
@@ -169,13 +172,6 @@ GATE_PERP = "lateral_jump"
 
 #: Quantile of the chi-square distribution used as the motion gate.
 MOTION_GATE_QUANTILE = 0.999
-
-#: The frame interval ``velocity_sigma_um_per_min`` was measured on (the KK2
-#: baseline, 20.0 min frames; ``TrackingConfig`` docstring). The value is the
-#: velocity change over *that* interval, so it is converted to a physical
-#: diffusion rate with this, not read per frame of whatever movie is tracked.
-#: TrackingConfig has no field for it; see the integration notes.
-VELOCITY_SIGMA_REFERENCE_INTERVAL_MIN = 20.0
 
 #: 1-sigma of the shape term's components (contract §5): a change of ln(aspect)
 #: by 0.35 (aspect x1.42) or of solidity by 0.10 costs one chi-square unit each
@@ -227,8 +223,14 @@ class MotionModel:
     #: XY pixels per Z slice; 1.0 when the Z step is unknown (and then assumed).
     anisotropy: float
     z_assumed: bool
-    #: White-noise-acceleration spectral density, px^2 per frame^3.
-    accel_var_px2_per_frame3: float
+    #: One axis of the process noise over ``dt`` frames, ``(position variance
+    #: px^2, position-velocity covariance, velocity variance (px/frame)^2)``:
+    #: ``TrackingConfig.process_noise_px`` bound to this run's Scale.  That
+    #: method is the one place Q is computed from the config and the frame
+    #: interval; the tracker never reads ``velocity_sigma_um_per_min`` itself.
+    process_noise_px: Callable[[float], tuple[float, float, float]] = field(
+        compare=False, repr=False
+    )
     position_sigma_px: float
     shape_position_fraction: float
     width_position_fraction: float
@@ -242,28 +244,16 @@ class MotionModel:
     def from_config(
         cls, scale: Scale, cfg: TrackingConfig, ndim: int = 2, *, body_shaped_noise: bool = False
     ) -> "MotionModel":
-        # velocity_sigma is the 1-sigma velocity change over one 20.0 min
-        # frame, where it was measured. White-noise acceleration makes the
-        # velocity variance grow linearly in time, so the physical density is
-        # sigma^2 / 20 min (um^2/min^3), and over one frame of this movie the
-        # position-noise density is that times frame_min^3, in px^2. Read per
-        # frame instead, 5 min frames would get twice the measured velocity
-        # sigma per 20 min and 80 min frames half of it.
+        # The process noise is the config's, bound to a snapshot of it so a
+        # later edit of the caller's config cannot change a running model.
         frame_min = scale.frame_interval_min
-        sigma_px_per_min = scale.um_to_px(cfg.velocity_sigma_um_per_min)
-        if scale.calibrated_time:
-            accel_var = sigma_px_per_min**2 * frame_min**3 / VELOCITY_SIGMA_REFERENCE_INTERVAL_MIN
-        else:
-            # No time calibration: physical defaults are read as frames
-            # (Scale's rule), so the value is the change per frame.
-            accel_var = (sigma_px_per_min * frame_min) ** 2
         initial = scale.um_to_px(cfg.effective_initial_speed_sigma_um_per_min) * frame_min
         anisotropy = scale.anisotropy
         return cls(
             ndim=int(ndim),
             anisotropy=float(anisotropy) if anisotropy else 1.0,
             z_assumed=bool(ndim == 3 and not anisotropy),
-            accel_var_px2_per_frame3=float(accel_var),
+            process_noise_px=functools.partial(replace(cfg).process_noise_px, scale),
             position_sigma_px=float(scale.um_to_px(cfg.position_sigma_um)),
             shape_position_fraction=float(cfg.shape_position_fraction),
             width_position_fraction=float(cfg.width_position_fraction),
@@ -363,16 +353,30 @@ class MotionModel:
         return self.initial_speed_px_per_frame**2 * self.motion_shape(det)
 
     # -- Kalman primitives -------------------------------------------------
+    @property
+    def accel_var_px2_per_frame3(self) -> float:
+        """White-noise-acceleration intensity ``q`` in px^2 per frame^3.
+
+        The velocity variance one frame adds (``process_noise_px(1)[2]``);
+        reported for diagnostics, never used to build Q.
+        """
+        return float(self.process_noise_px(1.0)[2])
+
     def transition(self, dt: float, det: Detection | None = None) -> tuple[np.ndarray, np.ndarray]:
-        """``(F, Q)`` for ``dt`` frames (``dt`` > 0); ``det`` matters only with body-shaped noise."""
+        """``(F, Q)`` for ``dt`` frames (``dt`` > 0); ``det`` matters only with body-shaped noise.
+
+        Q is the config's one-axis process noise on every axis (isotropic), or
+        shaped by the body when opted in: ``Q_axis (x) motion_shape(det)``.
+        """
         d = self.ndim
         F = np.eye(2 * d)
         F[:d, d:] = dt * np.eye(d)
-        qB = self.accel_var_px2_per_frame3 * self.motion_shape(det)
+        pos_var, cross, vel_var = self.process_noise_px(float(dt))
+        B = self.motion_shape(det)
         Q = np.zeros((2 * d, 2 * d))
-        Q[:d, :d] = qB * dt**3 / 3.0
-        Q[:d, d:] = Q[d:, :d] = qB * dt**2 / 2.0
-        Q[d:, d:] = qB * dt
+        Q[:d, :d] = pos_var * B
+        Q[:d, d:] = Q[d:, :d] = cross * B
+        Q[d:, d:] = vel_var * B
         return F, Q
 
     def predict(
@@ -1051,7 +1055,7 @@ def link_margins(
     j -- another detection for i, another track for j, or leaving both
     unmatched (``2 U``, the cap) -- minus the chosen cost.  Small means
     ambiguous.  It is negative when the global optimum gave track i a
-    detection another track explains more cheaply (measured: -13.5 on
+    detection another track explains more cheaply (measured: -13.0 on
     052924_1 frame 9): the link is the best *joint* answer but locally
     contested, which is what an ambiguity flag should catch, so it is
     reported as is, not clamped.
@@ -1650,9 +1654,10 @@ def closing_cost(
     one-observation track predicts with the fresh-track prior alone (71 px
     per frame of velocity spread at the KK2 calibration), so its ``d^2`` is
     small whatever happened.  Averaged in, it halved the informative side:
-    measured, a vertical cell moving 20 px/frame was joined to a fragment
-    18 px to its side (forward 23.3, backward 3.96, mean 13.7 -- under the
-    13.8 gate the forward side alone fails).  With both sides informative the
+    measured (under WP-B's earlier process noise), a vertical cell moving 20
+    px/frame was joined to a fragment 18 px to its side (forward 23.3,
+    backward 3.96, mean 13.7 -- under the 13.8 gate the forward side alone
+    fails).  With both sides informative the
     gate is on ``d2_f + d2_b`` at the ``2 * ndim`` quantile, and the motion
     term is half the sum.
     """

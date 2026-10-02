@@ -207,10 +207,27 @@ def test_sparse_manifests_show_dashes_not_none(qt_app, manifest):
 
 
 def test_v2_lanes_are_read_in_every_spelling(qt_app, v2):
+    # The format ChannelGeometry.to_dict writes: origin plus unit direction.
+    lane0 = v2.manifest["channel_geometry"]["lanes"][0]
+    assert {"origin_x", "origin_y", "direction_x", "direction_y"} <= set(lane0)
     lanes = lanes_for_manifest(v2.manifest, (64, 48))
     assert [lane.index for lane in lanes] == [0, 1]
-    assert lanes[0].centre == ((20.0, 0.0), (20.0, 48.0))
-    assert lanes[1].centre == ((44.0, 0.0), (50.0, 48.0))
+    for lane in lanes:
+        (s0, s1), (e0, e1) = syn.LANE_ENDS[lane.index]
+        assert lane.centre[0] == pytest.approx((s0, s1), abs=1e-9)
+        assert lane.centre[1] == pytest.approx((e0, e1), abs=1e-9)
+        assert lane.half_width_px == 8.0
+    # Other spellings of the same lanes read to the same lines, exactly.
+    spelled = {"channel_geometry": {"lanes": [
+        {"index": 0, "centre_line": [[20.0, 0.0], [20.0, 48.0]], "half_width_px": 8.0},
+        {"index": 1, "x0": 44.0, "y0": 0.0, "x1": 50.0, "y1": 48.0, "half_width_px": 8.0},
+    ]}}
+    other = lanes_for_manifest(spelled, (64, 48))
+    assert [lane.index for lane in other] == [0, 1]
+    assert other[0].centre == ((20.0, 0.0), (20.0, 48.0))
+    assert other[1].centre == ((44.0, 0.0), (50.0, 48.0))
+    # A lane in no readable spelling is skipped, not drawn down the left edge.
+    assert lanes_for_manifest({"channel_geometry": {"lanes": [{"index": 0}]}}, (64, 48)) == []
     screen = _screen(qt_app, v2)
     assert len(screen.canvas.lanes) == 2
     assert screen.toggle_lanes.isEnabled()

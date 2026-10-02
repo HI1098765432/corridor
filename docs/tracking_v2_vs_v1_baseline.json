@@ -21,9 +21,9 @@
     "min_observations": 2,
     "enforce_channel_identity": true,
     "position_sigma_um": 0.5,
-    "shape_position_fraction": 0.06,
+    "shape_position_fraction": 0.065,
     "width_position_fraction": 0.12,
-    "velocity_sigma_um_per_min": 0.4,
+    "velocity_sigma_um_per_min": 0.1,
     "initial_speed_sigma_um_per_min": null,
     "w_shape": 0.5,
     "w_overlap": 1.0,
@@ -33,26 +33,26 @@
   },
   "summary": {
     "baseline_tracks": 27,
-    "v2_tracks": 24,
+    "v2_tracks": 23,
     "baseline_observations": 155,
     "identity_agreement_obs_weighted": 0.929,
     "links_only_in_v1": 5,
-    "links_only_in_v2": 8,
+    "links_only_in_v2": 9,
     "v2_lane_crossings_in_wide_fields": 0,
     "v2_lane_crossings_are": "enforced, not discovered: the re-measured lanes are given to the tracker as an applied lane gate. Without the gate, see lane_changing_links_with_gate_off_in_wide_fields.",
-    "lane_changing_links_with_gate_off_in_wide_fields": 4,
+    "lane_changing_links_with_gate_off_in_wide_fields": 3,
     "control_runs": {
       "lane_gate_off": {
-        "v2_tracks": 22,
-        "identity_agreement_obs_weighted": 0.929,
-        "links_only_in_v1": 6,
+        "v2_tracks": 21,
+        "identity_agreement_obs_weighted": 0.9484,
+        "links_only_in_v1": 5,
         "links_only_in_v2": 11
       },
       "recovered_duplicates_dropped": {
-        "v2_tracks": 23,
+        "v2_tracks": 22,
         "identity_agreement_obs_weighted": 0.9933,
         "links_only_in_v1": 1,
-        "links_only_in_v2": 5
+        "links_only_in_v2": 6
       },
       "body_shaped_noise_in_lanes": {
         "v2_tracks": 25,
@@ -61,7 +61,7 @@
         "links_only_in_v2": 5
       }
     },
-    "stage2_gap_closures": 1,
+    "stage2_gap_closures": 0,
     "unreviewed_disagreements": 0,
     "stale_reviewed_explanations": 0
   },
@@ -97,71 +97,45 @@
         ]
       },
       "n_baseline_tracks": 15,
-      "n_v2_tracks": 12,
+      "n_v2_tracks": 11,
       "baseline_observations": 80,
       "identity_agreement": 0.9625,
       "links": {
         "v1": 65,
-        "v2": 68,
+        "v2": 69,
         "shared": 62,
         "only_v1": 3,
-        "only_v2": 6
+        "only_v2": 7
       },
       "lane_crossings": {
         "v2": [],
         "v1": []
       },
-      "stage2_gap_closures": [
-        {
-          "track": 9,
-          "frame": 13,
-          "det_label": 2,
-          "gap_frames": 1,
-          "in_v1": true,
-          "gated": null,
-          "total": 20.284,
-          "mahalanobis": 7.888,
-          "motion": 7.888,
-          "size": 7.066,
-          "shape": 0.338,
-          "orientation": 0.001,
-          "direction": 4.0,
-          "overlap": 0.992,
-          "gap": 0.0,
-          "iou": 0.008,
-          "overlap_withheld": false,
-          "motion_forward": 15.698,
-          "motion_backward": 0.078,
-          "motion_evidence": "forward+backward",
-          "link_margin": 9.716,
-          "link_margin_global": 9.716
-        }
-      ],
+      "stage2_gap_closures": [],
       "stale_reviewed_explanations": [],
       "v2_flags": {
         "split_suspected": 2,
         "enters_at_border": 1,
-        "merge_suspected": 1,
-        "gap_closed": 1
+        "merge_suspected": 1
       },
       "v2_link_margin_chi2": {
         "definition": "contract: next-best for the track or the detection, capped at 2U, minus the chosen cost; negative = locally contested",
-        "n": 68,
-        "min": -13.738,
+        "n": 69,
+        "min": -12.952,
         "n_negative": 3,
-        "median": 27.17
+        "median": 27.568
       },
       "v2_link_margin_global_chi2": {
         "definition": "increase of the frame's optimal total if the link is forbidden",
-        "n": 68,
-        "min": 0.528,
-        "median": 27.17
+        "n": 69,
+        "min": 0.371,
+        "median": 27.568
       },
       "control_runs": {
         "lane_gate_off": {
-          "n_v2_tracks": 11,
+          "n_v2_tracks": 10,
           "baseline_observations_present": 80,
-          "identity_agreement": 0.9125,
+          "identity_agreement": 0.95,
           "links_only_v1": [
             [
               [
@@ -202,16 +176,6 @@
                 10,
                 1
               ]
-            ],
-            [
-              [
-                12,
-                2
-              ],
-              [
-                13,
-                2
-              ]
             ]
           ],
           "links_only_v2": [
@@ -228,6 +192,16 @@
             [
               [
                 8,
+                2
+              ],
+              [
+                9,
+                4
+              ]
+            ],
+            [
+              [
+                8,
                 5
               ],
               [
@@ -263,16 +237,6 @@
               [
                 10,
                 6
-              ]
-            ],
-            [
-              [
-                12,
-                2
-              ],
-              [
-                15,
-                1
               ]
             ],
             [
@@ -320,16 +284,6 @@
               ],
               [
                 [
-                  12,
-                  2
-                ],
-                [
-                  15,
-                  1
-                ]
-              ],
-              [
-                [
                   15,
                   1
                 ],
@@ -348,16 +302,6 @@
                 [
                   8,
                   6
-                ]
-              ],
-              [
-                [
-                  12,
-                  2
-                ],
-                [
-                  13,
-                  2
                 ]
               ]
             ]
@@ -384,9 +328,9 @@
               "dy_px": 185.6,
               "cost": {
                 "gated": null,
-                "total": 15.341,
-                "mahalanobis": 4.741,
-                "motion": 4.741,
+                "total": 15.297,
+                "mahalanobis": 4.697,
+                "motion": 4.697,
                 "size": 8.101,
                 "shape": 1.497,
                 "orientation": 0.001,
@@ -396,45 +340,10 @@
                 "iou": 0.0,
                 "overlap_withheld": true
               },
-              "link_margin": 0.379
+              "link_margin": 0.422
             },
             {
-              "track": 9,
-              "link": [
-                [
-                  12,
-                  2
-                ],
-                [
-                  15,
-                  1
-                ]
-              ],
-              "lanes": [
-                3,
-                1
-              ],
-              "gap_frames": 3,
-              "dx_px": -160.9,
-              "dy_px": -12.0,
-              "cost": {
-                "gated": null,
-                "total": 18.951,
-                "mahalanobis": 12.186,
-                "motion": 12.186,
-                "size": 1.84,
-                "shape": 0.068,
-                "orientation": 0.0,
-                "direction": 1.857,
-                "overlap": 1.0,
-                "gap": 2.0,
-                "iou": 0.0,
-                "overlap_withheld": false
-              },
-              "link_margin": 4.813
-            },
-            {
-              "track": 9,
+              "track": 10,
               "link": [
                 [
                   15,
@@ -454,19 +363,19 @@
               "dy_px": 25.4,
               "cost": {
                 "gated": null,
-                "total": 15.655,
-                "mahalanobis": 3.619,
-                "motion": 3.619,
+                "total": 12.193,
+                "mahalanobis": 0.176,
+                "motion": 0.176,
                 "size": 8.099,
                 "shape": 0.918,
                 "orientation": 0.0,
-                "direction": 0.019,
+                "direction": 0.0,
                 "overlap": 1.0,
                 "gap": 2.0,
                 "iou": 0.0,
                 "overlap_withheld": false
               },
-              "link_margin": 14.345
+              "link_margin": -0.82
             }
           ]
         },
@@ -481,7 +390,7 @@
               "to_nearest_primary_px": 4.5
             }
           ],
-          "n_v2_tracks": 12,
+          "n_v2_tracks": 11,
           "baseline_observations_present": 79,
           "identity_agreement": 0.9873,
           "links_only_v1": [
@@ -497,6 +406,16 @@
             ]
           ],
           "links_only_v2": [
+            [
+              [
+                8,
+                2
+              ],
+              [
+                9,
+                4
+              ]
+            ],
             [
               [
                 8,
@@ -661,6 +580,16 @@
               [
                 [
                   8,
+                  2
+                ],
+                [
+                  9,
+                  4
+                ]
+              ],
+              [
+                [
+                  8,
                   5
                 ],
                 [
@@ -730,7 +659,7 @@
           "agreement": 0.8571,
           "v2_tracks_holding_it": {
             "2": 6,
-            "9": 1
+            "8": 1
           }
         },
         {
@@ -833,10 +762,10 @@
             10
           ],
           "n_obs": 2,
-          "majority_v2_track": 8,
+          "majority_v2_track": 1,
           "agreement": 1.0,
           "v2_tracks_holding_it": {
-            "8": 2
+            "1": 2
           }
         },
         {
@@ -867,10 +796,10 @@
             14
           ],
           "n_obs": 5,
-          "majority_v2_track": 10,
+          "majority_v2_track": 9,
           "agreement": 1.0,
           "v2_tracks_holding_it": {
-            "10": 5
+            "9": 5
           }
         },
         {
@@ -884,10 +813,10 @@
             15
           ],
           "n_obs": 6,
-          "majority_v2_track": 9,
+          "majority_v2_track": 8,
           "agreement": 1.0,
           "v2_tracks_holding_it": {
-            "9": 6
+            "8": 6
           }
         },
         {
@@ -896,10 +825,10 @@
             15
           ],
           "n_obs": 1,
-          "majority_v2_track": 11,
+          "majority_v2_track": 10,
           "agreement": 1.0,
           "v2_tracks_holding_it": {
-            "11": 1
+            "10": 1
           }
         },
         {
@@ -923,10 +852,10 @@
             19
           ],
           "n_obs": 4,
-          "majority_v2_track": 9,
+          "majority_v2_track": 8,
           "agreement": 1.0,
           "v2_tracks_holding_it": {
-            "9": 4
+            "8": 4
           }
         },
         {
@@ -936,10 +865,10 @@
             19
           ],
           "n_obs": 2,
-          "majority_v2_track": 12,
+          "majority_v2_track": 11,
           "agreement": 1.0,
           "v2_tracks_holding_it": {
-            "12": 2
+            "11": 2
           }
         }
       ],
@@ -955,10 +884,13 @@
             5,
             6,
             7,
-            8
+            8,
+            9,
+            10
           ],
           "baseline_tracks_in_it": {
-            "1": 9
+            "1": 9,
+            "8": 2
           },
           "flags": [],
           "lanes": [
@@ -1101,20 +1033,6 @@
           "v2_track": 8,
           "frames": [
             9,
-            10
-          ],
-          "baseline_tracks_in_it": {
-            "8": 2
-          },
-          "flags": [],
-          "lanes": [
-            5
-          ]
-        },
-        {
-          "v2_track": 9,
-          "frames": [
-            9,
             10,
             11,
             12,
@@ -1131,15 +1049,13 @@
             "11": 6,
             "14": 4
           },
-          "flags": [
-            "gap_closed"
-          ],
+          "flags": [],
           "lanes": [
             3
           ]
         },
         {
-          "v2_track": 10,
+          "v2_track": 9,
           "frames": [
             10,
             11,
@@ -1156,7 +1072,7 @@
           ]
         },
         {
-          "v2_track": 11,
+          "v2_track": 10,
           "frames": [
             15
           ],
@@ -1171,7 +1087,7 @@
           ]
         },
         {
-          "v2_track": 12,
+          "v2_track": 11,
           "frames": [
             18,
             19
@@ -1201,12 +1117,12 @@
           "baseline_track": 2,
           "v2_tracks": [
             2,
-            9
+            8
           ],
           "v2_cost_of_the_v1_link": {
             "gated": "motion_outlier",
             "total": null,
-            "mahalanobis": 23.792
+            "mahalanobis": 19.481
           },
           "v2_instead": "track start",
           "lanes": [
@@ -1223,7 +1139,7 @@
             null,
             147.2
           ],
-          "explanation": "Lane 3. v1 track 2 was moving down the lane (y 207 -> 247, +40 px/frame); (9,5) is an intensity-tier recovered detection 50.6 px back up the lane at half the area. v2 refuses it as a motion outlier (d2 23.8 > 13.8: a 90 px/frame reversal against the prediction) and instead starts a track at (9,5) that continues (10,6), (11,5), (12,2) on a steady ~-50 px/frame trajectory. v1's reading makes the cell reverse and then become another cell one frame later; v2's is kinematically coherent."
+          "explanation": "Lane 3. v1 track 2 was moving down the lane (y 207 -> 247, +40 px/frame); (9,5) is an intensity-tier recovered detection 50.6 px back up the lane at half the area. v2 refuses it as a motion outlier (d2 19.5 > 13.8: a 90 px/frame reversal against the prediction) and instead starts a track at (9,5) that continues (10,6), (11,5), (12,2) on a steady ~-50 px/frame trajectory. v1's reading makes the cell reverse and then become another cell one frame later; v2's is kinematically coherent."
         },
         {
           "kind": "v1_link_not_in_v2",
@@ -1244,9 +1160,9 @@
           ],
           "v2_cost_of_the_v1_link": {
             "gated": null,
-            "total": 2.636,
-            "mahalanobis": 0.724,
-            "motion": 0.724,
+            "total": 2.499,
+            "mahalanobis": 0.587,
+            "motion": 0.587,
             "size": 0.064,
             "shape": 1.828,
             "orientation": 0.0,
@@ -1261,9 +1177,9 @@
               8,
               5
             ],
-            "cost": 16.374,
-            "link_margin": -13.738,
-            "link_margin_global": 0.528
+            "cost": 15.452,
+            "link_margin": -12.952,
+            "link_margin_global": 0.371
           },
           "lanes": [
             1,
@@ -1279,7 +1195,7 @@
             114.0,
             null
           ],
-          "explanation": "Lane 1, frames 8-10. At frame 9 the cell is detected twice: primary (9,1) and a windowed-tier recovery (9,6) 4.5 px from it. Two tracks arrive: one nearly stationary at y 84-86 on intensity-tier detections (7,6), (8,5), and one moving up the lane at about -83 px/frame (y 215.7 -> 132.9), predicted near y 50. With two copies of one cell, both tracks can be kept alive and the only question is which copy goes where: v2 gives the primary to the stationary track (cost 16.4) and the copy to the fast one (2.8). Forbidding that raises the frame's optimum by only 0.53 (link_margin_global): a near-tie. The primary's own cheapest track is the fast one (2.6), so its contract link_margin is -13.7: the link is flagged as locally contested, which is what an ambiguity flag should see. v1 gave the primary to the fast track and started a new track on the copy, which then continued as (10,1). Control run recovered_duplicates_dropped: with (9,6) removed, v2 gives (9,1) to the fast track exactly as v1 did, and every v1 link of this scene that survives the removal is a v2 link. A recovery artefact."
+          "explanation": "Lane 1, frames 8-10. At frame 9 the cell is detected twice: primary (9,1) and a windowed-tier recovery (9,6) 4.5 px from it. Two tracks arrive: one nearly stationary at y 84-86 on intensity-tier detections (7,6), (8,5), and one moving up the lane at about -83 px/frame (y 215.7 -> 132.9), predicted near y 50. With two copies of one cell, both tracks can be kept alive and the only question is which copy goes where: v2 gives the primary to the stationary track (cost 15.5) and the copy to the fast one (2.7). Forbidding that raises the frame's optimum by only 0.37 (link_margin_global): a near-tie. The primary's own cheapest track is the fast one (2.5), so its contract link_margin is -13.0: the link is flagged as locally contested, which is what an ambiguity flag should see. v1 gave the primary to the fast track and started a new track on the copy, which then continued as (10,1). Control run recovered_duplicates_dropped: with (9,6) removed, v2 gives (9,1) to the fast track exactly as v1 did, and every v1 link of this scene that survives the removal is a v2 link. A recovery artefact."
         },
         {
           "kind": "v1_link_not_in_v2",
@@ -1300,7 +1216,7 @@
           ],
           "v2_cost_of_the_v1_link": {
             "gated": null,
-            "total": 8.439,
+            "total": 8.438,
             "mahalanobis": 0.055,
             "motion": 0.055,
             "size": 8.352,
@@ -1317,9 +1233,9 @@
               9,
               1
             ],
-            "cost": 15.733,
-            "link_margin": 14.267,
-            "link_margin_global": 14.267
+            "cost": 14.753,
+            "link_margin": 15.247,
+            "link_margin_global": 15.247
           },
           "lanes": [
             1,
@@ -1335,7 +1251,62 @@
             4.5,
             null
           ],
-          "explanation": "Lane 1, frames 8-10. At frame 9 the cell is detected twice: primary (9,1) and a windowed-tier recovery (9,6) 4.5 px from it. Two tracks arrive: one nearly stationary at y 84-86 on intensity-tier detections (7,6), (8,5), and one moving up the lane at about -83 px/frame (y 215.7 -> 132.9), predicted near y 50. With two copies of one cell, both tracks can be kept alive and the only question is which copy goes where: v2 gives the primary to the stationary track (cost 16.4) and the copy to the fast one (2.8). Forbidding that raises the frame's optimum by only 0.53 (link_margin_global): a near-tie. The primary's own cheapest track is the fast one (2.6), so its contract link_margin is -13.7: the link is flagged as locally contested, which is what an ambiguity flag should see. v1 gave the primary to the fast track and started a new track on the copy, which then continued as (10,1). Control run recovered_duplicates_dropped: with (9,6) removed, v2 gives (9,1) to the fast track exactly as v1 did, and every v1 link of this scene that survives the removal is a v2 link. A recovery artefact."
+          "explanation": "Lane 1, frames 8-10. At frame 9 the cell is detected twice: primary (9,1) and a windowed-tier recovery (9,6) 4.5 px from it. Two tracks arrive: one nearly stationary at y 84-86 on intensity-tier detections (7,6), (8,5), and one moving up the lane at about -83 px/frame (y 215.7 -> 132.9), predicted near y 50. With two copies of one cell, both tracks can be kept alive and the only question is which copy goes where: v2 gives the primary to the stationary track (cost 15.5) and the copy to the fast one (2.7). Forbidding that raises the frame's optimum by only 0.37 (link_margin_global): a near-tie. The primary's own cheapest track is the fast one (2.5), so its contract link_margin is -13.0: the link is flagged as locally contested, which is what an ambiguity flag should see. v1 gave the primary to the fast track and started a new track on the copy, which then continued as (10,1). Control run recovered_duplicates_dropped: with (9,6) removed, v2 gives (9,1) to the fast track exactly as v1 did, and every v1 link of this scene that survives the removal is a v2 link. A recovery artefact."
+        },
+        {
+          "kind": "v2_link_not_in_v1",
+          "link": [
+            [
+              8,
+              2
+            ],
+            [
+              9,
+              4
+            ]
+          ],
+          "v2_track": 1,
+          "baseline_tracks": [
+            1,
+            8
+          ],
+          "v2_cost": {
+            "gated": null,
+            "total": 15.223,
+            "mahalanobis": 12.48,
+            "motion": 12.48,
+            "size": 1.038,
+            "shape": 0.659,
+            "orientation": 0.0,
+            "direction": 0.046,
+            "overlap": 1.0,
+            "gap": 0.0,
+            "iou": 0.0,
+            "overlap_withheld": false
+          },
+          "v2_link_margin": 14.777,
+          "v2_link_margin_global": 14.777,
+          "closed_by_stage_2": false,
+          "v1_reason": {
+            "refused_because": "above_cost_gate",
+            "explanation": "Track 1 ended at frame 8, 1 frames earlier and 101 px away (2.37 um/min if joined). Not joined because the overall fit was too poor."
+          },
+          "lanes": [
+            5,
+            5
+          ],
+          "step_px": 101.4,
+          "area_ratio": 0.737,
+          "gap_frames": 1,
+          "sources": [
+            "primary",
+            "primary"
+          ],
+          "recovered_detection_to_nearest_primary_px": [
+            null,
+            null
+          ],
+          "explanation": "Lane 5, which holds this one cell and no other detection in any frame (one per frame in 0-10, none after). v1 ended track 1 at (8,2) and started track 8 at (9,4), 101 px further down the same lane one frame later (above_cost_gate); v2 links the two (cost 15.2: motion 12.5 under the 13.8 gate, size 1.0, shape 0.7, overlap 1.0), margin 14.8 against leaving both unmatched -- nothing else competes in the lane. The cell is 135 px (63 um) long at frame 8 and 96 px at frame 9 (area ratio 0.74): its rear retracted, which moves a centroid further than the front moved (mask bounding box down the lane: front 235 -> 309 px, rear 100 -> 222; the two boxes still share 13 px). The centroid speed, 2.37 um/min, is under the 5.0 um/min physical gate but above the fastest v1-linked step (1.98). Under WP-B's smaller process noise (q = 0.008 um^2/min^3) the motion d2 was 15.2 and v2 refused it as v1 did; at the contract's q = 0.01 it passes. One cell in a lane continuing is the coherent reading, but a tail retraction and a different cell entering are not decidable from the detections alone."
         },
         {
           "kind": "v2_link_not_in_v1",
@@ -1356,20 +1327,20 @@
           ],
           "v2_cost": {
             "gated": null,
-            "total": 16.374,
-            "mahalanobis": 4.78,
-            "motion": 4.78,
+            "total": 15.452,
+            "mahalanobis": 3.881,
+            "motion": 3.881,
             "size": 0.266,
             "shape": 7.517,
             "orientation": 0.0,
-            "direction": 3.811,
+            "direction": 3.788,
             "overlap": 0.0,
             "gap": 0.0,
             "iou": null,
             "overlap_withheld": false
           },
-          "v2_link_margin": -13.738,
-          "v2_link_margin_global": 0.528,
+          "v2_link_margin": -12.952,
+          "v2_link_margin_global": 0.371,
           "closed_by_stage_2": false,
           "v1_reason": null,
           "lanes": [
@@ -1387,7 +1358,7 @@
             150.4,
             null
           ],
-          "explanation": "Lane 1, frames 8-10. At frame 9 the cell is detected twice: primary (9,1) and a windowed-tier recovery (9,6) 4.5 px from it. Two tracks arrive: one nearly stationary at y 84-86 on intensity-tier detections (7,6), (8,5), and one moving up the lane at about -83 px/frame (y 215.7 -> 132.9), predicted near y 50. With two copies of one cell, both tracks can be kept alive and the only question is which copy goes where: v2 gives the primary to the stationary track (cost 16.4) and the copy to the fast one (2.8). Forbidding that raises the frame's optimum by only 0.53 (link_margin_global): a near-tie. The primary's own cheapest track is the fast one (2.6), so its contract link_margin is -13.7: the link is flagged as locally contested, which is what an ambiguity flag should see. v1 gave the primary to the fast track and started a new track on the copy, which then continued as (10,1). Control run recovered_duplicates_dropped: with (9,6) removed, v2 gives (9,1) to the fast track exactly as v1 did, and every v1 link of this scene that survives the removal is a v2 link. A recovery artefact."
+          "explanation": "Lane 1, frames 8-10. At frame 9 the cell is detected twice: primary (9,1) and a windowed-tier recovery (9,6) 4.5 px from it. Two tracks arrive: one nearly stationary at y 84-86 on intensity-tier detections (7,6), (8,5), and one moving up the lane at about -83 px/frame (y 215.7 -> 132.9), predicted near y 50. With two copies of one cell, both tracks can be kept alive and the only question is which copy goes where: v2 gives the primary to the stationary track (cost 15.5) and the copy to the fast one (2.7). Forbidding that raises the frame's optimum by only 0.37 (link_margin_global): a near-tie. The primary's own cheapest track is the fast one (2.5), so its contract link_margin is -13.0: the link is flagged as locally contested, which is what an ambiguity flag should see. v1 gave the primary to the fast track and started a new track on the copy, which then continued as (10,1). Control run recovered_duplicates_dropped: with (9,6) removed, v2 gives (9,1) to the fast track exactly as v1 did, and every v1 link of this scene that survives the removal is a v2 link. A recovery artefact."
         },
         {
           "kind": "v2_link_not_in_v1",
@@ -1408,9 +1379,9 @@
           ],
           "v2_cost": {
             "gated": null,
-            "total": 2.83,
-            "mahalanobis": 0.856,
-            "motion": 0.856,
+            "total": 2.671,
+            "mahalanobis": 0.697,
+            "motion": 0.697,
             "size": 0.217,
             "shape": 1.736,
             "orientation": 0.0,
@@ -1420,8 +1391,8 @@
             "iou": null,
             "overlap_withheld": false
           },
-          "v2_link_margin": -0.194,
-          "v2_link_margin_global": 0.528,
+          "v2_link_margin": -0.171,
+          "v2_link_margin_global": 0.371,
           "closed_by_stage_2": false,
           "v1_reason": {
             "refused_because": "different_channel",
@@ -1442,7 +1413,7 @@
             114.0,
             4.5
           ],
-          "explanation": "Lane 1, frames 8-10. At frame 9 the cell is detected twice: primary (9,1) and a windowed-tier recovery (9,6) 4.5 px from it. Two tracks arrive: one nearly stationary at y 84-86 on intensity-tier detections (7,6), (8,5), and one moving up the lane at about -83 px/frame (y 215.7 -> 132.9), predicted near y 50. With two copies of one cell, both tracks can be kept alive and the only question is which copy goes where: v2 gives the primary to the stationary track (cost 16.4) and the copy to the fast one (2.8). Forbidding that raises the frame's optimum by only 0.53 (link_margin_global): a near-tie. The primary's own cheapest track is the fast one (2.6), so its contract link_margin is -13.7: the link is flagged as locally contested, which is what an ambiguity flag should see. v1 gave the primary to the fast track and started a new track on the copy, which then continued as (10,1). Control run recovered_duplicates_dropped: with (9,6) removed, v2 gives (9,1) to the fast track exactly as v1 did, and every v1 link of this scene that survives the removal is a v2 link. A recovery artefact."
+          "explanation": "Lane 1, frames 8-10. At frame 9 the cell is detected twice: primary (9,1) and a windowed-tier recovery (9,6) 4.5 px from it. Two tracks arrive: one nearly stationary at y 84-86 on intensity-tier detections (7,6), (8,5), and one moving up the lane at about -83 px/frame (y 215.7 -> 132.9), predicted near y 50. With two copies of one cell, both tracks can be kept alive and the only question is which copy goes where: v2 gives the primary to the stationary track (cost 15.5) and the copy to the fast one (2.7). Forbidding that raises the frame's optimum by only 0.37 (link_margin_global): a near-tie. The primary's own cheapest track is the fast one (2.5), so its contract link_margin is -13.0: the link is flagged as locally contested, which is what an ambiguity flag should see. v1 gave the primary to the fast track and started a new track on the copy, which then continued as (10,1). Control run recovered_duplicates_dropped: with (9,6) removed, v2 gives (9,1) to the fast track exactly as v1 did, and every v1 link of this scene that survives the removal is a v2 link. A recovery artefact."
         },
         {
           "kind": "v2_link_not_in_v1",
@@ -1463,20 +1434,20 @@
           ],
           "v2_cost": {
             "gated": null,
-            "total": 15.733,
-            "mahalanobis": 6.084,
-            "motion": 6.084,
+            "total": 14.753,
+            "mahalanobis": 5.103,
+            "motion": 5.103,
             "size": 4.717,
             "shape": 0.038,
             "orientation": 0.0,
-            "direction": 3.894,
+            "direction": 3.895,
             "overlap": 1.0,
             "gap": 0.0,
             "iou": 0.0,
             "overlap_withheld": false
           },
-          "v2_link_margin": 14.267,
-          "v2_link_margin_global": 14.267,
+          "v2_link_margin": 15.247,
+          "v2_link_margin_global": 15.247,
           "closed_by_stage_2": false,
           "v1_reason": null,
           "lanes": [
@@ -1494,7 +1465,7 @@
             null,
             null
           ],
-          "explanation": "Lane 1, frames 8-10. At frame 9 the cell is detected twice: primary (9,1) and a windowed-tier recovery (9,6) 4.5 px from it. Two tracks arrive: one nearly stationary at y 84-86 on intensity-tier detections (7,6), (8,5), and one moving up the lane at about -83 px/frame (y 215.7 -> 132.9), predicted near y 50. With two copies of one cell, both tracks can be kept alive and the only question is which copy goes where: v2 gives the primary to the stationary track (cost 16.4) and the copy to the fast one (2.8). Forbidding that raises the frame's optimum by only 0.53 (link_margin_global): a near-tie. The primary's own cheapest track is the fast one (2.6), so its contract link_margin is -13.7: the link is flagged as locally contested, which is what an ambiguity flag should see. v1 gave the primary to the fast track and started a new track on the copy, which then continued as (10,1). Control run recovered_duplicates_dropped: with (9,6) removed, v2 gives (9,1) to the fast track exactly as v1 did, and every v1 link of this scene that survives the removal is a v2 link. A recovery artefact."
+          "explanation": "Lane 1, frames 8-10. At frame 9 the cell is detected twice: primary (9,1) and a windowed-tier recovery (9,6) 4.5 px from it. Two tracks arrive: one nearly stationary at y 84-86 on intensity-tier detections (7,6), (8,5), and one moving up the lane at about -83 px/frame (y 215.7 -> 132.9), predicted near y 50. With two copies of one cell, both tracks can be kept alive and the only question is which copy goes where: v2 gives the primary to the stationary track (cost 15.5) and the copy to the fast one (2.7). Forbidding that raises the frame's optimum by only 0.37 (link_margin_global): a near-tie. The primary's own cheapest track is the fast one (2.5), so its contract link_margin is -13.0: the link is flagged as locally contested, which is what an ambiguity flag should see. v1 gave the primary to the fast track and started a new track on the copy, which then continued as (10,1). Control run recovered_duplicates_dropped: with (9,6) removed, v2 gives (9,1) to the fast track exactly as v1 did, and every v1 link of this scene that survives the removal is a v2 link. A recovery artefact."
         },
         {
           "kind": "v2_link_not_in_v1",
@@ -1508,16 +1479,16 @@
               6
             ]
           ],
-          "v2_track": 9,
+          "v2_track": 8,
           "baseline_tracks": [
             2,
             11
           ],
           "v2_cost": {
             "gated": null,
-            "total": 0.506,
-            "mahalanobis": 0.425,
-            "motion": 0.425,
+            "total": 0.503,
+            "mahalanobis": 0.422,
+            "motion": 0.422,
             "size": 0.001,
             "shape": 0.081,
             "orientation": 0.0,
@@ -1527,8 +1498,8 @@
             "iou": null,
             "overlap_withheld": false
           },
-          "v2_link_margin": 29.494,
-          "v2_link_margin_global": 29.494,
+          "v2_link_margin": 29.497,
+          "v2_link_margin_global": 29.497,
           "closed_by_stage_2": false,
           "v1_reason": {
             "refused_because": "above_cost_gate",
@@ -1549,7 +1520,7 @@
             147.2,
             110.2
           ],
-          "explanation": "Lane 3, the same scene: the second step of the steady upward trajectory (47 px, area ratio 1.01, cost 0.51). v1 had already given (9,5) to track 2 and refused this link (above_cost_gate)."
+          "explanation": "Lane 3, the same scene: the second step of the steady upward trajectory (47 px, area ratio 1.01, cost 0.50). v1 had already given (9,5) to track 2 and refused this link (above_cost_gate)."
         },
         {
           "kind": "v2_link_not_in_v1",
@@ -1570,20 +1541,20 @@
           ],
           "v2_cost": {
             "gated": null,
-            "total": 15.019,
-            "mahalanobis": 10.453,
-            "motion": 10.453,
+            "total": 13.105,
+            "mahalanobis": 8.546,
+            "motion": 8.546,
             "size": 3.629,
             "shape": 0.077,
             "orientation": 0.0,
             "direction": 0.002,
-            "overlap": 0.857,
+            "overlap": 0.85,
             "gap": 0.0,
-            "iou": 0.143,
+            "iou": 0.15,
             "overlap_withheld": false
           },
-          "v2_link_margin": 14.981,
-          "v2_link_margin_global": 14.981,
+          "v2_link_margin": 16.895,
+          "v2_link_margin_global": 16.895,
           "closed_by_stage_2": false,
           "v1_reason": {
             "refused_because": "above_cost_gate",
@@ -1604,7 +1575,7 @@
             null,
             null
           ],
-          "explanation": "Lane 1. At frame 15 the cell (122 px long at y 61 in frame 14) appears as two pieces, 221 px at y 34 and 454 px at y 131. v2 continues the track with the larger piece (cost 15.0: motion 10.5, size 3.6, overlap 0.86) and flags split_suspected on both tracks; v1 refused both continuations (above_cost_gate). Neither piece is seen after frame 15, so this is one observation either way; which reading is right is not decidable from the detections."
+          "explanation": "Lane 1. At frame 15 the cell (122 px long at y 61 in frame 14) appears as two pieces, 221 px at y 34 and 454 px at y 131. v2 continues the track with the larger piece (cost 13.1: motion 8.5, size 3.6, overlap 0.85) and flags split_suspected on both tracks; v1 refused both continuations (above_cost_gate). Neither piece is seen after frame 15, so this is one observation either way; which reading is right is not decidable from the detections."
         },
         {
           "kind": "v2_link_not_in_v1",
@@ -1618,16 +1589,16 @@
               2
             ]
           ],
-          "v2_track": 9,
+          "v2_track": 8,
           "baseline_tracks": [
             11,
             14
           ],
           "v2_cost": {
             "gated": null,
-            "total": 1.807,
-            "mahalanobis": 0.719,
-            "motion": 0.719,
+            "total": 1.596,
+            "mahalanobis": 0.508,
+            "motion": 0.508,
             "size": 0.006,
             "shape": 0.027,
             "orientation": 0.0,
@@ -1637,8 +1608,8 @@
             "iou": 0.0,
             "overlap_withheld": false
           },
-          "v2_link_margin": 26.167,
-          "v2_link_margin_global": 26.167,
+          "v2_link_margin": 28.404,
+          "v2_link_margin_global": 28.404,
           "closed_by_stage_2": false,
           "v1_reason": {
             "refused_because": "above_cost_gate",
@@ -1659,7 +1630,7 @@
             null,
             null
           ],
-          "explanation": "Lane 3. The cell is accelerating down the lane (y 46, 67, 89, 127: +21, +22, +38 px/frame); the next step is +42 px at area ratio 0.98. v2 links it (motion d2 0.72, cost 1.81, margin 26.2); v1 refused it (above_cost_gate) and started a new track at frame 16."
+          "explanation": "Lane 3. The cell is accelerating down the lane (y 46, 67, 89, 127: +21, +22, +38 px/frame); the next step is +42 px at area ratio 0.98. v2 links it (motion d2 0.51, cost 1.60, margin 28.4); v1 refused it (above_cost_gate) and started a new track at frame 16."
         }
       ]
     },
@@ -1715,15 +1686,15 @@
       "v2_link_margin_chi2": {
         "definition": "contract: next-best for the track or the detection, capped at 2U, minus the chosen cost; negative = locally contested",
         "n": 45,
-        "min": -6.977,
+        "min": -5.889,
         "n_negative": 1,
-        "median": 24.227
+        "median": 24.374
       },
       "v2_link_margin_global_chi2": {
         "definition": "increase of the frame's optimal total if the link is forbidden",
         "n": 45,
-        "min": 0.96,
-        "median": 24.227
+        "min": 1.015,
+        "median": 24.374
       },
       "control_runs": {
         "lane_gate_off": {
@@ -1822,19 +1793,19 @@
               "dy_px": -33.7,
               "cost": {
                 "gated": null,
-                "total": 16.979,
-                "mahalanobis": 11.948,
-                "motion": 11.948,
+                "total": 14.6,
+                "mahalanobis": 9.573,
+                "motion": 9.573,
                 "size": 0.664,
                 "shape": 0.016,
                 "orientation": 0.0,
-                "direction": 2.351,
+                "direction": 2.347,
                 "overlap": 0.0,
                 "gap": 2.0,
                 "iou": 0.0,
                 "overlap_withheld": true
               },
-              "link_margin": -8.926
+              "link_margin": -7.824
             }
           ]
         },
@@ -2256,13 +2227,13 @@
           ],
           "v2_cost_of_the_v1_link": {
             "gated": null,
-            "total": 9.041,
-            "mahalanobis": 3.407,
-            "motion": 3.407,
+            "total": 8.487,
+            "mahalanobis": 2.85,
+            "motion": 2.85,
             "size": 4.217,
             "shape": 1.41,
             "orientation": 0.0,
-            "direction": 0.006,
+            "direction": 0.009,
             "overlap": 0.0,
             "gap": 0.0,
             "iou": null,
@@ -2283,7 +2254,7 @@
             null,
             20.7
           ],
-          "explanation": "Lane 4, frames 11-14: v1's recovery (windowed tier) added a detection at each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same cell -- the cell detected twice. Both trackers therefore carry two tracks along one cell for those frames, and differ only in which track gets which copy. At frame 11 v2 gives the track the primary (11,2) at cost 8.05 rather than the copy (11,3) at 9.04 (local margin 0.99: a near-tie). The overlap term is withheld from that competition because the copy has no mask (the primary's IoU 0.21 would otherwise have cost it 0.79 that the copy was spared). Control run recovered_duplicates_dropped: every v1 link that survives the removal is also a v2 link, and v2's only extra link is the primary at frame 11 that v1 gave to the copy's track. A recovery artefact, not a tracking disagreement."
+          "explanation": "Lane 4, frames 11-14: v1's recovery (windowed tier) added a detection at each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same cell -- the cell detected twice. Both trackers therefore carry two tracks along one cell for those frames, and differ only in which track gets which copy. At frame 11 v2 gives the track the primary (11,2) at cost 6.78 rather than the copy (11,3) at 8.49 (local margin 1.71: a near-tie). The overlap term is withheld from that competition because the copy has no mask (the primary's IoU 0.21 would otherwise have cost it 0.79 that the copy was spared). Control run recovered_duplicates_dropped: every v1 link that survives the removal is also a v2 link, and v2's only extra link is the primary at frame 11 that v1 gave to the copy's track. A recovery artefact, not a tracking disagreement."
         },
         {
           "kind": "v1_link_not_in_v2",
@@ -2304,13 +2275,13 @@
           ],
           "v2_cost_of_the_v1_link": {
             "gated": null,
-            "total": 5.643,
-            "mahalanobis": 1.413,
-            "motion": 1.413,
+            "total": 5.421,
+            "mahalanobis": 1.192,
+            "motion": 1.192,
             "size": 0.367,
             "shape": 0.008,
             "orientation": 0.0,
-            "direction": 2.878,
+            "direction": 2.877,
             "overlap": 0.977,
             "gap": 0.0,
             "iou": 0.023,
@@ -2321,9 +2292,9 @@
               14,
               4
             ],
-            "cost": 2.888,
-            "link_margin": 1.838,
-            "link_margin_global": 1.838
+            "cost": 2.821,
+            "link_margin": 1.667,
+            "link_margin_global": 1.667
           },
           "lanes": [
             4,
@@ -2339,7 +2310,7 @@
             null,
             null
           ],
-          "explanation": "Lane 4, frames 11-14: v1's recovery (windowed tier) added a detection at each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same cell -- the cell detected twice. Both trackers therefore carry two tracks along one cell for those frames, and differ only in which track gets which copy. At frame 11 v2 gives the track the primary (11,2) at cost 8.05 rather than the copy (11,3) at 9.04 (local margin 0.99: a near-tie). The overlap term is withheld from that competition because the copy has no mask (the primary's IoU 0.21 would otherwise have cost it 0.79 that the copy was spared). Control run recovered_duplicates_dropped: every v1 link that survives the removal is also a v2 link, and v2's only extra link is the primary at frame 11 that v1 gave to the copy's track. A recovery artefact, not a tracking disagreement."
+          "explanation": "Lane 4, frames 11-14: v1's recovery (windowed tier) added a detection at each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same cell -- the cell detected twice. Both trackers therefore carry two tracks along one cell for those frames, and differ only in which track gets which copy. At frame 11 v2 gives the track the primary (11,2) at cost 6.78 rather than the copy (11,3) at 8.49 (local margin 1.71: a near-tie). The overlap term is withheld from that competition because the copy has no mask (the primary's IoU 0.21 would otherwise have cost it 0.79 that the copy was spared). Control run recovered_duplicates_dropped: every v1 link that survives the removal is also a v2 link, and v2's only extra link is the primary at frame 11 that v1 gave to the copy's track. A recovery artefact, not a tracking disagreement."
         },
         {
           "kind": "v2_link_not_in_v1",
@@ -2360,20 +2331,20 @@
           ],
           "v2_cost": {
             "gated": null,
-            "total": 8.053,
-            "mahalanobis": 7.687,
-            "motion": 7.687,
+            "total": 6.776,
+            "mahalanobis": 6.406,
+            "motion": 6.406,
             "size": 0.349,
             "shape": 0.009,
             "orientation": 0.0,
-            "direction": 0.008,
+            "direction": 0.011,
             "overlap": 0.0,
             "gap": 0.0,
             "iou": 0.212,
             "overlap_withheld": true
           },
-          "v2_link_margin": 0.987,
-          "v2_link_margin_global": 0.987,
+          "v2_link_margin": 1.711,
+          "v2_link_margin_global": 1.711,
           "closed_by_stage_2": false,
           "v1_reason": {
             "refused_because": "different_channel",
@@ -2394,7 +2365,7 @@
             null,
             null
           ],
-          "explanation": "Lane 4, frames 11-14: v1's recovery (windowed tier) added a detection at each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same cell -- the cell detected twice. Both trackers therefore carry two tracks along one cell for those frames, and differ only in which track gets which copy. At frame 11 v2 gives the track the primary (11,2) at cost 8.05 rather than the copy (11,3) at 9.04 (local margin 0.99: a near-tie). The overlap term is withheld from that competition because the copy has no mask (the primary's IoU 0.21 would otherwise have cost it 0.79 that the copy was spared). Control run recovered_duplicates_dropped: every v1 link that survives the removal is also a v2 link, and v2's only extra link is the primary at frame 11 that v1 gave to the copy's track. A recovery artefact, not a tracking disagreement."
+          "explanation": "Lane 4, frames 11-14: v1's recovery (windowed tier) added a detection at each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same cell -- the cell detected twice. Both trackers therefore carry two tracks along one cell for those frames, and differ only in which track gets which copy. At frame 11 v2 gives the track the primary (11,2) at cost 6.78 rather than the copy (11,3) at 8.49 (local margin 1.71: a near-tie). The overlap term is withheld from that competition because the copy has no mask (the primary's IoU 0.21 would otherwise have cost it 0.79 that the copy was spared). Control run recovered_duplicates_dropped: every v1 link that survives the removal is also a v2 link, and v2's only extra link is the primary at frame 11 that v1 gave to the copy's track. A recovery artefact, not a tracking disagreement."
         },
         {
           "kind": "v2_link_not_in_v1",
@@ -2415,9 +2386,9 @@
           ],
           "v2_cost": {
             "gated": null,
-            "total": 2.888,
-            "mahalanobis": 0.405,
-            "motion": 0.405,
+            "total": 2.821,
+            "mahalanobis": 0.338,
+            "motion": 0.338,
             "size": 1.469,
             "shape": 0.013,
             "orientation": 0.0,
@@ -2427,8 +2398,8 @@
             "iou": null,
             "overlap_withheld": false
           },
-          "v2_link_margin": 1.838,
-          "v2_link_margin_global": 1.838,
+          "v2_link_margin": 1.667,
+          "v2_link_margin_global": 1.667,
           "closed_by_stage_2": false,
           "v1_reason": null,
           "lanes": [
@@ -2446,7 +2417,7 @@
             0.6,
             null
           ],
-          "explanation": "Lane 4, frames 11-14: v1's recovery (windowed tier) added a detection at each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same cell -- the cell detected twice. Both trackers therefore carry two tracks along one cell for those frames, and differ only in which track gets which copy. At frame 11 v2 gives the track the primary (11,2) at cost 8.05 rather than the copy (11,3) at 9.04 (local margin 0.99: a near-tie). The overlap term is withheld from that competition because the copy has no mask (the primary's IoU 0.21 would otherwise have cost it 0.79 that the copy was spared). Control run recovered_duplicates_dropped: every v1 link that survives the removal is also a v2 link, and v2's only extra link is the primary at frame 11 that v1 gave to the copy's track. A recovery artefact, not a tracking disagreement."
+          "explanation": "Lane 4, frames 11-14: v1's recovery (windowed tier) added a detection at each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same cell -- the cell detected twice. Both trackers therefore carry two tracks along one cell for those frames, and differ only in which track gets which copy. At frame 11 v2 gives the track the primary (11,2) at cost 6.78 rather than the copy (11,3) at 8.49 (local margin 1.71: a near-tie). The overlap term is withheld from that competition because the copy has no mask (the primary's IoU 0.21 would otherwise have cost it 0.79 that the copy was spared). Control run recovered_duplicates_dropped: every v1 link that survives the removal is also a v2 link, and v2's only extra link is the primary at frame 11 that v1 gave to the copy's track. A recovery artefact, not a tracking disagreement."
         }
       ]
     },
@@ -2493,15 +2464,15 @@
       "v2_link_margin_chi2": {
         "definition": "contract: next-best for the track or the detection, capped at 2U, minus the chosen cost; negative = locally contested",
         "n": 12,
-        "min": 23.457,
+        "min": 23.458,
         "n_negative": 0,
-        "median": 28.551
+        "median": 28.614
       },
       "v2_link_margin_global_chi2": {
         "definition": "increase of the frame's optimal total if the link is forbidden",
         "n": 12,
-        "min": 23.457,
-        "median": 28.551
+        "min": 23.458,
+        "median": 28.614
       },
       "control_runs": {
         "lane_gate_off": {
@@ -2763,15 +2734,15 @@
       "v2_link_margin_chi2": {
         "definition": "contract: next-best for the track or the detection, capped at 2U, minus the chosen cost; negative = locally contested",
         "n": 5,
-        "min": 7.954,
+        "min": 5.882,
         "n_negative": 0,
-        "median": 12.245
+        "median": 12.197
       },
       "v2_link_margin_global_chi2": {
         "definition": "increase of the frame's optimal total if the link is forbidden",
         "n": 5,
-        "min": 7.954,
-        "median": 25.222
+        "min": 5.882,
+        "median": 25.128
       },
       "control_runs": {
         "lane_gate_off": {

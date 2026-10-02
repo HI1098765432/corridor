@@ -18,6 +18,7 @@ that did would be measuring GitHub's availability rather than this code.
 from __future__ import annotations
 
 import os
+import time
 
 import pytest
 
@@ -110,12 +111,22 @@ def test_declining_is_remembered_and_never_checks(window, qt_app, tmp_path):
 
 
 def test_accepting_runs_the_check(window, qt_app):
+    """Consent starts one check, on the UpdateWorker's own thread.
+
+    The call lands when the OS schedules that thread, not after a fixed
+    number of event-loop spins: 40 bare ``processEvents`` calls take
+    microseconds and lost the race on a loaded machine. So wait (bounded)
+    for the worker to finish, then let its queued signals drain.
+    """
     win, store, calls = window
     win.update_consent._answer(True)
-    for _ in range(40):
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
         qt_app.processEvents()
-        if calls:
+        if calls and not any(job.running for job in win._jobs):
             break
+        time.sleep(0.005)
+    _drain(qt_app)
     assert updates.is_enabled(store) is True
     assert calls == ["check"], "consent should trigger exactly one check"
 

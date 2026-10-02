@@ -523,6 +523,20 @@ class TrackingConfig:
     one experiment and one instrument, from tracks the v1 gates accepted, so
     these are starting values for the tracker's own tests to tune, not
     fitted constants.
+
+    How the v2 tracker uses the process noise: :meth:`process_noise_px` is
+    the only place ``Q`` is computed from these fields and the frame
+    interval; ``tracking.MotionModel`` binds it once per run and never
+    reads ``velocity_sigma_um_per_min`` itself.  ``Q`` is isotropic -- the
+    same one-axis value on every axis, as is the fresh-track prior -- because
+    the across-body value (0.010) was measured in channels whose walls stop
+    sideways motion: a property of the device, which split elongated cells
+    that turn in an open field.  The body-shaped form survives only as the
+    tracker's opt-in ``body_shaped_noise_in_lanes`` (one-axis ``Q`` times
+    ``u u^T + (minor/major)^2 n n^T``), applied only where the lane gate is.
+    On the baseline these defaults reproduce WP-B's identity agreement with
+    v1.3.0 (0.929; ``docs/tracking_v2_vs_v1_baseline.json``), so they were
+    not re-tuned.
     """
 
     # -- hard physical gates -------------------------------------------------

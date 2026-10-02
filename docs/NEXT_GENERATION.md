@@ -166,9 +166,29 @@ direction.
 
 **Stage 1, frame to frame.** Each track carries a constant-velocity Kalman
 state `[r, v]` with covariance `P`. Prediction over `dt` frames uses
-`F = [[I, dt I], [0, I]]` and white-noise-acceleration process noise from
-`velocity_sigma_um_per_min`, so uncertainty widens with the gap. A fresh
-track starts with zero velocity and speed variance `(initial_speed)^2`.
+`F = [[I, dt I], [0, I]]` and continuous white-noise-acceleration process
+noise, discretised exactly: per axis `Q(dt) = q [[dt^3/3, dt^2/2], [dt^2/2,
+dt]]`, so the predicted position widens like `dt^3` over a gap.
+
+The process noise is defined **per minute, not per frame**:
+`velocity_sigma_um_per_min` is `sqrt(q)` in µm/min per √min (default 0.1, the
+along-body 0.093 measured on the v1.3.0 baseline rounded up; 0.45 µm/min of
+velocity change over one 20 min frame, 0.32 over a 10 min one).
+`TrackingConfig.process_noise_px(scale, dt)` is the one place `Q` is computed
+from the config and the frame interval (`q * frame_min^3 / pixel_size^2` in
+px²/frame³); the tracker binds it once per run and never reads the field
+itself, so the same cells imaged every 5 or 20 min get the same velocity
+diffusion per hour. Uncalibrated, the value is read in px and frames.
+
+`Q` and the fresh-track prior are **isotropic**: the same `Q` on every axis,
+and a fresh track starts with zero velocity and speed variance
+`(initial_speed)^2 I`. A body-shaped `Q` (across-body acceleration scaled by
+the body's aspect) was tried and withdrawn: the across/along ratio it rests on
+was measured in channels whose walls stop sideways motion, and in an open
+field it split elongated cells that turn. It remains an opt-in for confined
+fields (`body_shaped_noise_in_lanes`, `Q_axis ⊗ (u u^T + (minor/major)^2 n
+n^T)`), applied only where the lane gate applies, and is reported as a control
+run in `docs/tracking_v2_vs_v1_baseline.json`.
 
 Measurement noise is shaped by **each cell's own body**, not by an axis:
 `R = position_sigma^2 I + (shape_position_fraction * major)^2 u u^T +
@@ -196,18 +216,46 @@ size ratio, the motion gate (`d^2` above the chi-square 0.999 quantile for the
 dimension), and the optional lane gate. Assignment keeps the block LAP with
 unmatched cost `U`; a pairing at `FORBIDDEN` is never selected.
 
-**Link margin.** For every accepted link, `link_margin_chi2` = (cost of the
-next-best explanation for either the track or the detection, capped at `2U`)
-minus the chosen cost. Small means ambiguous. It is a margin, not a
-probability, and is named as one until it is calibrated.
+**Link margins.** Every accepted link carries two margins, in chi-square
+units; they are margins, not probabilities, and are named as such until they
+are calibrated.
+
+- `link_margin` (exported as `link_margin_chi2`) = (cost of the next-best
+  explanation for either the track or the detection, capped at `2U`) minus
+  the chosen cost. Small means ambiguous; negative means the global optimum
+  gave the track a detection another track explains more cheaply (locally
+  contested), and it is reported as is, not clamped.
+- `link_margin_global` = how much the frame's optimal total rises when the
+  assignment is **re-solved with that link forbidden**, knock-on effects
+  included. Only the link's connected group of tracks and detections is
+  re-solved (the block problem separates exactly by group). Never negative;
+  0 is a tie. It measures how much the solution depends on the link, not how
+  contested the link is, so an ambiguity rule reads `link_margin`.
 
 **Stage 2, global gap closing.** After stage 1, every track end is matched
 against every later track start within `max_gap + 1` frames in one global
-assignment. The cost uses evidence from both sides: the end's state predicted
-forward, and the start's first observations run backwards and predicted to the
-end frame. The same `U`, gates and margin apply. Closures are recorded in
+assignment (switch: `global_gap_closing`). The motion evidence comes from both
+sides: the end's state predicted forward to the start (`d2_f`), and the later
+track Kalman-filtered backwards over its own observations and predicted back
+to the end (`d2_b`). A side counts only if its track has at least two
+observations (a one-observation track's "prediction" is the fresh prior and
+would dilute the informative side). With both sides the motion gate is on the
+joint statistic `d2_f + d2_b` against the chi-square 0.999 quantile for
+`2 * ndim` degrees of freedom (18.5 in 2D, 22.5 in 3D) and the motion term is
+`(d2_f + d2_b) / 2`, on the stage-1 per-`ndim` scale so the same `U` and cost
+gate apply; with one side, that side's `d^2` against the stage-1 gate. The
+other terms (size, shape, orientation, direction, overlap, gap) are the
+stage-1 terms across the gap, and both margins are computed on the stage-2
+assignment. Closures are flagged `gap_closed` and recorded in
 `tracking_events.csv`. This is the temporal (multi-frame) association step: a
 link is judged on the trajectories either side of the gap, not on one frame.
+
+On the five baseline movies (detections rebuilt from `build/baseline_v1.3.0`,
+`scripts/compare_tracking_to_baseline.py`), the default tracker agrees with
+v1.3.0 on 0.929 of 155 observations (0.942 with the body-shaped opt-in, 0.993
+with v1's duplicate recoveries removed), makes 0 lane crossings in the wide
+fields, and every link where the two differ is reviewed in
+`docs/tracking_v2_vs_v1_baseline.json`.
 
 **Lanes instead of an axis.** `core/geometry.py` keeps the wall-ridge detector
 but returns `ChannelGeometry(lanes, source, confidence, pitch_px, notes,

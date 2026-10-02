@@ -89,8 +89,8 @@ _DUPLICATES_052924_2 = (
     "each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same "
     "cell -- the cell detected twice. Both trackers therefore carry two tracks "
     "along one cell for those frames, and differ only in which track gets which "
-    "copy. At frame 11 v2 gives the track the primary (11,2) at cost 8.05 rather "
-    "than the copy (11,3) at 9.04 (local margin 0.99: a near-tie). The overlap "
+    "copy. At frame 11 v2 gives the track the primary (11,2) at cost 6.78 rather "
+    "than the copy (11,3) at 8.49 (local margin 1.71: a near-tie). The overlap "
     "term is withheld from that competition because the copy has no mask "
     "(the primary's IoU 0.21 would otherwise have cost it 0.79 that the copy "
     "was spared). Control run "
@@ -107,10 +107,10 @@ _DUPLICATE_052924_1_LANE_1 = (
     "one moving up the lane at about -83 px/frame (y 215.7 -> 132.9), predicted "
     "near y 50. With two copies of one cell, both tracks can be kept alive and "
     "the only question is which copy goes where: v2 gives the primary to the "
-    "stationary track (cost 16.4) and the copy to the fast one (2.8). Forbidding "
-    "that raises the frame's optimum by only 0.53 (link_margin_global): a "
-    "near-tie. The primary's own cheapest track is the fast one (2.6), so its "
-    "contract link_margin is -13.7: the link is flagged as locally contested, "
+    "stationary track (cost 15.5) and the copy to the fast one (2.7). Forbidding "
+    "that raises the frame's optimum by only 0.37 (link_margin_global): a "
+    "near-tie. The primary's own cheapest track is the fast one (2.5), so its "
+    "contract link_margin is -13.0: the link is flagged as locally contested, "
     "which is what an ambiguity flag should see. v1 gave the primary to the fast track and "
     "started a new track on the copy, which then continued as (10,1). Control "
     "run recovered_duplicates_dropped: with (9,6) removed, v2 gives (9,1) to "
@@ -126,7 +126,7 @@ REVIEWED: dict[tuple[str, str, tuple[tuple[int, int], tuple[int, int]]], str] = 
     ("052924_1", "v1_link_not_in_v2", ((8, 4), (9, 5))): (
         "Lane 3. v1 track 2 was moving down the lane (y 207 -> 247, +40 px/frame); "
         "(9,5) is an intensity-tier recovered detection 50.6 px back up the lane at "
-        "half the area. v2 refuses it as a motion outlier (d2 23.8 > 13.8: a "
+        "half the area. v2 refuses it as a motion outlier (d2 19.5 > 13.8: a "
         "90 px/frame reversal against the prediction) and instead starts a track at "
         "(9,5) that continues (10,6), (11,5), (12,2) on a steady ~-50 px/frame "
         "trajectory. v1's reading makes the cell reverse and then become another "
@@ -134,7 +134,7 @@ REVIEWED: dict[tuple[str, str, tuple[tuple[int, int], tuple[int, int]]], str] = 
     ),
     ("052924_1", "v2_link_not_in_v1", ((9, 5), (10, 6))): (
         "Lane 3, the same scene: the second step of the steady upward trajectory "
-        "(47 px, area ratio 1.01, cost 0.51). v1 had already given (9,5) to "
+        "(47 px, area ratio 1.01, cost 0.50). v1 had already given (9,5) to "
         "track 2 and refused this link (above_cost_gate)."
     ),
     ("052924_1", "v1_link_not_in_v2", ((8, 6), (9, 1))): _DUPLICATE_052924_1_LANE_1,
@@ -145,16 +145,34 @@ REVIEWED: dict[tuple[str, str, tuple[tuple[int, int], tuple[int, int]]], str] = 
     ("052924_1", "v2_link_not_in_v1", ((14, 1), (15, 4))): (
         "Lane 1. At frame 15 the cell (122 px long at y 61 in frame 14) appears as "
         "two pieces, 221 px at y 34 and 454 px at y 131. v2 continues the track "
-        "with the larger piece (cost 15.0: motion 10.5, size 3.6, overlap 0.86) and "
+        "with the larger piece (cost 13.1: motion 8.5, size 3.6, overlap 0.85) and "
         "flags split_suspected on both tracks; v1 refused both continuations "
         "(above_cost_gate). Neither piece is seen after frame 15, so this is one "
         "observation either way; which reading is right is not decidable from "
         "the detections."
     ),
+    ("052924_1", "v2_link_not_in_v1", ((8, 2), (9, 4))): (
+        "Lane 5, which holds this one cell and no other detection in any frame "
+        "(one per frame in 0-10, none after). "
+        "v1 ended track 1 at (8,2) and started track 8 at (9,4), 101 px further down "
+        "the same lane one frame later (above_cost_gate); v2 links the two (cost "
+        "15.2: motion 12.5 under the 13.8 gate, size 1.0, shape 0.7, overlap 1.0), "
+        "margin 14.8 against leaving both unmatched -- nothing else competes in the "
+        "lane. The cell is 135 px (63 um) long at frame 8 and 96 px at frame 9 "
+        "(area ratio 0.74): its rear retracted, which moves a centroid further than "
+        "the front moved (mask bounding box down the lane: front 235 -> 309 px, "
+        "rear 100 -> 222; the two boxes still share 13 px). The centroid speed, "
+        "2.37 um/min, is under the 5.0 um/min "
+        "physical gate but above the fastest v1-linked step (1.98). Under WP-B's "
+        "smaller process noise (q = 0.008 um^2/min^3) the motion d2 was 15.2 and v2 "
+        "refused it as v1 did; at the contract's q = 0.01 it passes. One cell in a "
+        "lane continuing is the coherent reading, but a tail retraction and a "
+        "different cell entering are not decidable from the detections alone."
+    ),
     ("052924_1", "v2_link_not_in_v1", ((15, 3), (16, 2))): (
         "Lane 3. The cell is accelerating down the lane (y 46, 67, 89, 127: +21, "
         "+22, +38 px/frame); the next step is +42 px at area ratio 0.98. v2 links "
-        "it (motion d2 0.72, cost 1.81, margin 26.2); v1 refused it "
+        "it (motion d2 0.51, cost 1.60, margin 28.4); v1 refused it "
         "(above_cost_gate) and started a new track at frame 16."
     ),
     ("052924_2", "v1_link_not_in_v2", ((10, 1), (11, 3))): _DUPLICATES_052924_2,

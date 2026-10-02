@@ -33,6 +33,32 @@ POSITIONS = {
 }
 
 
+#: The two lanes of the v2 run, as centre-line end points across the 64 x 48
+#: image: one vertical at x = 20, one tilted from (44, 0) to (50, 48).
+LANE_ENDS = {0: ((20.0, 0.0), (20.0, 48.0)), 1: ((44.0, 0.0), (50.0, 48.0))}
+
+
+def channel_geometry_v2() -> dict[str, Any]:
+    """``run.json["channel_geometry"]`` exactly as the pipeline writes it.
+
+    Built with ``ChannelGeometry.to_dict`` -- origin plus unit direction per
+    lane -- so the viewer is tested against the format a real run carries.
+    """
+    from corridor.core.geometry import GEOMETRY_FROM_RIDGES, ChannelGeometry, Lane
+
+    lanes = []
+    for index, ((x0, y0), (x1, y1)) in LANE_ENDS.items():
+        norm = math.hypot(x1 - x0, y1 - y0)
+        lanes.append(Lane(
+            index=index, origin=(x0, y0), direction=((x1 - x0) / norm, (y1 - y0) / norm),
+            half_width_px=8.0, support_rows=40,
+        ))
+    return ChannelGeometry(
+        lanes=lanes, source=GEOMETRY_FROM_RIDGES, confidence=0.9, pitch_px=24.0,
+        notes=["two lanes"], applied=True, image_shape=SHAPE_TYX[1:],
+    ).to_dict()
+
+
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     columns: list[str] = []
     for row in rows:
@@ -200,17 +226,7 @@ def write_v2_analysis(directory: Path, *, three_d: bool = False) -> Path:
             "training_dataset_version": "KK1KK2-combi",
             "developer_override": False,
         },
-        "channel_geometry": {
-            "applied": True,
-            "source": "walls",
-            "confidence": 0.9,
-            "pitch_px": 24.0,
-            "notes": ["two lanes"],
-            "lanes": [
-                {"index": 0, "centre_line": [[20.0, 0.0], [20.0, 48.0]], "half_width_px": 8.0},
-                {"index": 1, "x0": 44.0, "y0": 0.0, "x1": 50.0, "y1": 48.0, "half_width_px": 8.0},
-            ],
-        },
+        "channel_geometry": channel_geometry_v2(),
         "segmentation": {
             "cellprob_threshold": 0.0,
             "flow_threshold": 0.4,

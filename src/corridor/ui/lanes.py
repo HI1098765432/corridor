@@ -12,12 +12,15 @@ Rules this module keeps:
 *   **Nothing is fabricated.** A missing ``confinement`` block used to default
     to a vertical axis ``(0, 1)``; here a missing or unreadable block yields
     no lanes at all, and the overlay simply has nothing to draw.
-*   **Tolerant of the lane layout.** The geometry module (work package B) owns
-    the v2 format. When it is importable its ``ChannelGeometry.from_dict`` is
-    used; otherwise, and for any lane object it returns, the centre line is
-    read by probing the plausible spellings (a polyline, two end points, or an
-    origin plus a direction). A lane that cannot be read is skipped, never
-    guessed.
+*   **Reads what the run wrote.** The geometry module owns the v2 format:
+    ``ChannelGeometry.to_dict`` writes each lane as ``origin_x``/``origin_y``
+    plus a unit ``direction_x``/``direction_y``. Lanes are read from the
+    saved dict itself, not through ``ChannelGeometry.from_dict``, whose
+    defaults (origin (0, 0), direction (0, 1)) would turn a lane it cannot
+    read into a confident line down the left edge. The other plausible
+    spellings (a polyline, two end points, ``origin``/``direction`` pairs, a
+    ``ChannelGeometry`` object) are still accepted. A lane that cannot be read
+    is skipped, never guessed.
 """
 
 from __future__ import annotations
@@ -145,7 +148,9 @@ def lane_from_object(lane: Any, index: int, size: tuple[float, float], source: s
         origin = (ox, oy) if ox is not None and oy is not None else None
     direction = _as_point(_get(lane, "direction", "unit", "tangent"))
     if direction is None:
-        ux, uy = _as_float(_get(lane, "ux")), _as_float(_get(lane, "uy"))
+        # direction_x/_y is what ChannelGeometry.to_dict writes; ux/uy is v1's.
+        ux = _as_float(_get(lane, "direction_x", "ux"))
+        uy = _as_float(_get(lane, "direction_y", "uy"))
         direction = (ux, uy) if ux is not None and uy is not None else None
     if origin is not None and direction is not None:
         segment = clip_line(origin, direction, width, height)
@@ -155,21 +160,14 @@ def lane_from_object(lane: Any, index: int, size: tuple[float, float], source: s
 
 
 def lanes_from_geometry(geometry: Any, size: tuple[float, float]) -> list[LaneOverlay]:
-    """Overlays from a v2 ``channel_geometry`` dict (or a ChannelGeometry)."""
+    """Overlays from a v2 ``channel_geometry`` dict (or a ChannelGeometry).
+
+    A dict is read as saved (``ChannelGeometry.to_dict``'s keys, or another
+    spelling), never through ``from_dict``: its defaults would invent a lane.
+    """
     if geometry is None:
         return []
-    lanes_source: Any = geometry
-    if isinstance(geometry, dict):
-        try:  # Work package B's reader, when it is part of this build.
-            from ..core import geometry as geometry_module  # noqa: PLC0415
-
-            lanes_source = geometry_module.ChannelGeometry.from_dict(geometry)
-        except Exception:  # noqa: BLE001 - fall back to reading the dict itself
-            lanes_source = geometry
-    lanes = _get(lanes_source, "lanes")
-    if lanes is None and lanes_source is not geometry:
-        lanes = _get(geometry, "lanes")
-    return _read_lanes(lanes, size, SOURCE_V2)
+    return _read_lanes(_get(geometry, "lanes"), size, SOURCE_V2)
 
 
 def lanes_from_legacy(confinement: Any, size: tuple[float, float]) -> list[LaneOverlay]:

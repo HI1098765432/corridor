@@ -5,9 +5,13 @@ turns hard, its forward prediction misses and stage 1 starts a new track; but
 the new track's own trajectory, run backwards, lands on where the old one
 ended.  Stage 2 weighs both and rejoins them -- through the same U, gates and
 margin.  The real case behind these tests: 052924_1, lane 3, frame 13, where
-a cell moving up the channel at ~50 px per frame stopped and came back
-(forward d^2 15.7, backward 0.08); stage 1 refused the link that v1 had made,
-and stage 2 restored it.
+a cell moving up the channel at ~50 px per frame stopped and came back.  Under
+WP-B's process noise (q = 0.008 um^2/min^3) its forward d^2 was 15.7 and
+backward 0.08: stage 1 refused the link that v1 had made, and stage 2 restored
+it.  At the contract's q = 0.01 (velocity_sigma 0.1 um/min per sqrt(min)) the
+forward d^2 is 12.9, under the 13.8 gate, and stage 1 makes the link itself
+(cost 25.3, margin 4.75); the synthetic reversals below sit just past that
+edge, so they still exercise stage 2.
 """
 
 from __future__ import annotations
@@ -60,7 +64,16 @@ def turning_cell(speed: float = 30.0, y: float = 100.0):
     return dets, 10
 
 
-@pytest.mark.parametrize("speed,missing", [(40.0, 0), (50.0, 1)])
+# The speeds sit in the band where stage 1's forward d^2 just fails its 13.8
+# gate and stage 2's joint statistic still passes 18.5. The band moves with
+# the process noise: with velocity_sigma = 0.1 um/min per sqrt(min) (q = 0.01
+# um^2/min^3; 1.25x the 0.4-over-20-min of WP-B's 0.008), measured at the
+# conftest KK2 scale: no missing frame, stage 1 refuses from 40 px/frame
+# (forward 14.5) and stage 2 closes up to 44 (17.5) -- 46 sums to 19.2; one
+# missing frame, 56 px/frame (forward 14.7, backward 1.6, joint 16.3; 54
+# passes stage 1, 60 fails the joint gate). 50 with one missing frame, the
+# value under the old q, is now linked by stage 1 alone.
+@pytest.mark.parametrize("speed,missing", [(40.0, 0), (56.0, 1)])
 def test_a_link_stage_1_refuses_is_closed_by_stage_2(scale, speed, missing):
     dets, n = reversing_cell(speed, missing)
     stage1, _ = track_detections(dets, n, scale, TrackingConfig(global_gap_closing=False))
@@ -105,14 +118,16 @@ def test_gap_closing_can_be_switched_off(scale):
     assert not any(e.gap_closed for e in events)
 
 
-@pytest.mark.parametrize("speed", [44.0, 70.0])
+@pytest.mark.parametrize("speed", [48.0, 70.0])
 def test_a_reversal_too_violent_for_both_sides_stays_split(scale, speed):
-    """Straight back at 44 or 70 px/frame: the joint statistic fails the 2*ndim gate.
+    """Straight back at 48 or 70 px/frame: the joint statistic fails the 2*ndim gate.
 
-    At 44 px/frame (1.03 um/min) the forward side reads 21.3 and the backward
-    side 0.0. Their mean, 10.7, is under the one-sided 13.8 -- the rule that
+    At 48 px/frame (1.12 um/min) the forward side reads 20.9 and the backward
+    side 0.0. Their mean, 10.4, is under the one-sided 13.8 -- the rule that
     used to be applied -- but a sum of two chi-square(2) statistics is
-    judged against chi-square(4): 21.3 > 18.5.
+    judged against chi-square(4): 20.9 > 18.5.  (This was 44 px/frame under
+    WP-B's smaller q, 0.008 um^2/min^3; at today's 0.01 a 44 px/frame
+    reversal sums to 17.5 and is closed -- see the band above.)
     """
     dets, n = reversing_cell(speed, 0)
     tracks, _ = track_detections(dets, n, scale, TrackingConfig())
@@ -121,7 +136,7 @@ def test_a_reversal_too_violent_for_both_sides_stays_split(scale, speed):
     b = closing_cost(_context(scale), early, late)
     assert b.gated == GATE_MOTION
     assert b.motion_forward + b.motion_backward > motion_gate_chi2(4)
-    if speed == 44.0:
+    if speed == 48.0:
         assert 0.5 * (b.motion_forward + b.motion_backward) < motion_gate_chi2(2)
 
 
@@ -129,9 +144,10 @@ def test_a_one_observation_fragment_is_judged_on_the_forward_side_alone(scale):
     """A fragment's 'backward prediction' is only the fresh prior; it is not evidence.
 
     A cell moving down at 20 px/frame, then one detection 60 px to its side.
-    Forward d^2 17.4 fails the gate; the fragment's backward d^2 (0.8) says
-    nothing, because a one-observation track predicts with a 71 px/frame
-    spread. Averaging the two (9.1) used to join them.
+    Forward d^2 14.3 fails the 13.8 gate; the fragment's backward d^2 (0.8)
+    says nothing, because a one-observation track predicts with a 71 px/frame
+    spread. Averaging the two (7.5) used to join them.  (Measured with q =
+    0.01 um^2/min^3; the forward value was 17.4 under WP-B's smaller q.)
     """
     dets = [make_detection(t, 45, 20 + 20 * t, label=1) for t in range(5)]
     dets.append(make_detection(5, 105, 120, label=2))

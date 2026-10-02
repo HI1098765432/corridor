@@ -369,7 +369,10 @@ def test_measurement_noise_follows_the_cell_body(scale, tracking_config):
         n = np.array([-u[1], u[0]])
         along, across = float(u @ R @ u), float(n @ R @ n)
         assert along > 10.0 * across
-        expected_along = model.position_sigma_px**2 + (0.06 * 90.0) ** 2
+        # shape_position_fraction is 0.065 (0.06 when this was written): the
+        # contract config's 3.09 um measured along 48.2 um bodies.
+        assert tracking_config.shape_position_fraction == 0.065
+        expected_along = model.position_sigma_px**2 + (0.065 * 90.0) ** 2
         assert along == pytest.approx(expected_along, rel=1e-9)
 
 
@@ -453,23 +456,34 @@ def test_the_body_shaped_opt_in_applies_only_inside_measured_lanes(scale, tracki
 def test_velocity_noise_is_a_physical_rate_not_a_per_frame_number(tracking_config):
     """The same cells imaged every 5 or 20 min diffuse in velocity at the same rate.
 
-    ``velocity_sigma_um_per_min`` (0.40) was measured on 20.0 min frames. Over
-    20 min, four 5 min frames must accumulate the same velocity variance as
-    one 20 min frame, and one 80 min frame four times as much.
+    ``velocity_sigma_um_per_min`` is ``sqrt(q)`` in um/min per sqrt(min)
+    (``TrackingConfig.process_noise_px``), so the velocity variance after
+    ``t`` minutes is ``sigma^2 * t`` whatever the frame interval: four 5 min
+    frames accumulate what one 20 min frame does, one 80 min frame four times
+    as much.  (When this test was written the field was the velocity change
+    over one 20 min frame, and the reference was ``sigma^2`` itself.)
     """
     px = 0.5
 
     def velocity_var_um2_per_min2(frame_min: float, frames: int) -> float:
         model = MotionModel.from_config(Scale.from_values(px, frame_min), tracking_config)
-        # White-noise acceleration: velocity variance grows by q per frame,
+        # The velocity block of the model's own Q over that many frames,
         # in (px/frame)^2; converted to (um/min)^2.
-        var_px2_per_frame2 = model.accel_var_px2_per_frame3 * frames
-        return var_px2_per_frame2 * (px / frame_min) ** 2
+        _, Q = model.transition(float(frames))
+        return float(Q[2, 2]) * (px / frame_min) ** 2
 
     reference = velocity_var_um2_per_min2(20.0, 1)
-    assert reference == pytest.approx(tracking_config.velocity_sigma_um_per_min**2)
+    # sigma^2 (um/min)^2 per minute, over 20 min: 0.1^2 * 20 = 0.2, i.e. 0.45
+    # um/min of velocity change over one 20 min frame.
+    assert reference == pytest.approx(tracking_config.velocity_sigma_um_per_min**2 * 20.0)
     assert velocity_var_um2_per_min2(5.0, 4) == pytest.approx(reference)
     assert velocity_var_um2_per_min2(80.0, 1) == pytest.approx(4.0 * reference)
+    # The model's Q is the config's, not a reinterpretation of it.
+    scale = Scale.from_values(px, 5.0)
+    model = MotionModel.from_config(scale, tracking_config)
+    _, Q = model.transition(3.0)
+    pos, cross, vel = tracking_config.process_noise_px(scale, 3.0)
+    assert (Q[0, 0], Q[0, 2], Q[2, 2]) == pytest.approx((pos, cross, vel), rel=1e-12)
 
 
 # --------------------------------------------------------------------------
