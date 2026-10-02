@@ -17,24 +17,30 @@ a false positive.
 
 Both numbers matter. Recall alone would reward a detector that answers "yes"
 everywhere, which is precisely the failure this experiment exists to catch.
+
+Corridor 2.0: recovery has no axis. Its window and intensity test are measured
+in the cell's own frame, lanes come from ``geometry.detect_channels`` and only
+an applied geometry refuses a candidate, and a candidate that duplicates a
+primary detection is dropped (the count is reported). The model is the
+validated one (``resolve_model``) unless ``--model`` names a research file.
+The 1.x table in ``RecoveryConfig`` was measured before those changes; this
+script is what re-measures it.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import replace
+import os
 from pathlib import Path
 
 import numpy as np
-import tifffile
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data" / "confinedmig_cellTrack"
-SAMPLES = DATA / "sample_data"
-MODEL = (
-    DATA / "CellPose_TrainData" / "KK1KK2_combiModel" / "models"
-    / "cyto2_phase_microfluidic_KK1KK2_combi"
+#: ``CORRIDOR_SAMPLE_DIR`` points a checkout without ``data/`` at the samples.
+SAMPLES = Path(
+    os.environ.get("CORRIDOR_SAMPLE_DIR")
+    or ROOT / "data" / "confinedmig_cellTrack" / "sample_data"
 )
 
 PIXEL_UM = 0.467060342995564
@@ -46,25 +52,30 @@ PRESENT = {"052924_t1.tif": list(range(4, 17))}
 ABSENT = {"052924_t2_empty.tif": [0, 3, 4]}
 
 
-def setup(name: str):
-    from corridor.core.config import ConfinementConfig, Scale, SegmentationConfig
-    from corridor.core.confinement import assign_channels, resolve_axis, static_projection
+def resolve(model_path: str | None):
+    """The validated model, or an explicitly named research model."""
+    from corridor.core.model_registry import research_model, resolve_model
+
+    if model_path:
+        return research_model(Path(model_path), label=Path(model_path).name)
+    return resolve_model("2D")
+
+
+def setup(name: str, samples: Path, model):
+    import tifffile
+
+    from corridor.core.config import GeometryConfig, Scale, SegmentationConfig
+    from corridor.core.geometry import assign_lanes, detect_channels, static_projection
     from corridor.core.segmentation import SegmentationService
 
-    stack = tifffile.imread(SAMPLES / name)
-    from corridor.core.model_registry import research_model
-
-    # 2.0 ignores SegmentationConfig.model_path; an explicitly chosen file is
-    # passed as a research model, which every output records as an override.
-    service = SegmentationService(
-        SegmentationConfig(), model=research_model(MODEL, label="KK1KK2_combi")
-    )
+    stack = tifffile.imread(samples / name)
+    service = SegmentationService(SegmentationConfig(), model=model)
     output = service.run_stack(stack)
-    axis = resolve_axis(stack, ConfinementConfig(), output.detections,
-                        pixel_size_um=PIXEL_UM)
-    assign_channels(output.detections, axis)
+    geometry = detect_channels(stack, GeometryConfig(), output.detections,
+                               pixel_size_um=PIXEL_UM)
+    assign_lanes(output.detections, geometry)
     scale = Scale.from_values(PIXEL_UM, INTERVAL_MIN)
-    return stack, service, output, axis, scale, static_projection(stack)
+    return stack, service, output, geometry, scale, static_projection(stack)
 
 
 def run_case(name: str, hidden_frame: int | None, cfg, tracking):
@@ -72,15 +83,15 @@ def run_case(name: str, hidden_frame: int | None, cfg, tracking):
     from corridor.core.recovery import recover
     from corridor.core.tracking import track_detections
 
-    stack, service, output, axis, scale, background = CACHE[name]
+    stack, service, output, geometry, scale, background = CACHE[name]
     detections = [d for d in output.detections if d.frame != hidden_frame]
     truth = [d for d in output.detections if d.frame == hidden_frame]
 
-    tracks, _ = track_detections(detections, stack.shape[0], axis, scale, tracking)
+    tracks, _ = track_detections(detections, stack.shape[0], scale, tracking, geometry=geometry)
     if not tracks:
         return None, truth
-    result = recover(stack, tracks, service, axis, scale, tracking, cfg,
-                     background=background)
+    result = recover(stack, tracks, service, scale, tracking, cfg,
+                     geometry=geometry, background=background)
     return result, truth
 
 
@@ -90,6 +101,7 @@ def evaluate(cfg, tracking, label: str) -> dict:
     tiers: dict[str, int] = {}
     false_positives = 0
     fp_tiers: dict[str, int] = {}
+    duplicates = 0
 
     # --- frames where a cell is known to be there -------------------------
     for name, frames in PRESENT.items():
@@ -97,6 +109,7 @@ def evaluate(cfg, tracking, label: str) -> dict:
             result, truth = run_case(name, frame, cfg, tracking)
             if result is None or not truth:
                 continue
+            duplicates += result.n_duplicates_dropped
             recovered = [d for d in result.detections if d.frame == frame]
             if not recovered:
                 misses += 1
@@ -119,6 +132,7 @@ def evaluate(cfg, tracking, label: str) -> dict:
         result, _ = run_case(name, None, cfg, tracking)
         if result is None:
             continue
+        duplicates += result.n_duplicates_dropped
         for d in result.detections:
             if d.frame in frames:
                 false_positives += 1
@@ -137,32 +151,20 @@ def evaluate(cfg, tracking, label: str) -> dict:
         "by_tier": tiers,
         "false_positives": false_positives,
         "false_positive_tiers": fp_tiers,
+        "duplicates_dropped": duplicates,
     }
 
 
 CACHE: dict = {}
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(ROOT / "docs" / "recovery_experiment.json"))
-    args = ap.parse_args()
-
-    from corridor.core.config import TrackingConfig
+def variants():
     from corridor.core.recovery import RecoveryConfig
 
-    for name in list(PRESENT) + list(ABSENT):
-        print(f"preparing {name} ...", flush=True)
-        CACHE[name] = setup(name)
-
-    tracking = TrackingConfig()
-
-    # Every variant states enabled=True explicitly. RecoveryConfig defaults to
-    # disabled, so a variant that merely omits it measures nothing at all and
-    # reports a confident row of zeros -- which is exactly what this script did
-    # once the default was flipped, silently turning the experiment into a test
-    # of whether "off" finds cells. An instrument that can quietly measure its
-    # own silence has to be made to say what it is measuring.
+    # Every variant states ``enabled`` explicitly. An instrument that can
+    # quietly measure its own silence -- a variant that inherits "off" and
+    # reports a confident row of zeros, which is what this script once did --
+    # has to be made to say what it is measuring.
     def variant(**kwargs) -> RecoveryConfig:
         kwargs.setdefault("enabled", True)
         return RecoveryConfig(**kwargs)
@@ -171,31 +173,50 @@ def main() -> int:
     # cell known present on both sides; a trailing frame is a cell that may
     # simply have gone. Measuring them together hides which one the errors come
     # from, which is the whole question.
-    variants = [
+    out = [
         ("interior: window only", variant(permissive=False, intensity=False)),
         ("interior: + permissive", variant(intensity=False)),
         ("interior: intensity only", variant(window=False, permissive=False)),
-        ("interior: all three tiers", variant()),
+        ("interior: all three tiers (default)", variant()),
         ("interior + trailing: all tiers", variant(trailing=True)),
         ("trailing only: all tiers", variant(interior=False, trailing=True)),
         ("interior, tighter offset", variant(max_offset_lengths=0.6)),
         ("interior, intensity 8 sigma", variant(intensity_snr=8.0)),
-        ("disabled (the shipped default)", RecoveryConfig(enabled=False)),
+        ("disabled", RecoveryConfig(enabled=False)),
     ]
-    for label, cfg in variants:
+    for label, cfg in out:
         if cfg.enabled and not (cfg.window or cfg.permissive or cfg.intensity):
             raise SystemExit(f"variant {label!r} has every tier switched off")
+    return out
 
-    print(f"\n{'strategy':30s} {'holes':>6} {'found':>6} {'rate':>6} "
-          f"{'medOff':>7} {'maxOff':>7} {'FP':>4}  tiers")
-    report = []
-    for label, cfg in variants:
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--samples", default=str(SAMPLES), help="directory holding the sample TIFFs")
+    ap.add_argument("--model", default=None,
+                    help="research model file (default: the validated model)")
+    ap.add_argument("--out", default=str(ROOT / "docs" / "recovery_experiment.json"))
+    args = ap.parse_args()
+
+    from corridor.core.config import TrackingConfig
+
+    planned = variants()
+    model = resolve(args.model)
+    for name in list(PRESENT) + list(ABSENT):
+        print(f"preparing {name} ...", flush=True)
+        CACHE[name] = setup(name, Path(args.samples), model)
+
+    tracking = TrackingConfig()
+    print(f"\n{'strategy':36s} {'holes':>6} {'found':>6} {'rate':>6} "
+          f"{'medOff':>7} {'maxOff':>7} {'FP':>4} {'dup':>4}  tiers")
+    report = {"model": model.to_manifest(), "variants": []}
+    for label, cfg in planned:
         row = evaluate(cfg, tracking, label)
-        report.append(row)
-        print(f"{label:30s} {row['holes']:6d} {row['recovered']:6d} "
+        report["variants"].append(row)
+        print(f"{label:36s} {row['holes']:6d} {row['recovered']:6d} "
               f"{row['recovery_rate']:6.3f} "
               f"{str(row['median_offset_px']):>7} {str(row['max_offset_px']):>7} "
-              f"{row['false_positives']:4d}  {row['by_tier']}"
+              f"{row['false_positives']:4d} {row['duplicates_dropped']:4d}  {row['by_tier']}"
               + (f"  FP:{row['false_positive_tiers']}" if row['false_positives'] else ""))
 
     out = Path(args.out)
