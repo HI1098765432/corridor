@@ -750,18 +750,9 @@ class TrackingConfig:
 #: running tracker used them. ``channel_constraint`` is listed although it
 #: mirrors ``enforce_channel_identity``, because its "auto" (lanes from walls
 #: only) is a v2 rule. Shrinks as the tracker package starts reading them.
-TRACKING_V2_ONLY_FIELDS = frozenset({
-    "position_sigma_um",
-    "shape_position_fraction",
-    "width_position_fraction",
-    "velocity_sigma_um_per_min",
-    "initial_speed_sigma_um_per_min",
-    "w_shape",
-    "w_overlap",
-    "gap_penalty_chi2",
-    "global_gap_closing",
-    "channel_constraint",
-})
+#: Empty since the axis-free tracker landed: it reads every one of them
+#: (``initial_speed_sigma_um_per_min`` through its effective_ property).
+TRACKING_V2_ONLY_FIELDS: frozenset[str] = frozenset()
 
 
 # --------------------------------------------------------------------------
