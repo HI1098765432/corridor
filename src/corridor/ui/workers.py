@@ -8,15 +8,63 @@ leaves the partial result consistent.
 
 from __future__ import annotations
 
+import inspect
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from PySide6.QtCore import QObject, Qt, QThread, Signal
 
-from ..core import pipeline
-from ..core.config import RunConfig
-from ..core.imaging import StackMetadata, read_metadata
+from ..core import imaging, pipeline
+from ..core.config import ImportConfig, RunConfig
+
+#: Every export the results screen offers, with the label it shows. The keys
+#: are what ``ResultsScreen.export_requested`` carries.
+EXPORT_TRACK_CSV = "track_csv"
+EXPORT_TRACK_XLSX = "track_xlsx"
+EXPORT_TRACKS_CSV = "tracks_csv"
+EXPORT_SUMMARIES_CSV = "summaries_csv"
+EXPORT_MSD_CSV = "msd_csv"
+EXPORT_BUNDLE = "bundle"
+
+EXPORT_LABELS: dict[str, str] = {
+    EXPORT_TRACK_CSV: "Selected track CSV",
+    EXPORT_TRACK_XLSX: "Selected track XLSX",
+    EXPORT_TRACKS_CSV: "All tracks CSV",
+    EXPORT_SUMMARIES_CSV: "All track summaries CSV",
+    EXPORT_MSD_CSV: "MSD curves CSV",
+    EXPORT_BUNDLE: "Full analysis bundle",
+}
+TRACK_EXPORTS = (EXPORT_TRACK_CSV, EXPORT_TRACK_XLSX)
+
+
+def is_ambiguous_axes(exc: BaseException) -> bool:
+    """Whether ``exc`` is the importer's "cannot tell T from Z" refusal.
+
+    Matched on the class the imaging module defines when it defines one, and
+    on the name otherwise, so the UI keeps working while the importer that
+    raises it is merged.
+    """
+    cls = getattr(imaging, "AmbiguousAxes", None)
+    if isinstance(cls, type) and isinstance(exc, cls):
+        return True
+    return type(exc).__name__ == "AmbiguousAxes"
+
+
+def read_metadata_for(path: str | Path, import_config: ImportConfig | None = None):
+    """``imaging.read_metadata`` with the import settings, when it takes them.
+
+    The 2.0 importer accepts ``import_config`` (an explicit axis order and the
+    channel to analyse); the 1.x one does not, and is called without it.
+    """
+    reader = imaging.read_metadata
+    try:
+        accepts = "import_config" in inspect.signature(reader).parameters
+    except (TypeError, ValueError):
+        accepts = False
+    if accepts:
+        return reader(path, import_config=import_config)
+    return reader(path)
 
 
 class _SignalProgress:
@@ -75,23 +123,30 @@ class DatasetWorker(QObject):
     Both happen here because a researcher who has just dropped a file expects
     to see it, and an interface that reads the header instantly and then
     freezes on the pixels is worse than one that takes a moment and stays live.
+
+    A file whose T and Z cannot be told apart is not an error: it emits
+    ``ambiguous`` with the importer's exception (its ``choices`` and
+    ``message``), so the window can ask and retry with an explicit order.
     """
 
     finished = Signal(object, object)  # StackMetadata, np.ndarray
     failed = Signal(str, str)
+    ambiguous = Signal(object)  # AmbiguousAxes
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, import_config: ImportConfig | None = None) -> None:
         super().__init__()
         self.path = Path(path)
+        self.import_config = import_config
 
     def run(self) -> None:
         try:
-            from ..core.imaging import load_stack
-
-            metadata = read_metadata(self.path)
-            stack = load_stack(self.path, metadata)
+            metadata = read_metadata_for(self.path, self.import_config)
+            stack = imaging.load_stack(self.path, metadata)
         except Exception as exc:  # noqa: BLE001
-            self.failed.emit(friendly_error(exc), traceback.format_exc())
+            if is_ambiguous_axes(exc):
+                self.ambiguous.emit(exc)
+            else:
+                self.failed.emit(friendly_error(exc), traceback.format_exc())
         else:
             self.finished.emit(metadata, stack)
 
@@ -113,8 +168,6 @@ class ResultsWorker(QObject):
 
     def run(self) -> None:
         try:
-            from ..core.imaging import load_stack
-
             from ..store.project import load_analysis
 
             analysis = load_analysis(self.directory)
@@ -125,34 +178,162 @@ class ResultsWorker(QObject):
                     "The original image could not be found:\n"
                     f"{source}\n\nThe result files are still available."
                 )
-            metadata = read_metadata(source)
-            stack = load_stack(source, metadata)
+            metadata = read_metadata_for(source, import_config_for(analysis.manifest))
+            stack = imaging.load_stack(source, metadata)
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(friendly_error(exc), traceback.format_exc())
         else:
             self.finished.emit(analysis, metadata, stack)
 
 
+def import_config_for(manifest: dict[str, Any] | None) -> ImportConfig | None:
+    """The import settings a saved run used, so reopening never asks again.
+
+    A run whose axis order had to be chosen recorded it (``input.axes``,
+    contract §7); reading the source again without it would raise the same
+    ambiguity the user already answered.
+    """
+    manifest = manifest or {}
+    inp = manifest.get("input") or {}
+    axes = inp.get("axes")
+    channel = inp.get("channel_index")
+    if not axes and channel is None:
+        return None
+    try:
+        channel_index = int(channel) if channel is not None else 0
+    except (TypeError, ValueError):
+        channel_index = 0
+    return ImportConfig(axes=str(axes) if axes else None, channel_index=channel_index)
+
+
 class ExportWorker(QObject):
-    """Copies a finished analysis into a folder the user chose."""
+    """Writes one export of a finished analysis.
+
+    ``kind`` is one of the ``EXPORT_*`` keys. Every writer lives in the store
+    (``store.project``); this only chooses which, so a script and the window
+    produce byte-identical files.
+    """
 
     finished = Signal(object)  # list[Path]
     failed = Signal(str, str)
 
-    def __init__(self, analysis, destination: str | Path) -> None:
+    def __init__(
+        self,
+        analysis,
+        destination: str | Path,
+        *,
+        kind: str = EXPORT_BUNDLE,
+        track_id: int | None = None,
+        reference_point_px: Sequence[float] | None = None,
+    ) -> None:
         super().__init__()
         self.analysis = analysis
         self.destination = Path(destination)
+        self.kind = kind
+        self.track_id = track_id
+        self.reference_point_px = (
+            tuple(float(v) for v in reference_point_px) if reference_point_px else None
+        )
 
     def run(self) -> None:
         try:
-            from ..store.project import export_bundle
-
-            written = export_bundle(self.analysis, self.destination)
+            written = run_export(
+                self.analysis,
+                self.destination,
+                kind=self.kind,
+                track_id=self.track_id,
+                reference_point_px=self.reference_point_px,
+            )
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(friendly_error(exc), traceback.format_exc())
         else:
             self.finished.emit(written)
+
+
+def _writer(name: str):
+    from ..store import project  # noqa: PLC0415 - looked up at call time
+
+    function = getattr(project, name, None)
+    if function is None:
+        raise RuntimeError(
+            f"This build of Corridor cannot write this export yet (store.project.{name} "
+            "is missing)."
+        )
+    return function
+
+
+def _accepts(function, keyword: str) -> bool:
+    try:
+        parameters = inspect.signature(function).parameters
+    except (TypeError, ValueError):
+        return False
+    return keyword in parameters or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
+    )
+
+
+def _as_paths(result: Any, fallback: Path) -> list[Path]:
+    if result is None:
+        return [fallback] if fallback.exists() else []
+    if isinstance(result, (str, Path)):
+        return [Path(result)]
+    try:
+        return [Path(p) for p in result]
+    except TypeError:
+        return [fallback]
+
+
+def run_export(
+    analysis,
+    destination: Path,
+    *,
+    kind: str,
+    track_id: int | None = None,
+    reference_point_px: Sequence[float] | None = None,
+) -> list[Path]:
+    """Dispatch one export to the store's writer. Returns the files written."""
+    destination = Path(destination)
+    if kind in TRACK_EXPORTS:
+        if track_id is None:
+            raise ValueError("Select a track to export it.")
+        fmt = "xlsx" if kind == EXPORT_TRACK_XLSX else "csv"
+        result = _writer("export_track")(
+            analysis, int(track_id), destination, fmt=fmt,
+            reference_point_px=reference_point_px,
+        )
+        return _as_paths(result, destination)
+    if kind == EXPORT_TRACKS_CSV:
+        writer = _writer("export_tracks_csv")
+        # D2R needs the reference point; the agreed signature is (saved, path),
+        # so it is passed only to a writer that declares it can take it.
+        if reference_point_px is not None and _accepts(writer, "reference_point_px"):
+            result = writer(analysis, destination, reference_point_px=reference_point_px)
+        else:
+            result = writer(analysis, destination)
+        return _as_paths(result, destination)
+    if kind == EXPORT_SUMMARIES_CSV:
+        return _as_paths(_writer("export_summaries_csv")(analysis, destination), destination)
+    if kind == EXPORT_MSD_CSV:
+        return _as_paths(_writer("export_msd_csv")(analysis, destination), destination)
+    if kind == EXPORT_BUNDLE:
+        writer = _writer("export_bundle")
+        return _as_paths(writer(_bundle_source(writer, analysis), destination), destination)
+    raise ValueError(f"Unknown export {kind!r}.")
+
+
+def _bundle_source(writer, analysis):
+    """What ``export_bundle`` takes first: the analysis, or its directory.
+
+    1.x took the SavedAnalysis; the 2.0 store may take the saved directory
+    (``export_bundle(saved_dir, dest)``). The parameter's name decides.
+    """
+    try:
+        first = next(iter(inspect.signature(writer).parameters))
+    except (StopIteration, TypeError, ValueError):
+        return analysis
+    if first in ("saved_dir", "directory", "source_dir", "src", "path"):
+        return Path(getattr(analysis, "directory", analysis))
+    return analysis
 
 
 class Job:
@@ -166,12 +347,15 @@ class Job:
     behaviour, so the choice is made explicit here rather than left to luck.
     """
 
+    #: Signals after which a worker has nothing more to say.
+    TERMINAL = ("finished", "failed", "cancelled_signal", "ambiguous")
+
     def __init__(self, worker: QObject) -> None:
         self.worker = worker
         self.thread = QThread()
         worker.moveToThread(self.thread)
         self.thread.started.connect(worker.run)  # type: ignore[attr-defined]
-        for name in ("finished", "failed", "cancelled_signal"):
+        for name in self.TERMINAL:
             signal = getattr(worker, name, None)
             if signal is not None:
                 signal.connect(self._stop, Qt.QueuedConnection)
@@ -197,12 +381,21 @@ def friendly_error(exc: BaseException) -> str:
     A traceback tells a user nothing they can use. What they need is which of
     their inputs is wrong, and what to do about it.
     """
-    from ..core.imaging import UnsupportedStackError
-    from ..core.segmentation import CellposeUnavailableError
+    from ..core.model_registry import ModelUnavailable
 
-    if isinstance(exc, UnsupportedStackError):
+    if isinstance(exc, ModelUnavailable):
+        # Verbatim: the contract's sentence first, then every path tried.
+        # Never a suggestion to use another model.
         return str(exc)
-    if isinstance(exc, CellposeUnavailableError):
+    if is_ambiguous_axes(exc):
+        return str(getattr(exc, "message", None) or exc)
+    if isinstance(exc, imaging.UnsupportedStackError):
+        return str(exc)
+    try:
+        from ..core.segmentation import CellposeUnavailableError  # noqa: PLC0415
+    except ImportError:  # pragma: no cover - the segmentation package may rename it
+        CellposeUnavailableError = ()  # type: ignore[assignment]
+    if CellposeUnavailableError and isinstance(exc, CellposeUnavailableError):
         return str(exc)
     if isinstance(exc, FileNotFoundError):
         missing = getattr(exc, "filename", None) or str(exc)

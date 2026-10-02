@@ -129,3 +129,24 @@ def test_an_unknown_rung_name_is_shown_rather_than_swallowed(qt_app):
     screen = ResultsScreen()
     populate(screen, manifest(ensemble="something_new", ensemble_passes=1))
     assert "something_new" in field_text(screen, "detection_effort")
+
+
+def test_formatted_rows_never_leak_none(qt_app):
+    """Critique C5: 'None px', 'prob None · flow None', 'None frames (gap ≤ None)'.
+
+    The fixture's tracking block is empty and here its segmentation block also
+    lacks the thresholds: every row built from them must read as an em dash,
+    never as a sentence with 'None' in it.
+    """
+    screen = ResultsScreen()
+    man = manifest()
+    for key in ("cellprob_threshold", "flow_threshold", "min_extent_px"):
+        man["segmentation"].pop(key)
+    values = populate(screen, man)
+    for key, text in values.items():
+        assert "None" not in text, f"{key}: {text!r}"
+        assert "None" not in screen.run_fields[key].toolTip(), key
+    assert values["thresholds"] == "—"
+    assert values["min_extent"] == "—"
+    assert values["max_gap"] == "—"
+    assert values["max_speed"] == "—"

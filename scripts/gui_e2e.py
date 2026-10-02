@@ -110,7 +110,18 @@ def main() -> int:
         abs((metadata.pixel_size_um.value or 0) - 0.467060342995564) < 1e-9,
         f"{metadata.pixel_size_um.value}",
     )
-    check("a model is selected", bool(window._config.segmentation.model_path))
+    # 2.0: the model is not a setting. It is resolved from the registry and
+    # hash-checked; the dataset screen names it and nothing can change it.
+    from corridor.ui.model_status import verified_model
+
+    status = verified_model("2D")
+    check("the validated model is present and verified", status.verified, status.message)
+    check(
+        "the dataset screen names the registered model",
+        bool(status.model_id) and status.model_id in window.dataset.field_model._value.full_text(),
+    )
+    check("no model picker in Advanced", not hasattr(window.dataset.advanced, "model_path"))
+    check("no migration axis in Advanced", not hasattr(window.dataset.advanced, "axis_mode"))
     check("Analyse is enabled", window.dataset.analyse_button.isEnabled())
 
     # ---------------------------------------------------------------- analyse
@@ -145,10 +156,16 @@ def main() -> int:
         "manifest records the 20 min interval",
         abs(manifest["calibration"]["frame_interval_min"] - 20.006894938) < 1e-6,
     )
+    recorded_sha = (manifest.get("model") or {}).get("sha256") or manifest.get(
+        "segmentation", {}
+    ).get("model_sha256")
     check(
         "manifest records the model checksum",
-        manifest["segmentation"]["model_sha256"]
-        == "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+        recorded_sha == "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+    )
+    check(
+        "manifest records no developer override",
+        not (manifest.get("model") or {}).get("developer_override", False),
     )
     check(
         "manifest records Cellpose 3",
@@ -162,6 +179,10 @@ def main() -> int:
             for key in ("speed_um_per_min", "vx_um_per_min", "speed_px_per_frame")
         ),
     )
+    check(
+        "no along/across columns remain (schema 2)",
+        not any(key.startswith(("v_along", "v_across")) for key in analysis.tracks[0]),
+    )
 
     # ------------------------------------------------------------- interaction
     print("\n4. review the result")
@@ -171,19 +192,58 @@ def main() -> int:
         pump(app, 0.2)
         check("selecting a track shows its detail", window.results.detail_box.isVisible())
         check("the canvas knows the selection", window.results.canvas.selected_track == ids[0])
+        detail = window.results.detail_fields
+        check("Len is shown", detail["len"]._value.full_text() != "—", detail["len"]._value.full_text())
+        check("D2S is shown", detail["d2s"]._value.full_text() != "—", detail["d2s"]._value.full_text())
+        check("speeds are per hour", "µm/h" in detail["mean"]._value.full_text())
+        check(
+            "MSD alpha is a number or says why not",
+            detail["alpha"]._value.full_text() not in ("", "None"),
+            detail["alpha"]._value.full_text(),
+        )
     window.results.timeline.step(1)
     pump(app, 0.1)
     check("the timeline moves the canvas", window.results.canvas.frame == 1)
     window.results.tabs.setCurrentIndex(1)
     pump(app, 0.1)
     check("the checks tab lists findings", window.results.checks_list.count() >= 0)
+    window.results.tabs.setCurrentIndex(2)
+    pump(app, 0.1)
+    provenance = {k: f._value.full_text() for k, f in window.results.run_fields.items()}
+    check(
+        "no provenance row says None",
+        not any("None" in v for v in provenance.values()),
+        str({k: v for k, v in provenance.items() if "None" in v}),
+    )
+    check("provenance names the schema", provenance.get("schema") == "2", provenance.get("schema"))
     window.results.tabs.setCurrentIndex(0)
+
+    # ------------------------------------------------------- reference point
+    print("\n4b. reference point")
+    window.results.set_reference_mode(True)
+    check("reference mode arms the canvas", window.results.canvas.picking)
+    window.results._reference_picked(10.0, 10.0)
+    pump(app, 0.1)
+    check("the point is stored with the analysis", (directory / "reference_point.json").exists())
+    check("one click leaves picking mode", not window.results.canvas.picking)
 
     # ----------------------------------------------------------------- export
     print("\n5. export")
     written = export_bundle(analysis, export_dir)
     check("export writes files", len(written) >= 7, f"{len(written)} files")
     check("exported tracks.csv exists", (export_dir / "tracks.csv").exists())
+    check("the bundle carries track_msd.csv", (export_dir / "track_msd.csv").exists())
+    menu = [a.text() for a in window.results.export_menu.actions() if not a.isSeparator()]
+    check("the Export menu offers six exports", len(menu) == 6, ", ".join(menu))
+    if ids:
+        target = export_dir / f"track_{ids[0]}.csv"
+        window._ask_save_path = lambda *_a: str(target)  # the save dialog, answered
+        window.export_results("track_csv")
+        ok = wait_for(app, lambda: bool(window._last_export), 60, "track export")
+        check("the selected track exports through the window", ok and target.exists())
+        if target.exists():
+            header = target.read_text(encoding="utf-8-sig").splitlines()[0]
+            check("the track export carries D2R", "distance_from_reference_um" in header)
 
     # --------------------------------------------------------- close & reopen
     print("\n6. close and reopen")

@@ -3,13 +3,24 @@
 Nothing here is hidden from the user, and nothing here is in their way. The
 defaults are the ones the supplied data was labelled with, and each control
 says what it means in the units the researcher thinks in.
+
+What is deliberately *not* here in 2.0:
+
+*   **No migration axis.** The tracker is axis-free (contract §5); the only
+    device-related choice is whether detected channel walls may stop a link
+    (``TrackingConfig.channel_constraint``).
+*   **No model picker.** The model is not a setting (contract §2). Production
+    resolves one SHA-256-verified file; the dataset screen and Settings show
+    which, and nothing here can change it.
+*   **No hard-gate control.** The gate is derived, ``2 x unmatched cost``
+    (``TrackingConfig.effective_gate_chi2``), so it is shown, never edited --
+    the 1.x panel ratcheted a stored gate upwards, which is how the two
+    drifted apart.
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
-from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
@@ -17,39 +28,36 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
-    QFileDialog,
     QFormLayout,
-    QHBoxLayout,
     QLabel,
-    QLineEdit,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from ...core.config import (
-    AXIS_ANGLE,
-    AXIS_AUTO,
-    AXIS_HORIZONTAL,
-    AXIS_VERTICAL,
+    CHANNEL_CONSTRAINT_AUTO,
+    CHANNEL_CONSTRAINT_OFF,
     ENSEMBLE_LABELS,
-    ENSEMBLE_MODES,
+    ENSEMBLE_OFF,
+    ENSEMBLE_THRESHOLDS,
+    ENSEMBLE_WIDE,
     NORMALISATION_LABELS,
     NORMALISATION_MODES,
     RunConfig,
     SegmentationConfig,
 )
-from ...core.imaging import StackMetadata
-from ...core.segmentation import discover_companion_models
-from ..theme import PALETTE, SPACE
-from .common import divider, ghost_button, label
+from ..theme import SPACE
+from .common import divider, label
 
-AXIS_CHOICES = [
-    ("Detect from the channel walls", AXIS_AUTO),
-    ("Vertical", AXIS_VERTICAL),
-    ("Horizontal", AXIS_HORIZONTAL),
-    ("A specific angle", AXIS_ANGLE),
-]
+#: The detection-effort rungs offered. Each re-runs the *same* validated model
+#: at other thresholds; the 1.x rungs that ran other models (``models``,
+#: ``max_recall``) are gone with the model choice itself (contract §2).
+ENSEMBLE_CHOICES = (ENSEMBLE_OFF, ENSEMBLE_THRESHOLDS, ENSEMBLE_WIDE)
+
+#: Speeds are shown per hour, the unit results are reported in (contract §6),
+#: and stored per minute, the unit the configuration has always used.
+MIN_PER_HR = 60.0
 
 
 def _spin(
@@ -85,6 +93,16 @@ def _section(text: str) -> QLabel:
     return heading
 
 
+def _is_3d(metadata: Any) -> bool:
+    """Whether the opened file has a Z axis, read from whatever it reports."""
+    if metadata is None:
+        return False
+    axes = str(getattr(metadata, "axes", "") or "")
+    if "Z" in axes.upper():
+        return True
+    return str(getattr(metadata, "dimensionality", "") or "").upper() == "3D"
+
+
 class AdvancedPanel(QWidget):
     """Edits a RunConfig in place and reports changes."""
 
@@ -93,8 +111,11 @@ class AdvancedPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._config = RunConfig()
-        self._metadata: StackMetadata | None = None
+        self._metadata: Any = None
         self._loading = False
+        #: What a unit-converting control displayed when the config was loaded;
+        #: see :meth:`_converted`.
+        self._shown_at_load: dict[str, float] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -102,10 +123,6 @@ class AdvancedPanel(QWidget):
 
         layout.addWidget(_section("Calibration"))
         layout.addLayout(self._calibration_form())
-        layout.addWidget(divider())
-
-        layout.addWidget(_section("Confinement"))
-        layout.addLayout(self._confinement_form())
         layout.addWidget(divider())
 
         layout.addWidget(_section("Segmentation"))
@@ -142,43 +159,24 @@ class AdvancedPanel(QWidget):
         self.frame_interval.valueChanged.connect(self._emit)
         form.addRow("Frame interval", self.frame_interval)
 
+        self.z_step = _spin(0.0, 1000.0, 0.1, 4, " µm")
+        self.z_step.setSpecialValueText("from the file")
+        self.z_step.valueChanged.connect(self._emit)
+        self.z_step.setToolTip(
+            "Distance between Z planes. Never assumed equal to the pixel size: "
+            "without it, 3-D results are reported in voxels and every µm³ and "
+            "µm² column stays empty."
+        )
+        self.z_step_label = QLabel("Z step")
+        form.addRow(self.z_step_label, self.z_step)
+
         self.calibration_note = label("", "tertiary")
         self.calibration_note.setWordWrap(True)
         form.addRow("", self.calibration_note)
         return form
 
-    def _confinement_form(self) -> QFormLayout:
-        form = self._form()
-        self.axis_mode = QComboBox()
-        for text, value in AXIS_CHOICES:
-            self.axis_mode.addItem(text, value)
-        self.axis_mode.currentIndexChanged.connect(self._axis_changed)
-        form.addRow("Migration axis", self.axis_mode)
-
-        self.axis_angle = _spin(-180.0, 180.0, 1.0, 1, "°")
-        self.axis_angle.valueChanged.connect(self._emit)
-        self.axis_angle_row = self.axis_angle
-        form.addRow("Angle", self.axis_angle)
-
-        self.enforce_channels = QCheckBox("Keep cells in their own channel")
-        self.enforce_channels.toggled.connect(self._emit)
-        form.addRow("", self.enforce_channels)
-        return form
-
     def _segmentation_form(self) -> QFormLayout:
         form = self._form()
-        row = QHBoxLayout()
-        row.setSpacing(SPACE["sm"])
-        self.model_path = QLineEdit()
-        self.model_path.setPlaceholderText("Bundled model")
-        self.model_path.setReadOnly(True)
-        browse = ghost_button("Change", "folder", self._choose_model)
-        row.addWidget(self.model_path, 1)
-        row.addWidget(browse)
-        holder = QWidget()
-        holder.setLayout(row)
-        form.addRow("Cellpose model", holder)
-
         self.cellprob = _spin(-12.0, 12.0, 0.5, 2)
         self.cellprob.valueChanged.connect(self._emit)
         self.cellprob.setToolTip(
@@ -231,20 +229,31 @@ class AdvancedPanel(QWidget):
         form.addRow("Image normalisation", self.normalisation)
 
         self.ensemble = QComboBox()
-        for mode in ENSEMBLE_MODES:
-            self.ensemble.addItem(ENSEMBLE_LABELS[mode], mode)
-        self._refresh_ensemble_costs()
+        for mode in ENSEMBLE_CHOICES:
+            # The cost is what this rung really does: every pass runs the one
+            # validated model, so there is no companion model whose absence
+            # could make the advertised cost untrue (1.x had to check for that).
+            cost = SegmentationConfig(ensemble=mode).ensemble_cost_factor()
+            text = ENSEMBLE_LABELS.get(mode, mode)
+            if cost > 1:
+                text += f"  ·  {cost}× slower"
+            self.ensemble.addItem(text, mode)
         self.ensemble.currentIndexChanged.connect(self._emit)
         self.ensemble.setToolTip(
             "How hard to look for cells the default settings miss.\n\n"
-            "Extra passes can only add detections, never remove them, and "
-            "anything only they found is marked in the results. On the supplied "
-            "labelled images, two thresholds finds about 1% more cells for "
-            "twice the time; the slowest setting finds about 7% more but "
-            "proposes considerably more debris for the tracker to reject.\n\n"
-            "See docs/ACCURACY.md for the measured figures."
+            "Extra passes re-run the same validated model at other thresholds. "
+            "They can only add detections, never remove them, and anything only "
+            "they found is marked in the results. On the supplied labelled "
+            "images (docs/recall_experiment.json), two thresholds raises recall "
+            "from 0.846 to 0.854 for twice the time, and four thresholds to "
+            "0.874 for four times the time while precision falls from 0.832 to "
+            "0.793."
         )
         form.addRow("Detection effort", self.ensemble)
+        self.ensemble_note = label("", "tertiary")
+        self.ensemble_note.setWordWrap(True)
+        self.ensemble_note.hide()
+        form.addRow("", self.ensemble_note)
 
         self.use_gpu = QCheckBox("Use the GPU if available")
         self.use_gpu.toggled.connect(self._emit)
@@ -253,6 +262,34 @@ class AdvancedPanel(QWidget):
 
     def _tracking_form(self) -> QFormLayout:
         form = self._form()
+        self.respect_walls = QCheckBox("Respect detected channel walls")
+        self.respect_walls.toggled.connect(self._emit)
+        self.respect_walls.setToolTip(
+            "Never link a cell across a channel wall.\n\n"
+            "Applied only when the walls are actually detected in the image; "
+            "on a field with no visible walls nothing is constrained. The run "
+            "records whether it was applied."
+        )
+        form.addRow("", self.respect_walls)
+
+        self.position_sigma = _spin(0.01, 50.0, 0.05, 2, " µm")
+        self.position_sigma.valueChanged.connect(self._emit)
+        self.position_sigma.setToolTip(
+            "How precisely a cell's centre is known in one frame, whatever its "
+            "shape. Each cell's own length and width add to this along and "
+            "across its body, so a long thin cell is trusted less along its "
+            "length than across it."
+        )
+        form.addRow("Position uncertainty", self.position_sigma)
+
+        self.max_speed = _spin(0.1, 30000.0, 6.0, 1, " µm/h")
+        self.max_speed.valueChanged.connect(self._emit)
+        self.max_speed.setToolTip(
+            "No link implying a faster movement is ever made, across a gap "
+            "included. A hard physical limit, not a typical speed."
+        )
+        form.addRow("Fastest plausible cell", self.max_speed)
+
         self.max_gap = _int_spin(0, 20, " frames")
         self.max_gap.valueChanged.connect(self._emit)
         self.max_gap.setToolTip(
@@ -261,69 +298,24 @@ class AdvancedPanel(QWidget):
         )
         form.addRow("Allowed disappearance", self.max_gap)
 
-        self.max_speed = _spin(0.01, 500.0, 0.5, 2, " µm/min")
-        self.max_speed.valueChanged.connect(self._emit)
-        form.addRow("Fastest plausible cell", self.max_speed)
-
-        self.sigma_along = _spin(0.1, 100.0, 0.5, 2, " µm")
-        self.sigma_along.valueChanged.connect(self._emit)
-        self.sigma_along.setToolTip("Expected error of the motion prediction along the channel.")
-        form.addRow("Along-channel spread", self.sigma_along)
-
-        self.sigma_across = _spin(0.01, 100.0, 0.1, 2, " µm")
-        self.sigma_across.valueChanged.connect(self._emit)
-        self.sigma_across.setToolTip(
-            "Expected sideways wander. Smaller values enforce the confinement "
-            "prior more strongly."
-        )
-        form.addRow("Across-channel spread", self.sigma_across)
-
         self.unmatched = _spin(1.0, 200.0, 1.0, 1)
-        self.unmatched.valueChanged.connect(self._emit)
+        self.unmatched.valueChanged.connect(self._unmatched_changed)
         self.unmatched.setToolTip(
             "How poor a match has to be before the tracker prefers to leave the "
             "cell unmatched. In units of squared standard deviations."
         )
         form.addRow("Unmatched cost", self.unmatched)
+        self.gate_note = label("", "tertiary")
+        self.gate_note.setWordWrap(True)
+        form.addRow("", self.gate_note)
 
         self.min_observations = _int_spin(1, 100)
         self.min_observations.valueChanged.connect(self._emit)
         form.addRow("Minimum observations", self.min_observations)
         return form
 
-    def _refresh_ensemble_costs(self) -> None:
-        """Label each rung with the work it will actually do on this machine.
-
-        The rungs that run several models cost nothing extra when there is only
-        one model to run -- which is the normal case in the installed
-        application, since it ships the combined model alone. Advertising a
-        fixed "3× slower" there promises an effect the run cannot produce, and
-        a user who picks it would get byte-identical output while believing
-        they had traded time for recall.
-        """
-        companions = discover_companion_models(self._model_for_discovery())
-        for index in range(self.ensemble.count()):
-            mode = self.ensemble.itemData(index)
-            if mode is None:
-                continue
-            cost = SegmentationConfig(
-                ensemble=mode, ensemble_model_paths=companions
-            ).ensemble_cost_factor()
-            label_text = ENSEMBLE_LABELS.get(mode, mode)
-            if cost > 1:
-                label_text += f"  ·  {cost}× slower"
-            elif SegmentationConfig(ensemble=mode).uses_companion_models():
-                label_text += "  ·  no other model found"
-            self.ensemble.setItemText(index, label_text)
-
-    def _model_for_discovery(self) -> str | None:
-        text = self.model_path.text().strip()
-        if text:
-            return text
-        return self._config.segmentation.resolved_model() if self._config else None
-
     # ------------------------------------------------------------------ state
-    def set_config(self, config: RunConfig, metadata: StackMetadata | None = None) -> None:
+    def set_config(self, config: RunConfig, metadata: Any = None) -> None:
         self._loading = True
         self._config = config
         self._metadata = metadata
@@ -331,65 +323,86 @@ class AdvancedPanel(QWidget):
         cal = config.calibration
         self.pixel_size.setValue(cal.pixel_size_um or 0.0)
         self.frame_interval.setValue(cal.frame_interval_min or 0.0)
+        self.z_step.setValue(getattr(cal, "z_step_um", None) or 0.0)
+        three_d = _is_3d(metadata)
+        self.z_step.setVisible(three_d)
+        self.z_step_label.setVisible(three_d)
         self._describe_calibration()
 
-        index = self.axis_mode.findData(config.confinement.mode)
-        self.axis_mode.setCurrentIndex(max(0, index))
-        self.axis_angle.setValue(config.confinement.angle_deg)
-        self.axis_angle.setEnabled(config.confinement.mode == AXIS_ANGLE)
-        self.enforce_channels.setChecked(config.tracking.enforce_channel_identity)
-
         seg = config.segmentation
-        self.model_path.setText(seg.model_path or "")
-        self.model_path.setToolTip(seg.model_path or "No model selected")
         self.cellprob.setValue(seg.cellprob_threshold)
         self.flow.setValue(seg.flow_threshold)
         self.diameter.setValue(seg.diameter or 0.0)
         self.min_extent.setValue(seg.min_extent_px)
-        self._refresh_ensemble_costs()
         index = self.normalisation.findData(seg.normalisation_mode)
         self.normalisation.setCurrentIndex(max(0, index))
         index = self.ensemble.findData(seg.ensemble)
+        if index < 0:
+            # A saved 1.x configuration naming a rung that ran other models.
+            # It runs as a single pass now (contract §2); say so rather than
+            # silently showing a different setting from the one saved.
+            previous = ENSEMBLE_LABELS.get(seg.ensemble, seg.ensemble)
+            self.ensemble_note.setText(
+                f"The saved setting “{previous}” ran other models, which "
+                "Corridor 2.0 no longer does. It runs as a single pass."
+            )
+            self.ensemble_note.show()
+            index = self.ensemble.findData(ENSEMBLE_OFF)
+        else:
+            self.ensemble_note.hide()
         self.ensemble.setCurrentIndex(max(0, index))
         self.use_gpu.setChecked(seg.use_gpu)
 
         trk = config.tracking
+        self.respect_walls.setChecked(
+            getattr(trk, "channel_constraint", CHANNEL_CONSTRAINT_AUTO) != CHANNEL_CONSTRAINT_OFF
+        )
+        self.position_sigma.setValue(trk.position_sigma_um)
+        self.max_speed.setValue(trk.max_speed_um_per_min * MIN_PER_HR)
+        self._shown_at_load["max_speed"] = self.max_speed.value()
         self.max_gap.setValue(trk.max_gap)
-        self.max_speed.setValue(trk.max_speed_um_per_min)
-        self.sigma_along.setValue(trk.sigma_along_um)
-        self.sigma_across.setValue(trk.sigma_perp_um)
         self.unmatched.setValue(trk.unmatched_chi2)
         self.min_observations.setValue(trk.min_observations)
+        self._describe_gate()
         self._loading = False
 
     def _describe_calibration(self) -> None:
         if self._metadata is None:
             self.calibration_note.setText("")
             return
-        pixel = self._metadata.pixel_size_um
-        interval = self._metadata.frame_interval_min
         parts = []
-        if pixel.known:
+        pixel = getattr(self._metadata, "pixel_size_um", None)
+        interval = getattr(self._metadata, "frame_interval_min", None)
+        if pixel is not None and getattr(pixel, "known", False):
             parts.append(f"file says {pixel.describe(' µm/px')}")
-        if interval.known:
+        if interval is not None and getattr(interval, "known", False):
             parts.append(f"{interval.describe(' min')}")
+        z_step = getattr(self._metadata, "z_step_um", None)
+        if z_step is not None:
+            value = getattr(z_step, "value", z_step)
+            if getattr(z_step, "known", None) is not False and value:
+                parts.append(f"Z step {float(value):.6g} µm")
         self.calibration_note.setText("  ·  ".join(parts))
 
     def apply_to(self, config: RunConfig) -> RunConfig:
-        """Copy the current control values into ``config``."""
+        """Copy the current control values into ``config``.
+
+        Model selection is never written: the legacy ``model_path`` /
+        ``use_custom_model`` fields are left exactly as they were, and the
+        segmentation service ignores them (contract §2).
+        """
         config.calibration.pixel_size_um = (
             self.pixel_size.value() if self.pixel_size.value() > 0 else None
         )
         config.calibration.frame_interval_min = (
             self.frame_interval.value() if self.frame_interval.value() > 0 else None
         )
-        config.confinement.mode = self.axis_mode.currentData()
-        config.confinement.angle_deg = self.axis_angle.value()
+        if hasattr(config.calibration, "z_step_um"):
+            config.calibration.z_step_um = (
+                self.z_step.value() if self.z_step.value() > 0 else None
+            )
 
         seg = config.segmentation
-        text = self.model_path.text().strip()
-        seg.model_path = text or None
-        seg.use_custom_model = bool(text)
         seg.cellprob_threshold = self.cellprob.value()
         seg.flow_threshold = self.flow.value()
         seg.diameter = self.diameter.value() if self.diameter.value() > 0 else None
@@ -403,35 +416,46 @@ class AdvancedPanel(QWidget):
         seg.use_gpu = self.use_gpu.isChecked()
 
         trk = config.tracking
+        trk.channel_constraint = (
+            CHANNEL_CONSTRAINT_AUTO if self.respect_walls.isChecked() else CHANNEL_CONSTRAINT_OFF
+        )
+        # Kept in step for the 1.x tracker until the integration removes it.
+        trk.enforce_channel_identity = self.respect_walls.isChecked()
+        trk.position_sigma_um = self.position_sigma.value()
+        trk.max_speed_um_per_min = self._converted(
+            "max_speed", self.max_speed.value(), trk.max_speed_um_per_min, MIN_PER_HR
+        )
         trk.max_gap = self.max_gap.value()
-        trk.max_speed_um_per_min = self.max_speed.value()
-        trk.sigma_along_um = self.sigma_along.value()
-        trk.sigma_perp_um = self.sigma_across.value()
         trk.unmatched_chi2 = self.unmatched.value()
-        # The hard ceiling is two unmatched decisions: keep them consistent so
-        # the optimiser can never accept a pairing the gate would refuse.
-        trk.gate_chi2 = max(trk.gate_chi2, 2.0 * trk.unmatched_chi2)
+        # gate_chi2 is not written: v2 derives it (effective_gate_chi2 = 2U),
+        # and the legacy field stays as loaded for the 1.x tracker until the
+        # integration removes it.
         trk.min_observations = self.min_observations.value()
-        trk.enforce_channel_identity = self.enforce_channels.isChecked()
         return config
 
+    def _converted(self, key: str, shown: float, stored: float, factor: float) -> float:
+        """The stored value, unless the user actually changed the shown one.
+
+        A per-hour spin box rounds what it displays; writing the rounded
+        number back on every apply would silently change a saved parameter
+        just because the panel was opened (4.6712 µm/min -> 280.3 µm/h ->
+        4.67167 µm/min). So an untouched control keeps the exact stored value.
+        """
+        if abs(shown - self._shown_at_load.get(key, float("nan"))) < 1e-9:
+            return stored
+        return shown / factor
+
     # ----------------------------------------------------------------- events
-    def _axis_changed(self) -> None:
-        self.axis_angle.setEnabled(self.axis_mode.currentData() == AXIS_ANGLE)
+    def _unmatched_changed(self) -> None:
+        self._describe_gate()
         self._emit()
 
-    def _choose_model(self) -> None:
-        start = self.model_path.text() or ""
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Choose a Cellpose model", start, "All files (*)"
+    def _describe_gate(self) -> None:
+        gate = 2.0 * self.unmatched.value()
+        self.gate_note.setText(
+            f"Links costing more than {gate:.1f} (twice the unmatched cost) are "
+            "never made. Derived, so the two cannot drift apart."
         )
-        if path:
-            self.model_path.setText(path)
-            self.model_path.setToolTip(path)
-            # Which companion models exist depends entirely on where this one
-            # lives, so the rung costs are only true for the model in the box.
-            self._refresh_ensemble_costs()
-            self._emit()
 
     def _emit(self) -> None:
         if not self._loading:

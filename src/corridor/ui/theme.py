@@ -62,7 +62,12 @@ class Palette:
     )
     mask_outline: str = "#FF6B35"
     centroid: str = "#FFFFFF"
-    axis_guide: str = "#22B8CF"
+    #: Lanes are device structure, not data, so they are drawn in a neutral
+    #: tone that is none of the track colours. (1.x drew its axis in
+    #: "#22B8CF", which is also track 2's colour.)
+    lane_guide: str = "#A7B4C2"
+    #: The D2R reference point: white over a dark halo, legible on any pixel.
+    reference_marker: str = "#FFFFFF"
 
 
 PALETTE = Palette()

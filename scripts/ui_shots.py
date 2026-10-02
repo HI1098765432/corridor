@@ -109,7 +109,10 @@ def main() -> int:
         source = analysis.source_path
         if source is None or not source.exists():
             continue
-        metadata = read_metadata(source)
+        from corridor.ui.workers import import_config_for, read_metadata_for
+
+        # With the axis order the run recorded, as the window itself reads it.
+        metadata = read_metadata_for(source, import_config_for(analysis.manifest))
         stack = load_stack(source, metadata)
         window.results.load(analysis, stack)
         window._analysis = analysis
@@ -132,6 +135,48 @@ def main() -> int:
                 window.results.tabs.setCurrentIndex(2)
                 shoot(window, "results_run")
                 window.results.tabs.setCurrentIndex(0)
+            if want("results_lanes"):
+                if window.results.toggle_lanes.isEnabled():
+                    window.results.toggle_lanes.setChecked(True)
+                    shoot(window, "results_lanes")
+                    window.results.toggle_lanes.setChecked(False)
+            if want("results_reference"):
+                height, width = stack.shape[-2:]
+                # Shown, not saved: a screenshot must not change the run it shows.
+                window.results.reference_point_px = (width / 2.0, height / 3.0)
+                window.results.canvas.reference_point = (width / 2.0, height / 3.0)
+                shoot(window, "results_reference")
+                window.results.canvas.reference_point = None
+                window.results.reference_point_px = None
+            if want("results_export_menu"):
+                menu = window.results.export_menu
+                menu.adjustSize()
+                shoot(menu, "results_export_menu")
+
+    # 3b. The orthogonal viewer, on a synthetic TZYX volume. There is no 3-D
+    # data in the supplied set (contract §0), so the state is drawn from a
+    # volume with two known boxes rather than from a run.
+    if want("ortho_3d"):
+        import numpy as np
+
+        from corridor.ui.widgets.ortho_viewer import OrthoViewer
+
+        volume = np.full((3, 12, 96, 128), 20.0, dtype=np.float32)
+        labels = np.zeros(volume.shape, dtype=np.int32)
+        for label_id, (z, y, x) in ((1, (3, 30, 40)), (2, (8, 60, 90))):
+            box = (slice(None), slice(z - 2, z + 3), slice(y - 6, y + 7), slice(x - 10, x + 11))
+            volume[box] = 180.0
+            labels[box] = label_id
+        rows = [
+            {"track_id": 1, "frame": t, "x_px": 40.0, "y_px": 30.0, "z": 3.0} for t in range(3)
+        ] + [
+            {"track_id": 2, "frame": t, "x_px": 90.0, "y_px": 60.0, "z": 8.0} for t in range(3)
+        ]
+        viewer = OrthoViewer()
+        viewer.rows_for_frame = lambda f: [r for r in rows if r["frame"] == f]
+        viewer.set_volume(volume, labels, anisotropy=4.0)
+        viewer.select_track(1)
+        shoot(viewer, "ortho_3d", size=(1000, 760))
 
     # 4. Home with recent projects.
     if want("home_recent"):

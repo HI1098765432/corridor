@@ -1,49 +1,78 @@
-"""Application shell: screens, navigation and the jobs behind them."""
+"""Application shell: screens, navigation and the jobs behind them.
+
+Three 2.0 rules are enforced here, because this is where a run starts:
+
+*   **A new project inherits tuning, never facts about another file**
+    (``RunConfig.for_new_project``): no calibration override, model choice,
+    axis order or reference point carries from the last run into the next.
+    KK1 and KK2 are 0.639 and 0.467 µm/px; a silent carry-over is a wrong
+    answer with nothing on screen to show it.
+*   **No validated model, no analysis.** The model is resolved and
+    hash-checked before the worker starts; a ModelUnavailable is shown with
+    the contract's own sentence and the paths tried, and nothing falls back
+    to another model.
+*   **An ambiguous file is asked about, not guessed.** When the importer
+    cannot tell T from Z it refuses (AmbiguousAxes); the window asks which
+    order the file has, records it in ``ImportConfig.axes`` and reads again.
+"""
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
-from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QAction, QDesktopServices, QKeySequence, QShortcut
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
-    QHBoxLayout,
-    QLabel,
     QMainWindow,
     QMessageBox,
     QStackedWidget,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
-from .. import app_meta, resources
-from ..core import pipeline
+from .. import app_meta
+from ..core import pipeline, updates
 from ..core.config import RunConfig
-from ..core.imaging import StackMetadata
-from ..core.segmentation import cellpose_version, gpu_available
 from ..store import db
-from ..store.project import SavedAnalysis, analysis_is_complete, load_analysis
-from .dialogs import AboutDialog, ErrorDialog, SettingsDialog
-from .screens.dataset import DatasetScreen
+from ..store.project import SavedAnalysis, analysis_is_complete
+from .dialogs import AboutDialog, AxisOrderDialog, ErrorDialog, SettingsDialog, _gpu_available
+from .model_status import verified_model
+from .screens.dataset import DatasetScreen, preview_stack
 from .screens.home import HomeScreen
 from .screens.results import ResultsScreen
-from .theme import PALETTE, SPACE, stylesheet
 from .widgets.update_banner import UpdateBanner, UpdateConsent
-from .workers import AnalysisWorker, DatasetWorker, ExportWorker, Job, ResultsWorker
-from ..core import updates
+from .workers import (
+    EXPORT_BUNDLE,
+    EXPORT_LABELS,
+    EXPORT_MSD_CSV,
+    EXPORT_SUMMARIES_CSV,
+    EXPORT_TRACK_CSV,
+    EXPORT_TRACK_XLSX,
+    EXPORT_TRACKS_CSV,
+    TRACK_EXPORTS,
+    AnalysisWorker,
+    DatasetWorker,
+    ExportWorker,
+    Job,
+    ResultsWorker,
+)
 
 SCREEN_HOME = 0
 SCREEN_DATASET = 1
 SCREEN_RESULTS = 2
+
+#: Default file name (after the source's stem) and save-dialog filter per export.
+_EXPORT_FILES: dict[str, tuple[str, str]] = {
+    EXPORT_TRACK_CSV: ("_track_{track}.csv", "CSV (*.csv)"),
+    EXPORT_TRACK_XLSX: ("_track_{track}.xlsx", "Excel workbook (*.xlsx)"),
+    EXPORT_TRACKS_CSV: ("_tracks.csv", "CSV (*.csv)"),
+    EXPORT_SUMMARIES_CSV: ("_track_summary.csv", "CSV (*.csv)"),
+    EXPORT_MSD_CSV: ("_track_msd.csv", "CSV (*.csv)"),
+}
 
 
 class MainWindow(QMainWindow):
@@ -58,10 +87,14 @@ class MainWindow(QMainWindow):
         self._jobs: list[Job] = []
         self._analysis_job: Job | None = None
         self._project: db.ProjectRecord | None = None
-        self._metadata: StackMetadata | None = None
+        self._metadata: Any = None
         self._stack: np.ndarray | None = None
         self._config = RunConfig()
         self._analysis: SavedAnalysis | None = None
+        self._opening: Path | None = None
+        self._export_destination: Path | None = None
+        self._last_export: list[Path] = []
+        self._export_box: QMessageBox | None = None
 
         root = QWidget()
         root.setObjectName("Root")
@@ -108,6 +141,7 @@ class MainWindow(QMainWindow):
         self.results.export_requested.connect(self.export_results)
         self.results.napari_requested.connect(self.open_in_napari)
         self.results.open_folder_requested.connect(self.open_results_folder)
+        self.results.reference_point_changed.connect(self._reference_changed)
 
         self.update_consent.answered.connect(self._update_consent_given)
         self.update_banner.dismissed.connect(self._update_dismissed)
@@ -128,7 +162,9 @@ class MainWindow(QMainWindow):
         shortcut("Right", lambda: self._step(1))
 
     def _escape(self) -> None:
-        if self.stack.currentIndex() == SCREEN_RESULTS and self.results._selected_track is not None:
+        if self.stack.currentIndex() == SCREEN_RESULTS and self.results.reference_button.isChecked():
+            self.results.set_reference_mode(False)
+        elif self.stack.currentIndex() == SCREEN_RESULTS and self.results.selected_track is not None:
             self.results.select_track(None)
         elif self.stack.currentIndex() != SCREEN_HOME and not self._busy:
             self.go_home()
@@ -178,35 +214,80 @@ class MainWindow(QMainWindow):
 
         self._project = existing or self.store.create_project(source)
         self._config = self._fresh_config(source, self._project)
+        self._read_dataset(source)
+
+    def _read_dataset(self, source: Path) -> None:
+        self._opening = source
         self._start_job(
-            DatasetWorker(source),
+            DatasetWorker(source, self._config.import_),
             finished=self._dataset_ready,
             failed=self._show_error,
+            ambiguous=self._dataset_ambiguous,
         )
 
     def _fresh_config(self, source: Path, project: db.ProjectRecord) -> RunConfig:
-        saved = project.config or self.store.get_setting("default_config", {})
-        config = RunConfig.from_dict(saved) if saved else RunConfig()
+        """The configuration for opening ``source`` in ``project``.
+
+        A project's own saved configuration is loaded as it was saved:
+        reopening a project is not starting one. A *new* project starts from
+        the saved preferences through ``for_new_project``, which drops every
+        calibration override, model key, import setting and reference point.
+        """
+        if project.config:
+            config = RunConfig.from_dict(project.config)
+        else:
+            config = RunConfig.for_new_project(self.store.get_setting("default_config", {}))
         config.input_path = str(source)
         config.output_dir = str(project.path)
-        if not config.segmentation.model_path:
-            model = resources.bundled_model_path()
-            config.segmentation.model_path = str(model) if model else None
-            config.segmentation.use_custom_model = bool(model)
         config.segmentation.use_gpu = bool(
-            self.store.get_setting("use_gpu", False) and gpu_available()
+            self.store.get_setting("use_gpu", False) and _gpu_available()
         )
         return config
 
-    def _dataset_ready(self, metadata: StackMetadata, stack: np.ndarray) -> None:
+    def _dataset_ambiguous(self, exc: Any) -> None:
+        """The file's T and Z cannot be told apart: ask, record, read again."""
+        source = self._opening
+        if source is None:
+            return
+        choices = [str(c) for c in (getattr(exc, "choices", None) or [])]
+        message = str(getattr(exc, "message", None) or exc)
+        if self._config.import_.axes:
+            # An explicit order was already given and the file still cannot be
+            # read with it. Asking again would loop; say what happened instead.
+            self._show_error(
+                f"This file could not be read with the axis order {self._config.import_.axes}.\n\n"
+                f"{message}",
+                "",
+            )
+            self._config.import_.axes = None
+            return
+        if not choices:
+            self._show_error(message, "")
+            return
+        choice = self._ask_axis_order(choices, message)
+        if not choice:
+            return
+        self._config.import_.axes = choice
+        self._read_dataset(source)
+
+    def _ask_axis_order(self, choices: Sequence[str], message: str) -> str | None:
+        """Modal question; replaced in tests."""
+        dialog = AxisOrderDialog(choices, message, self)
+        if dialog.exec() == QDialog.Accepted:
+            return dialog.choice
+        return None
+
+    def _dataset_ready(self, metadata, stack: np.ndarray) -> None:
         self._metadata = metadata
         self._stack = stack
         if self._project is not None:
-            self._project.n_frames = metadata.n_frames
-            self._project.height = metadata.height
-            self._project.width = metadata.width
-            self._project.pixel_size_um = metadata.pixel_size_um.value
-            self._project.frame_interval_min = metadata.frame_interval_min.value
+            self._project.n_frames = getattr(metadata, "n_frames", self._project.n_frames)
+            self._project.height = getattr(metadata, "height", self._project.height)
+            self._project.width = getattr(metadata, "width", self._project.width)
+            pixel = getattr(metadata, "pixel_size_um", None)
+            interval = getattr(metadata, "frame_interval_min", None)
+            self._project.pixel_size_um = getattr(pixel, "value", pixel)
+            self._project.frame_interval_min = getattr(interval, "value", interval)
             self.store.update_project(self._project)
         self.stack.setCurrentIndex(SCREEN_DATASET)
         self.dataset.set_dataset(metadata, stack, self._config)
@@ -222,7 +303,8 @@ class MainWindow(QMainWindow):
 
             from ..core.imaging import frame_to_display
 
-            middle = frame_to_display(stack[stack.shape[0] // 2])
+            flat = preview_stack(stack)
+            middle = frame_to_display(flat[flat.shape[0] // 2])
             image = Image.fromarray(middle).convert("L")
             image.thumbnail((256, 256))
             self._project.preview_path.parent.mkdir(parents=True, exist_ok=True)
@@ -233,11 +315,37 @@ class MainWindow(QMainWindow):
     def _config_edited(self) -> None:
         self.dataset.advanced.apply_to(self._config)
 
+    def _dimensionality(self) -> str:
+        """'3D' when the open file has a Z axis, by its metadata or its pixels."""
+        axes = str(getattr(self._metadata, "axes", "") or "")
+        if "Z" in axes.upper():
+            return "3D"
+        if self._stack is not None and self._stack.ndim == 4:
+            return "3D"
+        return "2D"
+
     # ------------------------------------------------------------------ analyse
+    def _model_ready(self) -> bool:
+        """Resolve and hash-check the validated model before anything runs.
+
+        Imported labels need no model. Otherwise a ModelUnavailable is shown
+        verbatim -- the contract's sentence, then the paths tried -- and the
+        analysis does not start. There is no fallback to try.
+        """
+        if self._config.import_.labels_path:
+            return True
+        status = verified_model(self._dimensionality())
+        if status.verified:
+            return True
+        self._show_error(status.message, "")
+        return False
+
     def start_analysis(self) -> None:
         if self._metadata is None or self._project is None:
             return
         self.dataset.advanced.apply_to(self._config)
+        if not self._model_ready():
+            return
         self._config.input_path = str(self._metadata.path)
         self._config.output_dir = str(self._project.path)
 
@@ -282,6 +390,8 @@ class MainWindow(QMainWindow):
                 result.scale.frame_interval_min if result.scale.calibrated_time else None
             )
             self.store.update_project(self._project)
+            # Saved whole; ``for_new_project`` strips what must not carry over
+            # when the next project reads it.
             self.store.set_setting("default_config", result.config.to_dict())
         self._open_results(Path(result.output_dir or ""))
 
@@ -327,51 +437,111 @@ class MainWindow(QMainWindow):
             failed=self._show_error,
         )
 
-    def _results_ready(
-        self, analysis: SavedAnalysis, metadata: StackMetadata, stack: np.ndarray
-    ) -> None:
+    def _results_ready(self, analysis: SavedAnalysis, metadata, stack: np.ndarray) -> None:
         self._analysis = analysis
         self._metadata = metadata
         self._stack = stack
         self.stack.setCurrentIndex(SCREEN_RESULTS)
         self.results.load(analysis, stack)
 
+    def _reference_changed(self, point: tuple[float, ...] | None) -> None:
+        """Keep the project's configuration in step with the analysis's point.
+
+        The point itself is stored beside the analysis (it is read from there
+        when the results open); the project configuration records it too, so
+        re-analysing this project measures D2R from the same place.
+        """
+        value = [float(v) for v in point] if point else None
+        self._config.measurement.reference_point_px = tuple(value) if value else None
+        if self._project is None or self._analysis is None:
+            return
+        if Path(self._project.path) != Path(self._analysis.directory):
+            return
+        config = dict(self._project.config or {})
+        measurement = dict(config.get("measurement") or {})
+        measurement["reference_point_px"] = value
+        config["measurement"] = measurement
+        self._project.config = config
+        self.store.update_project(self._project)
+
     # ------------------------------------------------------------------- export
     def _export_if_possible(self) -> None:
         if self.stack.currentIndex() == SCREEN_RESULTS:
-            self.export_results()
+            self.export_results(EXPORT_BUNDLE)
 
-    def export_results(self) -> None:
+    def _ask_directory(self, title: str, start: str) -> str:
+        """Modal folder chooser; replaced in tests."""
+        return QFileDialog.getExistingDirectory(self, title, start)
+
+    def _ask_save_path(self, title: str, suggested: str, file_filter: str) -> str:
+        """Modal save dialog; replaced in tests."""
+        path, _ = QFileDialog.getSaveFileName(self, title, suggested, file_filter)
+        return path
+
+    def export_results(self, kind: str = EXPORT_BUNDLE) -> None:
+        """Ask where, then write one export off the UI thread."""
         if self._analysis is None:
             return
-        default = self.store.get_setting("export_dir", str(Path.home() / "Documents"))
-        name = (self._analysis.source_path.stem if self._analysis.source_path else "corridor")
-        target = QFileDialog.getExistingDirectory(self, "Export results to", default)
-        if not target:
+        analysis = self._analysis
+        stem = analysis.source_path.stem if analysis.source_path else analysis.directory.name
+        default_dir = Path(self.store.get_setting("export_dir", str(Path.home() / "Documents")))
+        track_id = self.results.selected_track
+        if kind in TRACK_EXPORTS and track_id is None:
+            self._warn("Select a track first.", "Click a track on the image or in the list.")
             return
-        destination = Path(target) / f"{name}_corridor"
-        self.store.set_setting("export_dir", target)
+
+        if kind == EXPORT_BUNDLE:
+            target = self._ask_directory("Export results to", str(default_dir))
+            if not target:
+                return
+            destination = Path(target) / f"{stem}_corridor"
+            self.store.set_setting("export_dir", target)
+        else:
+            suffix, file_filter = _EXPORT_FILES[kind]
+            suggested = default_dir / (stem + suffix.format(track=track_id))
+            target = self._ask_save_path(EXPORT_LABELS[kind], str(suggested), file_filter)
+            if not target:
+                return
+            destination = Path(target)
+            self.store.set_setting("export_dir", str(destination.parent))
+
         self._export_destination = destination
         self._start_job(
-            ExportWorker(self._analysis, destination),
+            ExportWorker(
+                analysis,
+                destination,
+                kind=kind,
+                track_id=track_id,
+                reference_point_px=self.results.reference_point_px,
+            ),
             finished=self._export_done,
             failed=self._show_error,
         )
 
     def _export_done(self, written: list[Path]) -> None:
-        destination = getattr(self, "_export_destination", None)
+        """Report the export without blocking: the window stays usable."""
+        self._last_export = list(written)
+        destination = self._export_destination
         if destination is None:
             return
+        folder = destination if destination.is_dir() else destination.parent
         box = QMessageBox(self)
         box.setWindowTitle("Exported")
         box.setIcon(QMessageBox.NoIcon)
-        box.setText(f"{len(written)} files written.")
+        box.setText(f"{len(written)} file{'s' if len(written) != 1 else ''} written.")
         box.setInformativeText(str(destination))
         open_button = box.addButton("Open folder", QMessageBox.AcceptRole)
         box.addButton("Done", QMessageBox.RejectRole)
-        box.exec()
-        if box.clickedButton() is open_button:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(destination)))
+        box.setProperty("folder", str(folder))
+        self._export_box = box
+        self._export_open_button = open_button
+        box.buttonClicked.connect(self._export_box_clicked)
+        box.open()
+
+    def _export_box_clicked(self, button) -> None:
+        box = self._export_box
+        if box is not None and button is self._export_open_button:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(box.property("folder"))))
 
     def open_results_folder(self) -> None:
         if self._analysis is not None:
@@ -386,7 +556,9 @@ class MainWindow(QMainWindow):
             self._napari_missing()
             return
         try:
-            open_saved_in_napari(self._analysis)
+            # The stack already in memory: reading the TIFF again would block
+            # the UI thread for as long as the file takes to load.
+            open_saved_in_napari(self._analysis, stack=self._stack)
         except ImportError:
             self._napari_missing()
         except Exception as exc:  # noqa: BLE001
@@ -440,7 +612,6 @@ class MainWindow(QMainWindow):
     def _show_error(self, message: str, detail: str = "") -> None:
         ErrorDialog(message, detail, self).exec()
 
-    # --------------------------------------------------------------------- jobs
     # ------------------------------------------------------------ updates
     def _offer_update_check(self) -> None:
         """Ask on first run; check only if the user has already said yes.
@@ -481,12 +652,12 @@ class MainWindow(QMainWindow):
         """Open the page in a browser. Corridor downloads and runs nothing."""
         if not url:
             return
-        from PySide6.QtGui import QDesktopServices
-        from PySide6.QtCore import QUrl
-
         QDesktopServices.openUrl(QUrl(url))
 
-    def _start_job(self, worker, *, finished=None, failed=None, cancelled=None) -> Job:
+    # --------------------------------------------------------------------- jobs
+    def _start_job(
+        self, worker, *, finished=None, failed=None, cancelled=None, ambiguous=None
+    ) -> Job:
         """Run a worker, delivering every callback on the UI thread.
 
         The slots passed in must be bound methods of this window. A bare
@@ -496,7 +667,10 @@ class MainWindow(QMainWindow):
         """
         job = Job(worker)
         for name, slot in (
-            ("finished", finished), ("failed", failed), ("cancelled_signal", cancelled)
+            ("finished", finished),
+            ("failed", failed),
+            ("cancelled_signal", cancelled),
+            ("ambiguous", ambiguous),
         ):
             signal = getattr(worker, name, None)
             if slot is not None and signal is not None:
