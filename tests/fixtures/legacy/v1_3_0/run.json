@@ -1,0 +1,186 @@
+{
+  "application": {
+    "name": "Corridor",
+    "version": "1.3.0"
+  },
+  "environment": {
+    "python": "3.12.0",
+    "platform": "synthetic",
+    "cellpose": "3.0.0",
+    "numpy": "1.26.0",
+    "gpu_available": false,
+    "gpu_used": false
+  },
+  "input": {
+    "path": "C:/synthetic/movie.nd2",
+    "name": "movie",
+    "shape_tyx": [
+      6,
+      60,
+      40
+    ],
+    "dtype": "uint16",
+    "axes_reported": "TYX",
+    "axes_interpretation": "time-first (T, Y, X)",
+    "source_frames": [
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
+    ],
+    "source_frame_total": 30,
+    "acquisition": {
+      "SizeT": "synthetic",
+      "SizeX": "synthetic",
+      "SizeY": "synthetic",
+      "SizeC": "synthetic",
+      "SizeZ": "synthetic",
+      "Time Loop": "synthetic",
+      "dPeriod": "synthetic",
+      "dAvgPeriodDiff": "synthetic",
+      "dMinPeriodDiff": "synthetic",
+      "dMaxPeriodDiff": "synthetic",
+      "dCalibration": "synthetic",
+      "sObjective": "synthetic",
+      "dObjectiveNA": "synthetic",
+      "dExposureTime": "synthetic",
+      "ImageJ": "synthetic"
+    },
+    "notes": [
+      "Synthetic fixture.",
+      "Original frame numbers 11-16 of 30."
+    ]
+  },
+  "calibration": {
+    "pixel_size_um": 0.5,
+    "pixel_size_um_source": "nd2_info",
+    "frame_interval_min": 10.0,
+    "frame_interval_min_source": "nd2_info",
+    "spatially_calibrated": true,
+    "temporally_calibrated": true
+  },
+  "segmentation": {
+    "model_path": "C:/synthetic/models/synthetic_model",
+    "model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "use_custom_model": true,
+    "diameter": null,
+    "cellprob_threshold": 0.0,
+    "flow_threshold": 0.4,
+    "channels": [
+      0,
+      0
+    ],
+    "normalize": true,
+    "normalisation_mode": "whole_frame",
+    "normalize_percentiles": [
+      1.0,
+      99.0
+    ],
+    "normalize_tile_px": 0,
+    "normalize_sharpen_px": 0,
+    "ensemble": "off",
+    "ensemble_passes_requested": 1,
+    "ensemble_passes": 1,
+    "ensemble_model_paths": [],
+    "ensemble_models_unavailable": [],
+    "min_extent_px": 20,
+    "min_area_px": 0,
+    "drop_border_touching": false,
+    "raw_instances_per_frame": [
+      1,
+      2,
+      2,
+      0,
+      1,
+      2
+    ],
+    "kept_instances_per_frame": [
+      1,
+      2,
+      2,
+      0,
+      1,
+      2
+    ],
+    "removed_instances_total": 0,
+    "detections_from_fallback": 0
+  },
+  "confinement": {
+    "ux": 0.0,
+    "uy": 1.0,
+    "angle_deg": 90.0,
+    "tilt_from_vertical_deg": 0.0,
+    "angle_sigma_deg": 0.5,
+    "source": "channel_ridges",
+    "confidence": 0.9,
+    "n_channels": 1,
+    "pitch_px": null,
+    "channels": [
+      {
+        "index": 0,
+        "origin_x": 20.0,
+        "origin_y": 0.0,
+        "half_width_px": 15.0,
+        "detected": true
+      }
+    ],
+    "notes": [
+      "Synthetic channel.",
+      "Synthetic note."
+    ]
+  },
+  "tracking": {
+    "max_speed_um_per_min": 5.0,
+    "max_perp_um": 4.0,
+    "area_ratio_min": 0.3,
+    "area_ratio_max": 3.0,
+    "sigma_along_um": 3.0,
+    "speed_uncertainty_fraction": 0.7,
+    "sigma_perp_um": 0.8,
+    "perp_width_fraction": 0.35,
+    "max_perp_widths": 1.6,
+    "sigma_ln_area": 0.3,
+    "w_reversal": 4.0,
+    "w_orientation": 1.0,
+    "orientation_min_eccentricity": 0.6,
+    "direction_noise_floor_um": 1.0,
+    "unmatched_chi2": 15.0,
+    "gate_chi2": 30.0,
+    "max_gap": 3,
+    "min_observations": 2,
+    "enforce_channel_identity": true,
+    "max_delta_frames": 4
+  },
+  "recovery": {
+    "enabled": true,
+    "interior": true,
+    "trailing": false,
+    "window": true,
+    "permissive": true,
+    "intensity": true,
+    "window_scale": 2.2,
+    "window_min_px": 48,
+    "permissive_cellprob": -2.0,
+    "permissive_flow": 0.8,
+    "intensity_snr": 4.0,
+    "intensity_min_area_fraction": 0.3,
+    "intensity_edge_margin_px": 4,
+    "intensity_min_eccentricity": 0.8,
+    "intensity_max_channel_offset": 0.5,
+    "max_offset_lengths": 1.0,
+    "attempted": 1,
+    "recovered": 1,
+    "by_tier": {}
+  },
+  "results": {
+    "n_detections": 8,
+    "n_tracks": 3,
+    "n_tracks_with_velocity": 2,
+    "n_observations": 9,
+    "mean_speed_um_per_min": 0.3,
+    "output_dir": "C:/synthetic/out",
+    "elapsed_seconds": 1.0
+  }
+}

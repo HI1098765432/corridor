@@ -1,0 +1,7 @@
+frame,raw_instances,kept_instances,removed_instances,removed_max_extent_px,removed_max_area_px,cellpose_message
+0,1,1,0,,,
+1,2,2,0,,,
+2,2,2,0,,,
+3,0,0,0,,,nan
+4,1,1,0,,,
+5,2,2,0,,,

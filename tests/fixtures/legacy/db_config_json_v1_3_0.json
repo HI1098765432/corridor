@@ -1,0 +1,84 @@
+{
+  "input_path": "C:/synthetic/movie.nd2",
+  "output_dir": "C:/synthetic/out",
+  "segmentation": {
+    "model_path": "C:/synthetic/models/synthetic_model",
+    "builtin_model": "cyto3",
+    "use_custom_model": true,
+    "diameter": null,
+    "cellprob_threshold": 0.0,
+    "flow_threshold": 0.4,
+    "channels": [
+      0,
+      0
+    ],
+    "normalize": true,
+    "use_gpu": false,
+    "normalize_percentiles": [
+      1.0,
+      99.0
+    ],
+    "normalize_tile_px": 0,
+    "normalize_sharpen_px": 0,
+    "min_extent_px": 20,
+    "min_area_px": 0,
+    "drop_border_touching": false,
+    "ensemble": "models",
+    "ensemble_model_paths": [
+      "C:/synthetic/models/companion"
+    ],
+    "ensemble_merge_overlap": 0.3,
+    "ensemble_min_fragment_px": 20
+  },
+  "tracking": {
+    "max_speed_um_per_min": 5.0,
+    "max_perp_um": 4.0,
+    "area_ratio_min": 0.3,
+    "area_ratio_max": 3.0,
+    "sigma_along_um": 3.0,
+    "speed_uncertainty_fraction": 0.7,
+    "sigma_perp_um": 0.8,
+    "perp_width_fraction": 0.35,
+    "max_perp_widths": 1.6,
+    "sigma_ln_area": 0.3,
+    "w_reversal": 4.0,
+    "w_orientation": 1.0,
+    "orientation_min_eccentricity": 0.6,
+    "direction_noise_floor_um": 1.0,
+    "unmatched_chi2": 15.0,
+    "gate_chi2": 30.0,
+    "max_gap": 3,
+    "min_observations": 2,
+    "enforce_channel_identity": false
+  },
+  "confinement": {
+    "mode": "angle",
+    "angle_deg": 87.0,
+    "detect_walls": false,
+    "multichannel_warn_ratio": 1.6,
+    "min_channel_pitch_um": 20.0,
+    "min_channel_pitch_px": 40.0
+  },
+  "calibration": {
+    "pixel_size_um": 0.5,
+    "frame_interval_min": 10.0
+  },
+  "recovery": {
+    "enabled": true,
+    "interior": true,
+    "trailing": false,
+    "window": true,
+    "permissive": true,
+    "intensity": true,
+    "window_scale": 2.2,
+    "window_min_px": 48,
+    "permissive_cellprob": -2.0,
+    "permissive_flow": 0.8,
+    "intensity_snr": 4.0,
+    "intensity_min_area_fraction": 0.3,
+    "intensity_edge_margin_px": 4,
+    "intensity_min_eccentricity": 0.8,
+    "intensity_max_channel_offset": 0.5,
+    "max_offset_lengths": 1.0
+  }
+}
