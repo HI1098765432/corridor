@@ -127,8 +127,32 @@ AXIS_ANGLE = "angle"
 AXIS_MODES = (AXIS_AUTO, AXIS_VERTICAL, AXIS_HORIZONTAL, AXIS_ANGLE)
 
 
+#: The ``confinement`` keys that ``geometry`` shares. ``mode``, ``angle_deg``
+#: and ``multichannel_warn_ratio`` describe an axis and have no v2 meaning.
+_GEOMETRY_FROM_CONFINEMENT = ("detect_walls", "min_channel_pitch_um", "min_channel_pitch_px")
+
+
+class _WallsMirror:
+    """Forwards writes of the shared wall keys to a partner block.
+
+    While ``confinement`` (read by the v1 pipeline) and ``geometry`` (read by
+    v2 code) both exist, they are two names for one setting.  Each package
+    that is rewritten writes only the block it knows, so without this a
+    walls checkbox wired to one block would silently do nothing to a reader
+    of the other.  :class:`RunConfig` links its two blocks; a block built on
+    its own has no partner and is a plain dataclass.  The link is not a
+    field, so it is in no dict, repr or comparison.
+    """
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        object.__setattr__(self, name, value)
+        partner = self.__dict__.get("_walls_partner")
+        if partner is not None and name in _GEOMETRY_FROM_CONFINEMENT:
+            object.__setattr__(partner, name, value)
+
+
 @dataclass
-class ConfinementConfig:
+class ConfinementConfig(_WallsMirror):
     """How the migration axis of the confinement channel is established.
 
     Legacy v1. Replaced by :class:`GeometryConfig` (there is no axis to
@@ -168,13 +192,15 @@ class ConfinementConfig:
 
 
 @dataclass
-class GeometryConfig:
+class GeometryConfig(_WallsMirror):
     """Where the device walls are -- never which way the cells go.
 
     The wall-ridge detector finds lanes (each with its own centre line and
     half-width) and nothing else; with
     ``TrackingConfig.channel_constraint == "auto"`` a lane gate is applied
-    only when lanes really were detected from walls.
+    only when lanes really were detected from walls.  Inside a
+    :class:`RunConfig` its three keys are mirrored into the legacy
+    ``confinement`` block, and back.
     """
 
     #: Detect the bright channel walls of the microfluidic device.
@@ -186,12 +212,6 @@ class GeometryConfig:
     min_channel_pitch_um: float = 18.0
     #: Used when the dataset carries no spatial calibration.
     min_channel_pitch_px: float = 38.0
-
-
-#: The ``confinement`` keys that carry over into ``geometry``. ``mode``,
-#: ``angle_deg`` and ``multichannel_warn_ratio`` describe an axis and are
-#: dropped.
-_GEOMETRY_FROM_CONFINEMENT = ("detect_walls", "min_channel_pitch_um", "min_channel_pitch_px")
 
 
 # --------------------------------------------------------------------------
@@ -491,15 +511,18 @@ class TrackingConfig:
     0.467 µm/px, 20.0 min frames), measured when these fields were added --
     155 detections with median major/minor axes 48.2/4.7 µm (100/9.8 px), and
     128 linked steps with step speeds of median 0.32, p90 1.19 and maximum
-    1.98 µm/min.  The second differences ``r[t+2] - 2 r[t+1] + r[t]`` of 87
-    pairs of consecutive one-frame triples, projected on each cell's own
-    major and minor axes, separate centroid noise from real acceleration
-    (``Var = q + 6 sm^2`` and lag-1 ``Cov = -4 sm^2``): along the body
-    sm = 2.58 µm and sqrt(q) = 7.96 µm per frame squared (0.40 µm/min of
-    velocity change per 20 min frame); across it sm = 0.72 µm and 0.043
-    µm/min.  That is one experiment and one instrument, from tracks the v1
-    gates accepted, so these are starting values for the tracker's own tests
-    to tune, not fitted constants.
+    1.98 µm/min.  Centroid noise ``sm`` and process noise are separated under
+    the model §5 tracks with -- continuous white-noise acceleration of
+    intensity ``q`` (µm²/min³), observed every ``T`` minutes -- whose second
+    differences ``D = r[t+2] - 2 r[t+1] + r[t]`` have
+    ``Var = (2/3) q T^3 + 6 sm^2`` and lag-1 ``Cov = (1/6) q T^3 - 4 sm^2``.
+    Over the 87 pairs of consecutive one-frame triples, projected on each
+    cell's own major and minor axes: along the body sm = 3.09 µm and
+    sqrt(q) = 0.093 µm/min per sqrt(min) (0.42 µm/min of velocity change over
+    one 20 min frame); across it sm = 0.75 µm and sqrt(q) = 0.010.  That is
+    one experiment and one instrument, from tracks the v1 gates accepted, so
+    these are starting values for the tracker's own tests to tune, not
+    fitted constants.
     """
 
     # -- hard physical gates -------------------------------------------------
@@ -582,8 +605,8 @@ class TrackingConfig:
 
     # -- multi-channel -------------------------------------------------------
     #: Legacy v1. Forbid associations between detections assigned to different
-    #: channels. Superseded by ``channel_constraint``; a saved ``False`` loads
-    #: as ``channel_constraint="off"``.
+    #: channels. Superseded by ``channel_constraint`` and kept in step with it
+    #: (False <-> "off"); see ``__setattr__``.
     enforce_channel_identity: bool = True
 
     # -- v2: axis-free Kalman model (contract §5) -----------------------------
@@ -596,31 +619,34 @@ class TrackingConfig:
 
     #: Isotropic floor of the centroid noise, whatever the cell's shape. With
     #: the width term below it reproduces the measured across-body noise
-    #: (sqrt(0.5^2 + (0.12 * 4.7)^2) = 0.75 um against 0.72 measured), and it
+    #: (sqrt(0.5^2 + (0.12 * 4.7)^2) = 0.75 um against 0.75 measured), and it
     #: is about one pixel of the 0.467 um/px instrument.
     position_sigma_um: float = 0.5
     #: Centroid noise along the body, as a fraction of the major-axis length:
     #: a mask that gains or loses a tail moves its centroid along the cell.
-    #: 0.06 x 48.2 um = 2.89 um (2.94 um with the floor) against the measured
-    #: 2.58 um, rounded up because a tracker that trusts a centroid too much
+    #: 0.065 x 48.2 um = 3.13 um (3.17 um with the floor) against the measured
+    #: 3.09 um, rounded up because a tracker that trusts a centroid too much
     #: splits tracks, while one that trusts it too little only links slower.
-    shape_position_fraction: float = 0.06
+    shape_position_fraction: float = 0.065
     #: Centroid noise across the body, as a fraction of the minor-axis length.
-    #: Measured 0.72 um across bodies of median width 4.7 um; after the 0.5 um
-    #: floor that leaves 0.52 um, 0.11 of the width, rounded up. v1's
+    #: Measured 0.75 um across bodies of median width 4.7 um; after the 0.5 um
+    #: floor that leaves 0.55 um, 0.118 of the width. v1's
     #: ``perp_width_fraction`` plays the same role, but its 0.35 cites no
     #: measurement, so it is not carried over.
     width_position_fraction: float = 0.12
-    #: White-noise-acceleration process noise: the 1-sigma change of each
-    #: velocity component over one frame interval, so the predicted position
-    #: widens with every frame of a gap. 0.40 um/min is the along-body value
-    #: measured on 20 min frames (0.043 um/min across). One isotropic value
-    #: has to carry the larger, because underestimating it is what splits a
-    #: cell that brakes hard -- the problem v1's speed_uncertainty_fraction
-    #: existed to solve. Per frame, not per minute: on 10 min frames the same
-    #: number allows twice the velocity diffusion per minute, which the
-    #: tracker package must either accept or rescale.
-    velocity_sigma_um_per_min: float = 0.4
+    #: White-noise-acceleration intensity, in physical time: the 1-sigma
+    #: change of each velocity component (um/min) accumulated over one
+    #: minute, growing with the square root of elapsed time, i.e. a velocity
+    #: variance of velocity_sigma^2 per minute. Per minute and not per frame,
+    #: so one value means the same motion on 10, 15 and 20 min frames;
+    #: :meth:`process_noise_px` converts it, once, through the Scale. The
+    #: along-body value measured above is 0.093 (bootstrap 90 % interval
+    #: 0.068-0.115; 0.010 across), rounded up to 0.1: 0.45 um/min over one
+    #: 20 min frame, 0.32 over a 10 min one. One isotropic value has to carry
+    #: the larger, because underestimating it is what splits a cell that
+    #: brakes hard -- the problem v1's speed_uncertainty_fraction existed to
+    #: solve.
+    velocity_sigma_um_per_min: float = 0.1
     #: Speed uncertainty of a track seen once, whose velocity is unknown and
     #: starts at zero. None means ``max_speed_um_per_min / 3`` (a "3-sigma"
     #: bound): 1.67 um/min at the default, above the p90 (1.19 um/min) of the
@@ -647,9 +673,58 @@ class TrackingConfig:
     #: "off" never applies it. See CHANNEL_CONSTRAINTS.
     channel_constraint: str = CHANNEL_CONSTRAINT_AUTO
 
+    def __post_init__(self) -> None:
+        # Construction (including from a saved dict): an opt-out under either
+        # name wins. Both defaults mean "on", and to_dict writes both, so a
+        # saved "auto" beside a saved False is only the default that 1.x's UI
+        # never touched -- it writes enforce_channel_identity alone.
+        if not self.enforce_channel_identity or self.channel_constraint == CHANNEL_CONSTRAINT_OFF:
+            object.__setattr__(self, "enforce_channel_identity", False)
+            object.__setattr__(self, "channel_constraint", CHANNEL_CONSTRAINT_OFF)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Keep the legacy and v2 channel switches in step after construction.
+
+        An edit to either one sets the other, so a v1 writer (the 1.x
+        Advanced panel) and a v2 reader agree, and a re-enable is never lost
+        to a stale opt-out left in the other field.  A field's first
+        assignment is the dataclass ``__init__``, which ``__post_init__``
+        resolves instead; nothing is stored beside the fields, because
+        run.json dumps ``__dict__``.
+        """
+        edit = name in self.__dict__
+        object.__setattr__(self, name, value)
+        if not edit:
+            return
+        if name == "enforce_channel_identity":
+            if not value:
+                object.__setattr__(self, "channel_constraint", CHANNEL_CONSTRAINT_OFF)
+            elif self.channel_constraint == CHANNEL_CONSTRAINT_OFF:
+                object.__setattr__(self, "channel_constraint", CHANNEL_CONSTRAINT_AUTO)
+        elif name == "channel_constraint":
+            object.__setattr__(self, "enforce_channel_identity", value != CHANNEL_CONSTRAINT_OFF)
+
     def max_delta_frames(self) -> int:
         """Largest allowed frame separation between successive observations."""
         return int(self.max_gap) + 1
+
+    def process_noise_px(self, scale: Scale, dt_frames: float) -> tuple[float, float, float]:
+        """One axis of the process noise ``Q`` for a prediction over ``dt_frames``.
+
+        Continuous white-noise acceleration, discretised exactly:
+        ``Q = q [[dt^3/3, dt^2/2], [dt^2/2, dt]]``, returned as
+        ``(position variance px^2, position-velocity covariance px^2/frame,
+        velocity variance (px/frame)^2)``.  ``q`` is
+        ``velocity_sigma_um_per_min^2`` (µm²/min³) converted by the Scale, so
+        the covariance after a given number of *minutes* is the same at any
+        frame interval.  Uncalibrated, both factors are 1 and the value is
+        read in pixels and frames, like every other physical parameter.
+        """
+        min_per_frame = scale.frames_to_min(1.0)
+        px_per_um = scale.um_to_px(1.0)
+        q = float(self.velocity_sigma_um_per_min) ** 2 * min_per_frame**3 * px_per_um**2
+        dt = float(dt_frames)
+        return (q * dt**3 / 3.0, q * dt**2 / 2.0, q * dt)
 
     @property
     def effective_gate_chi2(self) -> float:
@@ -667,6 +742,26 @@ class TrackingConfig:
         if self.initial_speed_sigma_um_per_min is not None:
             return float(self.initial_speed_sigma_um_per_min)
         return float(self.max_speed_um_per_min) / 3.0
+
+
+#: TrackingConfig fields that no v1 code reads. run.json dumps the whole
+#: tracking block, so until the v2 tracker lands a manifest should record
+#: these apart from the settings that were applied, rather than imply the
+#: running tracker used them. ``channel_constraint`` is listed although it
+#: mirrors ``enforce_channel_identity``, because its "auto" (lanes from walls
+#: only) is a v2 rule. Shrinks as the tracker package starts reading them.
+TRACKING_V2_ONLY_FIELDS = frozenset({
+    "position_sigma_um",
+    "shape_position_fraction",
+    "width_position_fraction",
+    "velocity_sigma_um_per_min",
+    "initial_speed_sigma_um_per_min",
+    "w_shape",
+    "w_overlap",
+    "gap_penalty_chi2",
+    "global_gap_closing",
+    "channel_constraint",
+})
 
 
 # --------------------------------------------------------------------------
@@ -737,9 +832,8 @@ class RunConfig:
     output_dir: str = ""
     segmentation: SegmentationConfig = field(default_factory=SegmentationConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
-    #: Legacy v1, superseded by ``geometry``. While both exist, a dict that
-    #: carries only one of the two fills the other's shared keys, so legacy
-    #: readers and v2 readers see the same walls setting.
+    #: Legacy v1, superseded by ``geometry``. While both exist their shared
+    #: keys are one setting under two names; see :meth:`_link_walls`.
     confinement: ConfinementConfig = field(default_factory=ConfinementConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
     recovery: "RecoveryConfig" = field(default_factory=lambda: _recovery_default())
@@ -747,6 +841,47 @@ class RunConfig:
     measurement: MeasurementConfig = field(default_factory=MeasurementConfig)
     #: Serialised under the key "import" (a keyword in Python, not in JSON).
     import_: ImportConfig = field(default_factory=ImportConfig)
+
+    def __post_init__(self) -> None:
+        self._link_walls(prefer=None)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        old = self.__dict__.get(name)
+        object.__setattr__(self, name, value)
+        if old is not None and name in ("confinement", "geometry"):
+            # A block replaced after construction is an edit, so it wins.
+            if old is not value and isinstance(old, _WallsMirror):
+                old.__dict__.pop("_walls_partner", None)
+            self._link_walls(prefer=name)
+
+    def _link_walls(self, prefer: str | None) -> None:
+        """Make ``confinement`` and ``geometry`` agree, then mirror each other.
+
+        On construction a key the two disagree on takes the value that differs
+        from the default: both defaults mean the same thing, and ``to_dict``
+        writes both blocks, so an edited value beside a default one is the
+        user's choice whichever block it was written to.  If both were edited,
+        ``geometry`` -- the newer block -- wins.  After construction a block
+        assigned whole (``prefer``) wins outright.
+        """
+        conf, geo = self.confinement, self.geometry
+        if not (isinstance(conf, _WallsMirror) and isinstance(geo, _WallsMirror)):
+            return
+        defaults = GeometryConfig()
+        for key in _GEOMETRY_FROM_CONFINEMENT:
+            c, g = getattr(conf, key), getattr(geo, key)
+            if c == g:
+                continue
+            if prefer == "confinement":
+                value = c
+            elif prefer == "geometry":
+                value = g
+            else:
+                value = c if g == getattr(defaults, key) else g
+            object.__setattr__(conf, key, value)
+            object.__setattr__(geo, key, value)
+        object.__setattr__(conf, "_walls_partner", geo)
+        object.__setattr__(geo, "_walls_partner", conf)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -772,6 +907,13 @@ class RunConfig:
         *   model selection (``model_path``, ``builtin_model``,
             ``use_custom_model``, ``ensemble_model_paths``).  The model is
             resolved and hash-verified per run, never inherited.
+        *   every object size stated in pixels -- ``diameter``,
+            ``min_extent_px``, ``min_area_px``, ``ensemble_min_fragment_px``
+            and the uncalibrated channel pitch.  A pixel is 37 % longer on
+            KK1 than on KK2, so a size tuned on one instrument is a different
+            physical size on the other, with nothing on screen to say so.
+            The normalisation tile and sharpen radius are pixels too but
+            stay: they are a named contrast preset, not a size of a cell.
         *   the whole ``import`` block (axis order, channel index, label
             image) and ``measurement.reference_point_px``: each is a fact
             about one file's layout or one field of view.
@@ -780,14 +922,16 @@ class RunConfig:
         :meth:`from_dict`; reopening a project is not starting one.
         """
         config = cls.from_dict(saved or {})
-        seg_defaults = SegmentationConfig()
+        seg, seg_defaults = config.segmentation, SegmentationConfig()
         config.input_path = ""
         config.output_dir = ""
         config.calibration = CalibrationConfig()
-        config.segmentation.model_path = seg_defaults.model_path
-        config.segmentation.builtin_model = seg_defaults.builtin_model
-        config.segmentation.use_custom_model = seg_defaults.use_custom_model
-        config.segmentation.ensemble_model_paths = seg_defaults.ensemble_model_paths
+        for name in (
+            "model_path", "builtin_model", "use_custom_model", "ensemble_model_paths",
+            "diameter", "min_extent_px", "min_area_px", "ensemble_min_fragment_px",
+        ):
+            setattr(seg, name, getattr(seg_defaults, name))
+        config.geometry.min_channel_pitch_px = GeometryConfig().min_channel_pitch_px
         config.import_ = ImportConfig()
         config.measurement.reference_point_px = None
         return config
@@ -796,37 +940,17 @@ class RunConfig:
 def _upgrade_legacy(data: dict[str, Any]) -> dict[str, Any]:
     """Map v1 keys onto v2 ones without touching the caller's dict.
 
-    *   ``import`` -> ``import_`` (the field name).
-    *   ``confinement`` -> ``geometry``: ``detect_walls`` and the two pitches
-        carry over, ``mode`` and ``angle_deg`` are dropped (there is no axis to
-        configure).  The reverse fill keeps the legacy pipeline, which still
-        reads ``confinement``, in step with a dict saved with only
-        ``geometry``.
-    *   ``tracking.enforce_channel_identity = False`` -> ``channel_constraint
-        = "off"``, unless the dict already says which constraint it wants.
+    Only the rename lives here: ``import`` -> ``import_`` (the field name).
+    The two legacy/v2 pairs are reconciled by the objects themselves, so a
+    dict and an in-memory edit follow one rule: ``confinement`` and
+    ``geometry`` in :meth:`RunConfig._link_walls` (a v1 dict, which has no
+    ``geometry``, carries its walls and pitches over; ``mode`` and
+    ``angle_deg`` have no v2 meaning), and ``enforce_channel_identity`` and
+    ``channel_constraint`` in ``TrackingConfig.__post_init__``.
     """
     data = dict(data)
     if "import" in data and "import_" not in data:
         data["import_"] = data.pop("import")
-
-    confinement = data.get("confinement")
-    geometry = data.get("geometry")
-    if isinstance(confinement, dict) and not isinstance(geometry, dict):
-        data["geometry"] = {
-            k: confinement[k] for k in _GEOMETRY_FROM_CONFINEMENT if k in confinement
-        }
-    elif isinstance(geometry, dict) and not isinstance(confinement, dict):
-        data["confinement"] = {
-            k: geometry[k] for k in _GEOMETRY_FROM_CONFINEMENT if k in geometry
-        }
-
-    tracking = data.get("tracking")
-    if (
-        isinstance(tracking, dict)
-        and "channel_constraint" not in tracking
-        and tracking.get("enforce_channel_identity") is False
-    ):
-        data["tracking"] = {**tracking, "channel_constraint": CHANNEL_CONSTRAINT_OFF}
     return data
 
 
@@ -884,7 +1008,13 @@ def _from_dict(cls, data: dict[str, Any]):
     for f in fields(cls):
         if not f.init or f.name not in data:
             continue
-        kwargs[f.name] = _coerce(hints.get(f.name, Any), data[f.name])
+        hint, value = hints.get(f.name, Any), data[f.name]
+        if isinstance(hint, type) and dataclasses.is_dataclass(hint) and not isinstance(value, dict):
+            # A null (or non-object) where a whole settings block belongs is
+            # a missing block, not a value to keep: every reader would fail on
+            # attribute access long after loading said nothing.
+            continue
+        kwargs[f.name] = _coerce(hint, value)
     return cls(**kwargs)
 
 

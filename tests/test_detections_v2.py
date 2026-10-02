@@ -2,7 +2,7 @@
 
 Tolerances are the measured behaviour of the estimators on digitised shapes,
 not round numbers: Crofton perimeters of disks and ellipses read -3.1 to
-+1.5 % of the exact value over orientation and sub-pixel placement, and a
++1.9 % of the exact value over orientation and sub-pixel placement, and a
 pixel rectangle -2.9 to -4.0 % of its pixel-centre outline.
 """
 
@@ -93,7 +93,8 @@ def test_ellipse_perimeter_and_circularity(scene):
 
 
 def test_a_disk_reads_circular_whatever_its_size(scene):
-    """The 4-neighbour perimeter gave 0.92 here; Crofton must not."""
+    """The 4-neighbour perimeter gives this r = 20 disk 0.945 (0.927 at
+    r = 30); Crofton gives 1.007 before clipping."""
     labels, _ = scene
     d = by_label(extract_detections(labels, 0))[3]
     assert 0.97 <= d.circularity <= 1.0
@@ -238,13 +239,25 @@ def test_a_v1_constructed_detection_is_still_valid():
     assert np.array_equal(d.position, [10.0, 20.0])
     assert np.array_equal(d.position, d.xy)
     assert d.size == 800.0
+    assert d.z_slices is None
     assert d.mask_crop is None and d.perimeter_px is None and d.z is None
     assert V1_ROW_KEYS <= set(d.to_row())
 
 
 def test_position_and_size_switch_with_dimensionality():
-    d = Detection(0, 1, 1.0, 2.0, 30.0, (0, 0, 1, 1, 1, 1), 1, 0.0, 0.0, 1.0, 1.0, 1.0, False,
+    d = Detection(0, 1, 1.0, 2.0, 30.0, (0, 0, 1, 4, 1, 1), 1, 0.0, 0.0, 1.0, 1.0, 1.0, False,
                   z=3.5, volume_vox=120.0)
     assert d.ndim == 3
     assert np.array_equal(d.position, [1.0, 2.0, 3.5])
     assert d.size == 120.0  # volume, not the footprint area
+    assert d.z_slices == 4
+
+
+def test_asdict_is_not_the_row_form(scene):
+    """asdict copies the mask like any field; to_row is the tabular form."""
+    from dataclasses import asdict
+
+    d = extract_detections(scene[0], 0)[0]
+    copied = asdict(d)["mask_crop"]
+    assert np.array_equal(copied, d.mask_crop) and copied is not d.mask_crop
+    assert "mask_crop" not in d.to_row()

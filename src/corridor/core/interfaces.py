@@ -92,7 +92,11 @@ class Prediction:
 
     The interval is required, not optional: a point prediction cannot be
     tested for calibration, and the research contract (§9) accepts only
-    calibrated intervals measured against the mandatory baselines.
+    calibrated intervals measured against the mandatory baselines.  So it is
+    checked, not just typed: NaN or infinite bounds would let a point
+    prediction pass as an interval one, and a value outside its own interval
+    is a quantile-crossing bug that must surface where it happens.  A model
+    with nothing to say for a row returns no Prediction for it.
     """
 
     value: float
@@ -104,8 +108,15 @@ class Prediction:
     def __post_init__(self) -> None:
         if not (0.0 < self.level < 1.0):
             raise ValueError(f"interval level must be in (0, 1), got {self.level}")
-        if not (math.isnan(self.lower) or math.isnan(self.upper)) and self.lower > self.upper:
-            raise ValueError(f"interval lower {self.lower} exceeds upper {self.upper}")
+        if not all(math.isfinite(v) for v in (self.value, self.lower, self.upper)):
+            raise ValueError(
+                f"a prediction and its interval must be finite, got value {self.value} "
+                f"in [{self.lower}, {self.upper}]"
+            )
+        if not self.lower <= self.value <= self.upper:
+            raise ValueError(
+                f"value {self.value} is outside its interval [{self.lower}, {self.upper}]"
+            )
 
 
 @runtime_checkable
