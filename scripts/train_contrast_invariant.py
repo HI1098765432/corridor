@@ -225,6 +225,10 @@ def main() -> int:
                          "human centroids and outlined with a human mask from an "
                          "adjacent frame, so training on them is not self-supervision.")
     ap.add_argument("--out", default="")
+    ap.add_argument("--model-name", default="",
+                    help="checkpoint name under build/models/models. Defaults to the "
+                         "--out stem, so a new run can never overwrite the "
+                         "corridor_contrast_invariant checkpoint that ships.")
     args = ap.parse_args()
 
     os.environ.setdefault("OMP_NUM_THREADS", "4")
@@ -281,6 +285,21 @@ def main() -> int:
     tag = "contrast_invariant" if copies else "control_no_augment"
     save_path = ROOT / "build" / "models"
     save_path.mkdir(parents=True, exist_ok=True)
+    if args.model_name:
+        model_name = args.model_name
+    elif args.out:
+        model_name = f"corridor_{Path(args.out).stem}"
+    else:
+        model_name = f"corridor_{tag}{'_w' + args.window.replace(',', '_') if args.window else ''}"
+    # Cellpose writes save_path/models/<name> and silently replaces whatever is
+    # there. Round 1 -- the checkpoint that ships -- lives under exactly the
+    # default name, so an existing file is refused rather than overwritten.
+    destination = save_path / "models" / model_name
+    if destination.exists():
+        print(f"refusing to overwrite existing checkpoint {destination}; "
+              f"pass --model-name or --out with a new name")
+        return 2
+    print(f"checkpoint will be written to {destination}")
 
     cp_train.train_seg(
         model.net,
@@ -302,7 +321,7 @@ def main() -> int:
         weight_decay=1e-5,
         SGD=False,
         save_path=str(save_path),
-        model_name=f"corridor_{tag}{'_w' + args.window.replace(',', '_') if args.window else ''}",
+        model_name=model_name,
         save_every=max(args.epochs, 1),
     )
     elapsed = time.time() - started

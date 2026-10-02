@@ -85,7 +85,13 @@ def main() -> int:
     ap.add_argument("--window", default="3,97")
     ap.add_argument("--threads", type=int, default=2)
     ap.add_argument("--out", default=str(ROOT / "docs" / "diameter_sweep.json"))
+    ap.add_argument("--checkpoint", default="",
+                    help="score this checkpoint instead of a --model entry; needs an "
+                         "explicit --out so the published diameter_sweep.json, which "
+                         "audit_reported_numbers.py re-derives, is never replaced")
     args = ap.parse_args()
+    if args.checkpoint and args.out == str(ROOT / "docs" / "diameter_sweep.json"):
+        raise SystemExit("--checkpoint needs an explicit --out")
 
     import cv2
 
@@ -95,7 +101,7 @@ def main() -> int:
     torch.set_num_threads(args.threads)
     from cellpose import models as cp
 
-    weights = MODELS[args.model]
+    weights = Path(args.checkpoint) if args.checkpoint else MODELS[args.model]
     if not Path(weights).exists():
         raise SystemExit(f"no such checkpoint: {weights}")
     model = cp.CellposeModel(pretrained_model=str(weights), gpu=False)
@@ -167,7 +173,7 @@ def main() -> int:
               f"{total.recall:8.4f} {recall_long:12.4f} {recall_short:13.4f}",
               flush=True)
         Path(args.out).write_text(json.dumps(
-            {"model": args.model, "group": args.test_group, "window": args.window,
+            {"model": args.checkpoint or args.model, "group": args.test_group, "window": args.window,
              "long_cell_threshold_px": LONG_CELL_PX,
              "n_long": n_long, "n_short": n_short, "results": rows},
             indent=2), encoding="utf-8")
