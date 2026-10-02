@@ -1,0 +1,4 @@
+track_id,channel,first_frame,last_frame,first_source_frame,last_source_frame,n_observations,n_gaps,total_missing_frames,span_frames,duration_min,net_displacement_um,net_along_um,net_across_um,path_length_um,straightness,mean_speed_um_per_min,median_speed_um_per_min,max_speed_um_per_min,mean_area_px,flags
+1,0,0,5,11,16,5,1,1,5,50.0,15.0,15.0,0.0,15.0,1.0,0.3,0.3,0.3,320.0,
+2,0,1,3,12,14,3,0,0,2,20.0,3.0,-3.0,-0.0,3.16227766,0.948683298,0.158113883,0.158113883,0.158113883,200.0,
+3,0,5,5,16,16,1,0,0,0,0.0,0.0,0.0,0.0,0.0,,,,,150.0,fragment

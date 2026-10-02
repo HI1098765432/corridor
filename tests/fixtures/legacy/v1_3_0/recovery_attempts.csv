@@ -1,0 +1,2 @@
+track_id,frame,predicted_x,predicted_y,recovered,found_by,confidence,offset_from_prediction_px,detail
+2,3,30.5,44.0,true,intensity,0.4,0.5,synthetic recovery

@@ -1,0 +1,3 @@
+track_id,starts_at_frame,nearest_earlier_track,that_track_ended_at_frame,gap_frames,distance_px,along_channel_px,across_channel_px,implied_speed_um_per_min,would_have_cost_chi2,refused_because,explanation
+1,0,,,,,,,,,,Synthetic: first frame.
+3,5,2,3,2,22.825424421,11.0,20.0,0.570635611,,lateral_jump,Synthetic: would have had to jump sideways.
