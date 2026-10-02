@@ -23,9 +23,23 @@ For each of the five baseline runs in ``build/baseline_v1.3.0/<movie>/``:
 Each disagreement is listed link by link: a link v1 made that v2 did not
 (with v2's cost of that link, computed from a v2 track rebuilt on the v1
 track's own history), and a link v2 made that v1 did not (with v2's cost and
-margin, and v1's own recorded reason from ``unlinked_starts.csv``).  Every v2
+margins, and v1's own recorded reason from ``unlinked_starts.csv``).  Every v2
 track is checked against the re-measured lanes: in the wide fields
 ``052924_1`` and ``052924_2`` no track may visit two lanes.
+
+That check is enforced, not discovered: the same re-measured lanes are given
+to the tracker as an applied lane gate.  Three control runs per movie say what
+the gate and the inputs contribute:
+
+*   ``lane_gate_off`` -- the same detections with ``channel_constraint='off'``:
+    which tracks the motion model alone would carry across a wall.
+*   ``recovered_duplicates_dropped`` -- every recovered (non-primary) detection
+    whose centroid lies inside the bounding box of a primary detection of the
+    same frame is removed: the cell detected twice.  Disagreements that vanish
+    here were caused by v1's recovery, not by either tracker.
+*   ``body_shaped_noise_in_lanes`` -- the opt-in that shapes the process noise
+    and fresh-track prior by each cell's body inside measured lanes (off by
+    default; contract section 5 says isotropic).
 
 Usage::
 
@@ -42,6 +56,7 @@ import json
 import statistics
 import sys
 from collections import Counter, defaultdict
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -51,7 +66,12 @@ import tifffile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from corridor.core.config import GeometryConfig, Scale, TrackingConfig  # noqa: E402
+from corridor.core.config import (  # noqa: E402
+    CHANNEL_CONSTRAINT_OFF,
+    GeometryConfig,
+    Scale,
+    TrackingConfig,
+)
 from corridor.core.detections import Detection  # noqa: E402
 from corridor.core.geometry import ChannelGeometry, detect_channels  # noqa: E402
 from corridor.core.tracking import (  # noqa: E402
@@ -69,8 +89,33 @@ _DUPLICATES_052924_2 = (
     "each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same "
     "cell -- the cell detected twice. Both trackers therefore carry two tracks "
     "along one cell for those frames, and differ only in which track gets which "
-    "copy: v2's choice at frame 11 has a link margin of 0.16 chi2, a tie. A "
-    "recovery artefact, not a tracking disagreement."
+    "copy. At frame 11 v2 gives the track the primary (11,2) at cost 8.05 rather "
+    "than the copy (11,3) at 9.04 (local margin 0.99: a near-tie). The overlap "
+    "term is withheld from that competition because the copy has no mask "
+    "(the primary's IoU 0.21 would otherwise have cost it 0.79 that the copy "
+    "was spared). Control run "
+    "recovered_duplicates_dropped: every v1 link that survives the removal is "
+    "also a v2 link, and v2's only extra link is the primary at frame 11 that "
+    "v1 gave to the copy's track. A recovery artefact, not a tracking "
+    "disagreement."
+)
+
+_DUPLICATE_052924_1_LANE_1 = (
+    "Lane 1, frames 8-10. At frame 9 the cell is detected twice: primary (9,1) "
+    "and a windowed-tier recovery (9,6) 4.5 px from it. Two tracks arrive: one "
+    "nearly stationary at y 84-86 on intensity-tier detections (7,6), (8,5), and "
+    "one moving up the lane at about -83 px/frame (y 215.7 -> 132.9), predicted "
+    "near y 50. With two copies of one cell, both tracks can be kept alive and "
+    "the only question is which copy goes where: v2 gives the primary to the "
+    "stationary track (cost 16.4) and the copy to the fast one (2.8). Forbidding "
+    "that raises the frame's optimum by only 0.53 (link_margin_global): a "
+    "near-tie. The primary's own cheapest track is the fast one (2.6), so its "
+    "contract link_margin is -13.7: the link is flagged as locally contested, "
+    "which is what an ambiguity flag should see. v1 gave the primary to the fast track and "
+    "started a new track on the copy, which then continued as (10,1). Control "
+    "run recovered_duplicates_dropped: with (9,6) removed, v2 gives (9,1) to "
+    "the fast track exactly as v1 did, and every v1 link of this scene that "
+    "survives the removal is a v2 link. A recovery artefact."
 )
 
 #: Every disagreement on the five baseline movies, read link by link against
@@ -81,7 +126,7 @@ REVIEWED: dict[tuple[str, str, tuple[tuple[int, int], tuple[int, int]]], str] = 
     ("052924_1", "v1_link_not_in_v2", ((8, 4), (9, 5))): (
         "Lane 3. v1 track 2 was moving down the lane (y 207 -> 247, +40 px/frame); "
         "(9,5) is an intensity-tier recovered detection 50.6 px back up the lane at "
-        "half the area. v2 refuses it as a motion outlier (d2 25.5 > 13.8: a "
+        "half the area. v2 refuses it as a motion outlier (d2 23.8 > 13.8: a "
         "90 px/frame reversal against the prediction) and instead starts a track at "
         "(9,5) that continues (10,6), (11,5), (12,2) on a steady ~-50 px/frame "
         "trajectory. v1's reading makes the cell reverse and then become another "
@@ -92,11 +137,16 @@ REVIEWED: dict[tuple[str, str, tuple[tuple[int, int], tuple[int, int]]], str] = 
         "(47 px, area ratio 1.01, cost 0.51). v1 had already given (9,5) to "
         "track 2 and refused this link (above_cost_gate)."
     ),
+    ("052924_1", "v1_link_not_in_v2", ((8, 6), (9, 1))): _DUPLICATE_052924_1_LANE_1,
+    ("052924_1", "v1_link_not_in_v2", ((9, 6), (10, 1))): _DUPLICATE_052924_1_LANE_1,
+    ("052924_1", "v2_link_not_in_v1", ((8, 5), (9, 1))): _DUPLICATE_052924_1_LANE_1,
+    ("052924_1", "v2_link_not_in_v1", ((8, 6), (9, 6))): _DUPLICATE_052924_1_LANE_1,
+    ("052924_1", "v2_link_not_in_v1", ((9, 1), (10, 1))): _DUPLICATE_052924_1_LANE_1,
     ("052924_1", "v2_link_not_in_v1", ((14, 1), (15, 4))): (
         "Lane 1. At frame 15 the cell (122 px long at y 61 in frame 14) appears as "
         "two pieces, 221 px at y 34 and 454 px at y 131. v2 continues the track "
-        "with the larger piece (cost 15.1: motion 10.5, size 3.6) and flags "
-        "split_suspected on both tracks; v1 refused both continuations "
+        "with the larger piece (cost 15.0: motion 10.5, size 3.6, overlap 0.86) and "
+        "flags split_suspected on both tracks; v1 refused both continuations "
         "(above_cost_gate). Neither piece is seen after frame 15, so this is one "
         "observation either way; which reading is right is not decidable from "
         "the detections."
@@ -104,7 +154,7 @@ REVIEWED: dict[tuple[str, str, tuple[tuple[int, int], tuple[int, int]]], str] = 
     ("052924_1", "v2_link_not_in_v1", ((15, 3), (16, 2))): (
         "Lane 3. The cell is accelerating down the lane (y 46, 67, 89, 127: +21, "
         "+22, +38 px/frame); the next step is +42 px at area ratio 0.98. v2 links "
-        "it (motion d2 9.6, cost 10.7, margin 19.3); v1 refused it "
+        "it (motion d2 0.72, cost 1.81, margin 26.2); v1 refused it "
         "(above_cost_gate) and started a new track at frame 16."
     ),
     ("052924_2", "v1_link_not_in_v2", ((10, 1), (11, 3))): _DUPLICATES_052924_2,
@@ -207,10 +257,17 @@ def _breakdown_dict(b) -> dict[str, Any]:
     if not b.gated:
         for name in ("motion", "size", "shape", "orientation", "direction", "overlap", "gap"):
             out[name] = round(getattr(b, name), 3)
-        if b.motion_forward is not None:
-            out["motion_forward"] = round(b.motion_forward, 3)
-            out["motion_backward"] = round(b.motion_backward, 3)
+        out["iou"] = None if b.iou is None else round(b.iou, 3)
+        out["overlap_withheld"] = bool(b.overlap_withheld)
+    if b.motion_forward is not None:
+        out["motion_forward"] = round(b.motion_forward, 3)
+        out["motion_backward"] = round(b.motion_backward, 3)
+        out["motion_evidence"] = b.motion_evidence
     return out
+
+
+def _round(value: float | None) -> float | None:
+    return None if value is None else round(float(value), 3)
 
 
 def _v2_choice(obs, previous) -> Any:
@@ -219,8 +276,112 @@ def _v2_choice(obs, previous) -> Any:
         return "track start"
     return {
         "previous": [previous.frame, previous.det_label],
-        "cost": None if obs.cost is None else round(obs.cost, 3),
-        "link_margin": None if obs.link_margin is None else round(obs.link_margin, 3),
+        "cost": _round(obs.cost),
+        "link_margin": _round(obs.link_margin),
+        "link_margin_global": _round(obs.link_margin_global),
+    }
+
+
+Key = tuple[int, int]
+Link = tuple[Key, Key]
+
+
+def _groups(tracks) -> dict[int, list[Key]]:
+    return {tr.id: [(o.frame, o.det_label) for o in tr.observations] for tr in tracks}
+
+
+def _links(groups: dict[int, list[Key]]) -> set[Link]:
+    out = set()
+    for obs in groups.values():
+        for a, b in zip(obs[:-1], obs[1:]):
+            out.add((a, b))
+    return out
+
+
+def _agreement(baseline: dict[int, list[Key]], groups: dict[int, list[Key]],
+               present: set[Key] | None = None) -> tuple[int, int]:
+    """(observations held by each baseline track's majority v2 track, observations).
+
+    ``present`` restricts both to detections that exist in the run (a control
+    run that removed some detections cannot be charged for them).
+    """
+    new_of = {key: tid for tid, keys in groups.items() for key in keys}
+    agreed = total = 0
+    for obs in baseline.values():
+        keys = [k for k in obs if present is None or k in present]
+        if not keys:
+            continue
+        agreed += Counter(new_of.get(k) for k in keys).most_common(1)[0][1]
+        total += len(keys)
+    return agreed, total
+
+
+def _lane_steps(tracks, geometry: ChannelGeometry) -> list[dict[str, Any]]:
+    """Every link of every track whose two ends lie in two different lanes."""
+    out = []
+    for tr in tracks:
+        for a, b in zip(tr.observations[:-1], tr.observations[1:]):
+            la, lb = geometry.lane_of(a.x, a.y), geometry.lane_of(b.x, b.y)
+            if la >= 0 and lb >= 0 and la != lb:
+                out.append({
+                    "track": tr.id,
+                    "link": [[a.frame, a.det_label], [b.frame, b.det_label]],
+                    "lanes": [la, lb],
+                    "gap_frames": b.frame - a.frame,
+                    "dx_px": round(b.x - a.x, 1),
+                    "dy_px": round(b.y - a.y, 1),
+                    "cost": _breakdown_dict(b.breakdown),
+                    "link_margin": _round(b.link_margin),
+                })
+    return out
+
+
+def _recovered_duplicates(dets: list[Detection]) -> list[Detection]:
+    """Recovered detections whose centroid lies inside a primary detection's box, same frame.
+
+    The same containment test the tracker's merge flag uses, so no distance
+    threshold has to be chosen; the distances to the primaries are reported
+    with each removal.
+    """
+    primaries: dict[int, list[Detection]] = defaultdict(list)
+    for d in dets:
+        if d.source == "primary":
+            primaries[d.frame].append(d)
+
+    def inside(p: Detection, d: Detection) -> bool:
+        min_r, min_c, max_r, max_c = p.bbox
+        return min_r <= d.y < max_r and min_c <= d.x < max_c
+
+    return [
+        d for d in dets
+        if d.source != "primary" and any(inside(p, d) for p in primaries[d.frame])
+    ]
+
+
+def _control_run(dets: list[Detection], n_frames: int, scale: Scale, cfg: TrackingConfig,
+                 geometry: ChannelGeometry, baseline: dict[int, list[Key]],
+                 main_links: set[Link], *, body_shaped: bool = False) -> dict[str, Any]:
+    """The tracker on a variant of the inputs, compared with v1 and with the main run."""
+    tracks, _ = track_detections(
+        dets, n_frames, scale, cfg, geometry=geometry, body_shaped_noise_in_lanes=body_shaped
+    )
+    present = {(d.frame, d.label) for d in dets}
+    groups = _groups(tracks)
+    v1 = {(a, b) for a, b in _links(baseline) if a in present and b in present}
+    v2 = _links(groups)
+    agreed, total = _agreement(baseline, groups, present)
+    main = {(a, b) for a, b in main_links if a in present and b in present}
+    return {
+        "n_v2_tracks": len(tracks),
+        "baseline_observations_present": total,
+        "identity_agreement": round(agreed / total, 4) if total else None,
+        "links_only_v1": [[list(a), list(b)] for a, b in sorted(v1 - v2)],
+        "links_only_v2": [[list(a), list(b)] for a, b in sorted(v2 - v1)],
+        "links_changed_from_main_run": {
+            "added": [[list(a), list(b)] for a, b in sorted(v2 - main)],
+            "removed": [[list(a), list(b)] for a, b in sorted(main - v2)],
+        },
+        "lane_changing_links": _lane_steps(tracks, geometry),
     }
 
 
@@ -280,15 +441,8 @@ def compare_movie(name: str, baseline_dir: Path, samples: Path) -> dict[str, Any
         })
 
     # -- links: the unit at which the two trackers can disagree ---------------
-    def links(groups: dict[int, list[tuple[int, int]]]) -> set[tuple[tuple[int, int], tuple[int, int]]]:
-        out = set()
-        for obs in groups.values():
-            for a, b in zip(obs[:-1], obs[1:]):
-                out.add((a, b))
-        return out
-
-    v2_groups = {tr.id: [(o.frame, o.det_label) for o in tr.observations] for tr in tracks}
-    v1_links, v2_links = links(baseline), links(v2_groups)
+    v2_groups = _groups(tracks)
+    v1_links, v2_links = _links(baseline), _links(v2_groups)
     only_v1 = sorted(v1_links - v2_links)
     only_v2 = sorted(v2_links - v1_links)
 
@@ -323,7 +477,8 @@ def compare_movie(name: str, baseline_dir: Path, samples: Path) -> dict[str, Any
             "v2_track": tr.id,
             "baseline_tracks": [v1_of.get(a), v1_of.get(b)],
             "v2_cost": _breakdown_dict(obs_b.breakdown),
-            "v2_link_margin": None if obs_b.link_margin is None else round(obs_b.link_margin, 3),
+            "v2_link_margin": _round(obs_b.link_margin),
+            "v2_link_margin_global": _round(obs_b.link_margin_global),
             "closed_by_stage_2": bool(obs_b.breakdown is not None and obs_b.breakdown.motion_forward is not None),
             "v1_reason": (
                 {"refused_because": v1_start["refused_because"], "explanation": v1_start["explanation"]}
@@ -368,11 +523,35 @@ def compare_movie(name: str, baseline_dir: Path, samples: Path) -> dict[str, Any
          "in_v1": (lambda prev: v1_of.get(prev) is not None and v1_of.get(prev) == v1_of.get((o.frame, o.det_label)))(
              (tr.observations[i - 1].frame, tr.observations[i - 1].det_label)),
          **_breakdown_dict(o.breakdown),
-         "link_margin": round(o.link_margin, 3)}
+         "link_margin": _round(o.link_margin),
+         "link_margin_global": _round(o.link_margin_global)}
         for tr in tracks for i, o in enumerate(tr.observations)
         if o.breakdown is not None and o.breakdown.motion_forward is not None
     ]
     margins = [o.link_margin for tr in tracks for o in tr.observations if o.link_margin is not None]
+    margins_global = [
+        o.link_margin_global for tr in tracks for o in tr.observations
+        if o.link_margin_global is not None
+    ]
+    duplicates = _recovered_duplicates(dets)
+    deduplicated = [d for d in dets if all(d is not x for x in duplicates)]
+    controls = {
+        "lane_gate_off": _control_run(
+            dets, n_frames, scale, replace(cfg, channel_constraint=CHANNEL_CONSTRAINT_OFF),
+            geometry, baseline, v2_links,
+        ),
+        "recovered_duplicates_dropped": {
+            "dropped": [
+                {"detection": [d.frame, d.label], "source": d.source,
+                 "to_nearest_primary_px": nearest_primary_px((d.frame, d.label))}
+                for d in duplicates
+            ],
+            **_control_run(deduplicated, n_frames, scale, cfg, geometry, baseline, v2_links),
+        },
+        "body_shaped_noise_in_lanes": _control_run(
+            dets, n_frames, scale, cfg, geometry, baseline, v2_links, body_shaped=True
+        ),
+    }
     return {
         "movie": name,
         "n_frames": n_frames,
@@ -395,13 +574,30 @@ def compare_movie(name: str, baseline_dir: Path, samples: Path) -> dict[str, Any
         "stale_reviewed_explanations": stale,
         "v2_flags": dict(Counter(f for tr in tracks for f in tr.flags)),
         "v2_link_margin_chi2": (
-            {"n": len(margins), "min": round(min(margins), 3),
+            {"definition": "contract: next-best for the track or the detection, capped at 2U, "
+                           "minus the chosen cost; negative = locally contested",
+             "n": len(margins), "min": round(min(margins), 3),
+             "n_negative": sum(1 for m in margins if m < 0),
              "median": round(statistics.median(margins), 3)} if margins else None
         ),
+        "v2_link_margin_global_chi2": (
+            {"definition": "increase of the frame's optimal total if the link is forbidden",
+             "n": len(margins_global), "min": round(min(margins_global), 3),
+             "median": round(statistics.median(margins_global), 3)} if margins_global else None
+        ),
+        "control_runs": controls,
         "per_baseline_track": per_track,
         "per_v2_track": reverse,
         "disagreements": disagreements,
     }
+
+
+def _weighted(results: list[dict[str, Any]], control: str) -> float | None:
+    runs = [r["control_runs"][control] for r in results]
+    total = sum(c["baseline_observations_present"] for c in runs)
+    agreed = sum(c["identity_agreement"] * c["baseline_observations_present"] for c in runs
+                 if c["identity_agreement"] is not None)
+    return round(agreed / total, 4) if total else None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -433,6 +629,29 @@ def main(argv: list[str] | None = None) -> int:
             "v2_lane_crossings_in_wide_fields": sum(
                 len(r["lane_crossings"]["v2"]) for r in results if r["movie"] in WIDE_FIELDS
             ),
+            "v2_lane_crossings_are": (
+                "enforced, not discovered: the re-measured lanes are given to the tracker as "
+                "an applied lane gate. Without the gate, see "
+                "lane_changing_links_with_gate_off_in_wide_fields."
+            ),
+            "lane_changing_links_with_gate_off_in_wide_fields": sum(
+                len(r["control_runs"]["lane_gate_off"]["lane_changing_links"])
+                for r in results if r["movie"] in WIDE_FIELDS
+            ),
+            "control_runs": {
+                name: {
+                    "v2_tracks": sum(r["control_runs"][name]["n_v2_tracks"] for r in results),
+                    "identity_agreement_obs_weighted": _weighted(results, name),
+                    "links_only_in_v1": sum(
+                        len(r["control_runs"][name]["links_only_v1"]) for r in results
+                    ),
+                    "links_only_in_v2": sum(
+                        len(r["control_runs"][name]["links_only_v2"]) for r in results
+                    ),
+                }
+                for name in ("lane_gate_off", "recovered_duplicates_dropped",
+                             "body_shaped_noise_in_lanes")
+            },
             "stage2_gap_closures": sum(len(r["stage2_gap_closures"]) for r in results),
             "unreviewed_disagreements": sum(
                 1 for r in results for d in r["disagreements"] if d["explanation"] == "UNREVIEWED"

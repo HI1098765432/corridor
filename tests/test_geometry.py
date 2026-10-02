@@ -211,6 +211,28 @@ def test_detections_are_assigned_to_their_lane():
     assert [d.channel for d in detections] == [0, 1, 2, -1]
 
 
+def test_irregular_spacing_leaves_no_hole_between_lanes():
+    """Lanes at x = 0, 40 and 120: x = 65 is between lanes, so it belongs to the nearer.
+
+    The middle lane's half-width is 20 (half its nearest spacing). Judged by
+    that alone, x = 65 was in no lane (-1) and never gated -- a cell there
+    could be linked across a wall. Outside the lattice the half-width still
+    bounds the outer lanes.
+    """
+    lanes = [
+        Lane(0, (0.0, 0.0), (0.0, 1.0), 20.0, HALF_WIDTH_FROM_SPACING),
+        Lane(1, (40.0, 0.0), (0.0, 1.0), 20.0, HALF_WIDTH_FROM_SPACING),
+        Lane(2, (120.0, 0.0), (0.0, 1.0), 40.0, HALF_WIDTH_FROM_SPACING),
+    ]
+    geometry = ChannelGeometry(lanes=lanes, source=GEOMETRY_FROM_RIDGES, applied=True)
+    assert geometry.lane_of(65.0, 50.0) == 1
+    assert geometry.lane_of(85.0, 50.0) == 2
+    assert geometry.lane_of(-15.0, 50.0) == 0
+    assert geometry.lane_of(-25.0, 50.0) == -1
+    assert geometry.lane_of(155.0, 50.0) == 2
+    assert geometry.lane_of(165.0, 50.0) == -1
+
+
 def test_lane_membership_follows_each_lane_s_own_tilt():
     """A tilted lane's membership is judged along its tilt, not by x."""
     geometry = _three_lanes(-6.0)
@@ -267,11 +289,10 @@ def test_an_empty_v1_manifest_reads_as_no_lanes():
 
 @requires_samples
 def test_the_baseline_manifests_read_as_lanes():
-    from conftest import REPO_ROOT
+    from conftest import BASELINE_DIR as baseline
 
-    baseline = REPO_ROOT / "build" / "baseline_v1.3.0"
     if not baseline.is_dir():
-        pytest.skip("the frozen v1.3.0 baseline is not present")
+        pytest.skip("the frozen v1.3.0 baseline is not present (set CORRIDOR_BASELINE_DIR)")
     for run in sorted(baseline.iterdir()):
         manifest = json.loads((run / "run.json").read_text(encoding="utf-8"))
         geometry = ChannelGeometry.from_legacy_manifest(manifest["confinement"])

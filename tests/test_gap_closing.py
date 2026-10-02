@@ -18,10 +18,15 @@ import pytest
 
 from corridor.core.config import TrackingConfig
 from corridor.core.tracking import (
+    EVIDENCE_BOTH,
+    EVIDENCE_FORWARD,
     FLAG_GAP_CLOSED,
     GATE_GAP,
     GATE_MOTION,
     KalmanTracker,
+    MotionModel,
+    _Context,
+    closing_cost,
     explain_unlinked_starts,
     motion_gate_chi2,
     track_detections,
@@ -55,12 +60,9 @@ def turning_cell(speed: float = 30.0, y: float = 100.0):
     return dets, 10
 
 
-@pytest.mark.parametrize(
-    "scene", [("reverse", 40.0, 0), ("reverse", 50.0, 1), ("turn", 30.0, 0)]
-)
-def test_a_link_stage_1_refuses_is_closed_by_stage_2(scale, scene):
-    kind, speed, missing = scene
-    dets, n = reversing_cell(speed, missing) if kind == "reverse" else turning_cell(speed)
+@pytest.mark.parametrize("speed,missing", [(40.0, 0), (50.0, 1)])
+def test_a_link_stage_1_refuses_is_closed_by_stage_2(scale, speed, missing):
+    dets, n = reversing_cell(speed, missing)
     stage1, _ = track_detections(dets, n, scale, TrackingConfig(global_gap_closing=False))
     assert len(stage1) == 2, "the scenario must defeat stage 1, or this tests nothing"
 
@@ -70,15 +72,30 @@ def test_a_link_stage_1_refuses_is_closed_by_stage_2(scale, scene):
     assert FLAG_GAP_CLOSED in track.flags
     joint = next(o for o in track.observations if o.frame == 5 + missing)
     b = joint.breakdown
-    # The forward side alone would have refused it; the backward side is sure.
+    # The forward side alone would have refused it; the backward side is sure,
+    # and the two together pass the two-sided gate.
+    assert b.motion_evidence == EVIDENCE_BOTH
     assert b.motion_forward > motion_gate_chi2(2)
     assert b.motion_backward < 2.0
+    assert b.motion_forward + b.motion_backward <= motion_gate_chi2(4)
     assert b.motion == pytest.approx(0.5 * (b.motion_forward + b.motion_backward))
     assert joint.gap_frames == 1 + missing
     assert joint.cost == pytest.approx(b.total)
     assert joint.link_margin is not None and joint.link_margin > 0
-    assert events[5 + missing].gap_closed == [track.id]
-    assert "global gap closing" in events[5 + missing].to_row()["notes"]
+    assert joint.link_margin_global is not None and joint.link_margin_global > 0
+    event = events[5 + missing]
+    assert event.gap_closed == [track.id]
+    assert "global gap closing" in event.to_row()["notes"]
+    # The closed start is a continuation now, not a new track.
+    assert event.n_new == 0 and event.n_matched == event.n_detections == 1
+
+
+def test_a_rejoin_without_a_missing_frame_is_worded_as_one(scale):
+    dets, n = reversing_cell(40.0, 0)
+    _, events = track_detections(dets, n, scale, TrackingConfig())
+    notes = events[5].to_row()["notes"]
+    assert "rejoined by global gap closing" in notes
+    assert "0 missing" not in notes
 
 
 def test_gap_closing_can_be_switched_off(scale):
@@ -88,15 +105,52 @@ def test_gap_closing_can_be_switched_off(scale):
     assert not any(e.gap_closed for e in events)
 
 
-def test_a_reversal_too_violent_for_both_sides_stays_split(scale):
-    """70 px/frame straight back: the mean of both sides is still above the motion gate."""
-    dets = [make_detection(t, 40 + 70 * t, 100, orientation_rad=HORIZONTAL) for t in range(5)]
-    dets += [
-        make_detection(5 + k, 320 - 70 * (k + 1), 100, orientation_rad=HORIZONTAL)
-        for k in range(5)
-    ]
-    tracks, _ = track_detections(dets, 10, scale, TrackingConfig())
+@pytest.mark.parametrize("speed", [44.0, 70.0])
+def test_a_reversal_too_violent_for_both_sides_stays_split(scale, speed):
+    """Straight back at 44 or 70 px/frame: the joint statistic fails the 2*ndim gate.
+
+    At 44 px/frame (1.03 um/min) the forward side reads 21.3 and the backward
+    side 0.0. Their mean, 10.7, is under the one-sided 13.8 -- the rule that
+    used to be applied -- but a sum of two chi-square(2) statistics is
+    judged against chi-square(4): 21.3 > 18.5.
+    """
+    dets, n = reversing_cell(speed, 0)
+    tracks, _ = track_detections(dets, n, scale, TrackingConfig())
     assert len(tracks) == 2
+    early, late = sorted(tracks, key=lambda t: t.first_frame)
+    b = closing_cost(_context(scale), early, late)
+    assert b.gated == GATE_MOTION
+    assert b.motion_forward + b.motion_backward > motion_gate_chi2(4)
+    if speed == 44.0:
+        assert 0.5 * (b.motion_forward + b.motion_backward) < motion_gate_chi2(2)
+
+
+def test_a_one_observation_fragment_is_judged_on_the_forward_side_alone(scale):
+    """A fragment's 'backward prediction' is only the fresh prior; it is not evidence.
+
+    A cell moving down at 20 px/frame, then one detection 60 px to its side.
+    Forward d^2 17.4 fails the gate; the fragment's backward d^2 (0.8) says
+    nothing, because a one-observation track predicts with a 71 px/frame
+    spread. Averaging the two (9.1) used to join them.
+    """
+    dets = [make_detection(t, 45, 20 + 20 * t, label=1) for t in range(5)]
+    dets.append(make_detection(5, 105, 120, label=2))
+    stage1, _ = track_detections(dets, 6, scale, TrackingConfig(global_gap_closing=False))
+    assert len(stage1) == 2
+    tracks, events = track_detections(dets, 6, scale, TrackingConfig())
+    assert len(tracks) == 2
+    assert not events[5].gap_closed
+    early, fragment = sorted(tracks, key=lambda t: t.first_frame)
+    b = closing_cost(_context(scale), early, fragment)
+    assert b.motion_evidence == EVIDENCE_FORWARD
+    assert b.gated == GATE_MOTION
+    assert b.motion == pytest.approx(b.motion_forward) and b.motion > motion_gate_chi2(2)
+    assert 0.5 * (b.motion_forward + b.motion_backward) < motion_gate_chi2(2)
+
+
+def _context(scale, cfg: TrackingConfig | None = None) -> _Context:
+    cfg = cfg or TrackingConfig()
+    return _Context(scale, cfg, MotionModel.from_config(scale, cfg), None)
 
 
 def test_ids_are_renumbered_and_the_stage_1_ids_are_mapped(scale):
@@ -190,15 +244,52 @@ def test_the_audit_accepts_the_v1_argument_order(vertical_axis, scale):
 
 
 def test_a_zero_cost_candidate_is_ranked_as_the_cheapest(scale):
-    """v1 ranked candidates by ``cost or FORBIDDEN``, so a genuine 0.0 lost to anything."""
-    cfg = TrackingConfig(max_gap=0, global_gap_closing=False)
-    # Track 1 stops at frame 1 exactly where track 2 appears at frame 3, with
-    # the same size and shape (cost near 0 once the gap is relaxed).
-    dets = [make_detection(0, 45, 100, label=1), make_detection(1, 45, 100, label=1)]
-    dets += [make_detection(3, 45, 100, label=1), make_detection(4, 45, 100, label=1)]
+    """v1 ranked candidates by ``cost or FORBIDDEN``, so a genuine 0.0 lost to anything.
+
+    Two earlier tracks end at frame 1, both two frames before track 3 starts
+    (``max_gap = 0``, so neither may join it). The one listed first sits
+    15 px away (a positive closing cost); the other sits exactly where track
+    3 appears, with the same round body and no gap penalty, so its relaxed
+    closing cost is exactly 0.0. The audit must name the second.
+    """
+    cfg = TrackingConfig(max_gap=0, gap_penalty_chi2=0.0, global_gap_closing=False)
+    round_cell = dict(eccentricity=0.3, major=32.0, minor=30.0, area=750.0)
+    dets = [
+        make_detection(0, 30, 300, label=1, **round_cell),
+        make_detection(0, 45, 315, label=2, **round_cell),
+        make_detection(1, 30, 300, label=1, **round_cell),
+        make_detection(1, 45, 315, label=2, **round_cell),
+        make_detection(3, 45, 315, label=3, **round_cell),
+        make_detection(4, 45, 315, label=3, **round_cell),
+    ]
     tracks, _ = track_detections(dets, 5, scale, cfg)
+    assert len(tracks) == 3
+    first, zero, late = sorted(tracks, key=lambda t: t.id)
+    assert (first.observations[0].x, zero.observations[0].x) == (30, 45)
+    assert late.first_frame == 3
+    # The competitor is a real candidate with a positive, ungated cost.
+    relaxed = _context(scale, TrackingConfig(max_gap=1, gap_penalty_chi2=0.0))
+    competitor = closing_cost(relaxed, first, late)
+    assert competitor.allowed and 0.0 < competitor.total < cfg.effective_gate_chi2
     (audit,) = explain_unlinked_starts(tracks, scale, cfg)
-    assert audit.candidate_track_id == 1
+    assert audit.track_id == late.id
+    assert audit.candidate_track_id == zero.id
+    assert audit.cost_chi2 == 0.0
+    assert audit.refused_because == GATE_GAP
+
+
+def test_one_tracker_tracks_two_movies_independently(scale):
+    """``track`` starts from nothing: no tracks, events, ids or notes carry over."""
+    tracker = KalmanTracker(scale, TrackingConfig())
+    first = group_by_frame(straight_track(5))
+    second = group_by_frame(straight_track(5, x=200.0))
+    tracks_a, events_a = tracker.track(first, 5)
+    tracks_b, events_b = tracker.track(second, 5)
+    assert [t.id for t in tracks_a] == [t.id for t in tracks_b] == [1]
+    assert len(tracks_b) == 1 and tracks_b[0].observations[0].x == 200.0
+    assert len(events_b) == 5 and not any(e.gap_closed for e in events_b)
+    assert tracks_b.id_map == {1: 1}
+    assert len(events_a) == 5 and events_a is not events_b
 
 
 def test_the_tracker_object_reports_the_same_result(scale):

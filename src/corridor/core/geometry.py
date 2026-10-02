@@ -184,15 +184,33 @@ class ChannelGeometry:
     def lane_of(self, x: float, y: float) -> int:
         """Index of the lane containing (x, y), or -1 when it is in none.
 
-        The nearest centre line wins, and the point must lie within that
-        lane's half-width of it.  -1 is not "lane 0": a point outside every
-        lane (between two measured lumens, or with no lanes at all) is never
-        gated, because there is no lane it could be refused from.
+        Between two lanes the nearest centre line wins (a Voronoi split at
+        the midline), whatever either lane's half-width says: with irregular
+        spacing -- lanes at x = 0, 40 and 120 -- a half-width of half the
+        *nearest* spacing (20 px for the middle lane) left x = 65 in no lane,
+        and -1 is never gated, so a cell there could have been linked across
+        a wall.  Only beyond the outermost lane on a side, where there is no
+        neighbour to split with, must the point lie within that lane's
+        half-width.  -1 is not "lane 0": a point outside the lattice (or with
+        no lanes at all) is never gated, because there is no lane it could be
+        refused from.
         """
         if not self.lanes:
             return -1
         best = min(self.lanes, key=lambda lane: abs(lane.offset(x, y)))
-        if abs(best.offset(x, y)) <= best.half_width_px:
+        side = best.offset(x, y)
+        if side == 0.0:
+            return best.index
+        for other in self.lanes:
+            if other is best:
+                continue
+            # Where ``other``'s centre line passes near the point, measured
+            # from ``best``: a neighbour on the point's side means the point
+            # is between two lanes, and the nearer one owns it.
+            foot = np.array([x, y], dtype=float) - other.offset(x, y) * other.normal
+            if best.offset(float(foot[0]), float(foot[1])) * side > 0:
+                return best.index
+        if abs(side) <= best.half_width_px:
             return best.index
         return -1
 
