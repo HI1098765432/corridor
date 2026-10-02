@@ -22,7 +22,7 @@ from corridor.core.tracking import (
     track_detections,
 )
 
-from conftest import identity_of, make_detection
+from conftest import FRAME_INTERVAL_MIN, PIXEL_SIZE_UM, identity_of, make_body, make_detection
 
 HORIZONTAL = math.pi / 2  # scikit-image orientation of a body lying along x
 #: Round cells for the open field: orientation means nothing below ecc 0.6.
@@ -49,7 +49,10 @@ def assert_identities(tracks, truth: dict[int, list[int]]) -> None:
 
 
 def test_head_on_crossing_in_an_open_field_keeps_identity(scale, tracking_config):
-    """A moves left to right, B right to left, one body-width apart."""
+    """A moves left to right, B right to left, on parallel lines one body-width (12 px) apart.
+
+    A head-on pass, not a crossing: the true crossings are below.
+    """
     dets = []
     for t in range(11):
         dets.append(make_detection(t, 20 + 18 * t, 100, label=1, orientation_rad=HORIZONTAL))
@@ -72,6 +75,76 @@ def test_x_crossing_of_round_cells_keeps_identity(scale, tracking_config):
     tracks, _ = track_detections(dets, 11, scale, tracking_config)
     assert len(tracks) == 2
     assert_identities(tracks, {1: list(range(11)), 2: list(range(11))})
+
+
+#: px per frame of 1 um/min at the supplied calibration (42.8).
+PX_PER_FRAME_PER_UM_PER_MIN = FRAME_INTERVAL_MIN / PIXEL_SIZE_UM
+
+
+@pytest.mark.parametrize("angle_deg", [60, 120])
+def test_x_crossing_of_elongated_cells_keeps_identity(scale, tracking_config, angle_deg):
+    """Two 60x8 px cells, bodies along their paths, crossing at an angle in an open field.
+
+    The case a body-shaped prior would get wrong if anything does: at the
+    crossing the two bodies overlap and each passes through the other's
+    predicted position, at 0.7 um/min.  A reaches the crossing point at frame
+    5, B half a frame later, so they are 15 px apart there.
+    """
+    v = 0.7 * PX_PER_FRAME_PER_UM_PER_MIN
+    heading_b = math.radians(angle_deg)
+    cross = np.array([300.0, 300.0])
+    dets = []
+    for t in range(11):
+        a = cross + (t - 5.0) * v * np.array([1.0, 0.0])
+        b = cross + (t - 5.5) * v * np.array([math.cos(heading_b), math.sin(heading_b)])
+        dets.append(make_body(t, a[0], a[1], 0.0, label=1))
+        dets.append(make_body(t, b[0], b[1], heading_b, label=2))
+    tracks, _ = track_detections(dets, 11, scale, tracking_config)
+    assert len(tracks) == 2
+    assert_identities(tracks, {1: list(range(11)), 2: list(range(11))})
+
+
+@pytest.mark.parametrize("turn_deg_per_frame", [20, 30, 45])
+@pytest.mark.parametrize("speed_um_per_min", [0.5, 0.93])
+def test_an_elongated_cell_turning_steadily_is_one_track(
+    scale, tracking_config, turn_deg_per_frame, speed_um_per_min
+):
+    """Turning 20-45 deg every frame for twelve frames, body following the heading.
+
+    Measured with the withdrawn body-shaped process noise: 20 deg/frame at
+    0.93 um/min made four tracks, because the noise allowed almost no
+    velocity change across the body -- and a turning cell's velocity changes
+    exactly across its body.  The contract's isotropic noise keeps one.
+    """
+    v = speed_um_per_min * PX_PER_FRAME_PER_UM_PER_MIN
+    x, y, heading = 100.0, 300.0, 0.0
+    dets = []
+    for t in range(12):
+        dets.append(make_body(t, x, y, heading))
+        heading += math.radians(turn_deg_per_frame)
+        x += v * math.cos(heading)
+        y += v * math.sin(heading)
+    tracks, _ = track_detections(dets, 12, scale, tracking_config)
+    assert len(tracks) == 1
+    assert_identities(tracks, {1: list(range(12))})
+
+
+@pytest.mark.parametrize("turn_deg", [30, 45, 60, 90])
+@pytest.mark.parametrize("speed_um_per_min", [0.5, 1.0])
+def test_an_elongated_cell_turning_once_is_one_track(scale, tracking_config, turn_deg, speed_um_per_min):
+    """One turn of 30-90 deg at 0.5-1 um/min in an open field (p90 of the baseline: 1.19)."""
+    v = speed_um_per_min * PX_PER_FRAME_PER_UM_PER_MIN
+    x, y, heading = 100.0, 300.0, 0.0
+    dets = []
+    for t in range(12):
+        dets.append(make_body(t, x, y, heading))
+        if t == 5:
+            heading += math.radians(turn_deg)
+        x += v * math.cos(heading)
+        y += v * math.sin(heading)
+    tracks, _ = track_detections(dets, 12, scale, tracking_config)
+    assert len(tracks) == 1
+    assert_identities(tracks, {1: list(range(12))})
 
 
 def test_crossing_with_a_missing_frame_at_the_crossing(scale, tracking_config):

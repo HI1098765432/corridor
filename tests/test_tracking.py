@@ -13,6 +13,7 @@ import math
 
 import numpy as np
 import pytest
+from scipy.optimize import linear_sum_assignment
 
 from corridor.core.config import CHANNEL_CONSTRAINT_OFF, Scale, TrackingConfig
 from corridor.core.geometry import GEOMETRY_FROM_RIDGES, ChannelGeometry, Lane
@@ -30,6 +31,7 @@ from corridor.core.tracking import (
     build_assignment_matrix,
     link_margins,
     motion_gate_chi2,
+    resolve_link_margins,
     pair_cost,
     solve_assignment,
     start_track,
@@ -377,19 +379,28 @@ def test_sideways_jump_costs_more_than_moving_along_the_body(scale, tracking_con
     A vertically elongated fresh cell (no velocity yet): 10 px sideways must
     cost more than 30 px along its own long axis. v1 asserted the same thing
     about a migration axis.
+
+    With the contract's isotropic fresh-track prior (71 px/frame of speed
+    spread) the motion term alone cannot say it -- it charges the shorter
+    jump less (0.02 against 0.17). What says it is the cell's own body: moved
+    sideways by about its width, the mask no longer overlaps itself, while 30
+    px along a 90 px body still overlaps by about half. Production detections
+    carry their masks, so the test does too.
     """
-    tr_a = _track_at(scale, tracking_config, 0, 45.0, 100.0)
-    along = pair_cost(tr_a, make_detection(1, 45.0, 130.0), scale, tracking_config)
-    tr_b = _track_at(scale, tracking_config, 0, 45.0, 100.0)
-    across = pair_cost(tr_b, make_detection(1, 55.0, 100.0), scale, tracking_config)
+    tr_a = _track_at(scale, tracking_config, 0, 45.0, 100.0, with_mask=True)
+    along = pair_cost(tr_a, make_detection(1, 45.0, 130.0, with_mask=True), scale, tracking_config)
+    tr_b = _track_at(scale, tracking_config, 0, 45.0, 100.0, with_mask=True)
+    across = pair_cost(tr_b, make_detection(1, 55.0, 100.0, with_mask=True), scale, tracking_config)
     assert along.allowed and across.allowed
-    assert across.motion > along.motion
     assert across.total > along.total
+    assert across.overlap > along.overlap
+    # The isotropic prior is honest about what motion alone knows.
+    assert across.motion < along.motion < 1.0
 
 
 def test_the_same_holds_for_a_horizontal_cell(scale, tracking_config):
     """No direction is privileged: rotate the cell and the cost rotates with it."""
-    horizontal = dict(orientation_rad=math.pi / 2)
+    horizontal = dict(orientation_rad=math.pi / 2, with_mask=True)
     tr_a = _track_at(scale, tracking_config, 0, 100.0, 45.0, **horizontal)
     along = pair_cost(
         tr_a, make_detection(1, 130.0, 45.0, **horizontal), scale, tracking_config
@@ -399,6 +410,66 @@ def test_the_same_holds_for_a_horizontal_cell(scale, tracking_config):
         tr_b, make_detection(1, 100.0, 55.0, **horizontal), scale, tracking_config
     )
     assert across.total > along.total
+
+
+def test_process_noise_and_the_fresh_prior_are_isotropic_by_default(scale, tracking_config):
+    """Contract §5: nothing about the body or the device shapes Q or the prior.
+
+    A body-shaped Q broke elongated cells that turn in an open field (see
+    test_tracking_synthetic.py); it exists only as an opt-in for confined
+    lanes, and even then only where the lane gate applies.
+    """
+    det = make_detection(0, 45.0, 45.0, orientation_rad=math.radians(30))
+    model = MotionModel.from_config(scale, tracking_config)
+    assert not model.body_shaped_noise
+    _, Q = model.transition(1.0, det)
+    q = model.accel_var_px2_per_frame3
+    assert np.allclose(Q[2:, 2:], q * np.eye(2))
+    assert np.allclose(
+        model.initial_velocity_cov(det), model.initial_speed_px_per_frame**2 * np.eye(2)
+    )
+
+    shaped = MotionModel.from_config(scale, tracking_config, body_shaped_noise=True)
+    _, Qs = shaped.transition(1.0, det)
+    u = det.axis_unit
+    n = np.array([-u[1], u[0]])
+    assert float(n @ Qs[2:, 2:] @ n) < 0.05 * float(u @ Qs[2:, 2:] @ u)
+
+
+def test_the_body_shaped_opt_in_applies_only_inside_measured_lanes(scale, tracking_config):
+    dets = straight_track(4)
+    by_frame = {d.frame: [d] for d in dets}
+    tracker = KalmanTracker(scale, tracking_config, body_shaped_noise_in_lanes=True)
+    tracker.track(by_frame, 4)
+    assert not tracker._ctx.model.body_shaped_noise  # no lanes: isotropic
+    tracker = KalmanTracker(
+        scale, tracking_config, geometry=_two_lanes(), body_shaped_noise_in_lanes=True
+    )
+    tracker.track(by_frame, 4)
+    assert tracker._ctx.model.body_shaped_noise
+    assert any("shaped" in note for note in tracker.notes)
+
+
+def test_velocity_noise_is_a_physical_rate_not_a_per_frame_number(tracking_config):
+    """The same cells imaged every 5 or 20 min diffuse in velocity at the same rate.
+
+    ``velocity_sigma_um_per_min`` (0.40) was measured on 20.0 min frames. Over
+    20 min, four 5 min frames must accumulate the same velocity variance as
+    one 20 min frame, and one 80 min frame four times as much.
+    """
+    px = 0.5
+
+    def velocity_var_um2_per_min2(frame_min: float, frames: int) -> float:
+        model = MotionModel.from_config(Scale.from_values(px, frame_min), tracking_config)
+        # White-noise acceleration: velocity variance grows by q per frame,
+        # in (px/frame)^2; converted to (um/min)^2.
+        var_px2_per_frame2 = model.accel_var_px2_per_frame3 * frames
+        return var_px2_per_frame2 * (px / frame_min) ** 2
+
+    reference = velocity_var_um2_per_min2(20.0, 1)
+    assert reference == pytest.approx(tracking_config.velocity_sigma_um_per_min**2)
+    assert velocity_var_um2_per_min2(5.0, 4) == pytest.approx(reference)
+    assert velocity_var_um2_per_min2(80.0, 1) == pytest.approx(4.0 * reference)
 
 
 # --------------------------------------------------------------------------
@@ -456,32 +527,63 @@ def test_empty_inputs_are_handled():
 
 
 def test_link_margin_is_the_gap_to_the_next_best_explanation():
+    """The contract's definition: next-best for the track or the detection, capped at 2U."""
     # A lone link: the next-best explanation is leaving both unmatched (2U).
     assert link_margins(np.array([[5.0]]), [(0, 0)], 10.0)[(0, 0)] == pytest.approx(15.0)
-    # Two links: forbidding either one makes the best alternative the swap,
-    # 4 + 12 = 16 against the chosen 1 + 2 = 3. The local "next-best for its
-    # row or column" (4 - 1 = 3) would ignore that the swap also costs the
-    # other link its detection.
+    # Track 0's next-best detection costs 4 (margin 3); detection 1's
+    # next-best track is track 0 at 4 (margin 2).
     costs = np.array([[1.0, 4.0], [12.0, 2.0]])
     margins = link_margins(costs, [(0, 0), (1, 1)], unmatched_cost=10.0)
+    assert margins[(0, 0)] == pytest.approx(3.0)
+    assert margins[(1, 1)] == pytest.approx(2.0)
+
+
+def test_the_global_margin_counts_the_knock_on_cost():
+    """Forbidding either link makes the best alternative the swap, 4 + 12 = 16 against 3."""
+    costs = np.array([[1.0, 4.0], [12.0, 2.0]])
+    margins = resolve_link_margins(costs, [(0, 0), (1, 1)], unmatched_cost=10.0)
     assert margins[(0, 0)] == pytest.approx(13.0)
     assert margins[(1, 1)] == pytest.approx(13.0)
+    assert resolve_link_margins(np.array([[5.0]]), [(0, 0)], 10.0)[(0, 0)] == pytest.approx(15.0)
 
 
-def test_link_margin_is_never_negative_under_a_global_assignment():
-    """The case that made the local definition read -13.5 on real data.
+def test_a_locally_contested_link_has_a_negative_contract_margin():
+    """The case that read -13.5 on real data (052924_1 frame 9).
 
     Detection 0's cheapest track is track 1 (2.8), but the global optimum
-    gives it to track 0, because track 1 is needed for detection 1.
+    gives it to track 0, because track 1 is needed for detection 1. Locally
+    the link is contested (2.8 - 16.4 = -13.6), which is what an ambiguity
+    flag should see; the solution itself depends on it by 13.4.
     """
     costs = np.array([[16.4, FORBIDDEN], [2.8, 3.0]])
     matches, _, _ = solve_assignment(costs, unmatched_cost=15.0)
     assert sorted(matches) == [(0, 0), (1, 1)]
-    margins = link_margins(costs, matches, 15.0)
-    assert all(m >= 0.0 for m in margins.values())
+    local = link_margins(costs, matches, 15.0)
+    assert local[(0, 0)] == pytest.approx(-13.6)
+    joint = resolve_link_margins(costs, matches, 15.0)
+    assert all(m >= 0.0 for m in joint.values())
     # Forbidding (0, 0): track 1 takes detection 0, detection 1 and track 0
     # go unmatched: 2.8 + 30 = 32.8 against 19.4.
-    assert margins[(0, 0)] == pytest.approx(13.4)
+    assert joint[(0, 0)] == pytest.approx(13.4)
+
+
+def test_the_global_margin_is_solved_per_connected_group():
+    """Groups joined by no allowed pair separate exactly, so re-solving one is enough."""
+    rng = np.random.default_rng(3)
+    block = rng.uniform(0.5, 12.0, size=(3, 3))
+    costs = np.full((6, 6), FORBIDDEN)
+    costs[:3, :3] = block
+    costs[3:, 3:] = block[::-1]
+    matches, _, _ = solve_assignment(costs, 10.0)
+    fast = resolve_link_margins(costs, matches, 10.0)
+    full = build_assignment_matrix(costs, 10.0)
+    r, c = linear_sum_assignment(full)
+    base = float(full[r, c].sum())
+    for i, j in matches:
+        trial = full.copy()
+        trial[i, j] = FORBIDDEN
+        r, c = linear_sum_assignment(trial)
+        assert fast[(i, j)] == pytest.approx(max(0.0, float(trial[r, c].sum()) - base))
 
 
 def test_every_link_carries_its_margin_and_cost(scale, tracking_config):
@@ -492,6 +594,8 @@ def test_every_link_carries_its_margin_and_cost(scale, tracking_config):
     for obs in rest:
         assert obs.cost is not None and obs.link_margin is not None
         assert 0.0 < obs.link_margin <= tracking_config.effective_gate_chi2
+        # A lone cell: both definitions are 2U - cost.
+        assert obs.link_margin_global == pytest.approx(obs.link_margin)
         assert obs.detection is not None
 
 
@@ -540,6 +644,51 @@ def test_overlap_term_uses_the_masks_when_both_have_one(scale, tracking_config):
     assert moved.overlap > same.overlap
     bare = pair_cost(tr, make_detection(1, 45.0, 140.0), scale, tracking_config)
     assert bare.iou is None and bare.overlap == 0.0
+
+
+def _masked_cell_and_duplicate(scale, tracking_config, *, duplicate_has_mask: bool):
+    """A masked cell moving down that speeds up at frame 3 (so its mask overlaps imperfectly),
+    detected there twice: its primary mask and a recovered copy 3 px further on."""
+    dets = [make_detection(t, 45.0, 100.0 + 20.0 * t, with_mask=True) for t in range(3)]
+    primary = make_detection(3, 45.0, 166.0, label=1, with_mask=True)
+    copy = make_detection(3, 45.0, 169.0, label=2, with_mask=duplicate_has_mask)
+    copy.source = "recovered"
+    tracks, _ = track_detections(dets + [primary, copy], 4, scale, tracking_config)
+    holder = next(t for t in tracks if t.first_frame == 0)
+    return holder.observations[-1]
+
+
+def test_a_mask_less_competitor_withholds_the_overlap_from_the_whole_competition(
+    scale, tracking_config
+):
+    """Charging overlap only to masked pairs made mask-less detections cheaper.
+
+    Measured on 052924_2 frame 11 (before this rule, with the earlier
+    body-shaped noise): the primary detection paid 0.87 for overlap, the
+    recovered duplicate nothing, and the duplicate came within 0.16 chi2 of
+    taking the track. Now neither pays when one cannot.
+    """
+    obs = _masked_cell_and_duplicate(scale, tracking_config, duplicate_has_mask=False)
+    b = obs.breakdown
+    assert obs.det_label == 1
+    assert b.iou is not None and b.overlap == 0.0 and b.overlap_withheld
+    # With masks on both, the term is charged as usual.
+    obs = _masked_cell_and_duplicate(scale, tracking_config, duplicate_has_mask=True)
+    assert obs.breakdown.overlap > 0.0 and not obs.breakdown.overlap_withheld
+
+
+def test_overlap_is_withheld_only_within_the_connected_competition(scale, tracking_config):
+    """A far-away masked cell keeps its overlap term while another group loses it."""
+    near = [make_detection(t, 45.0, 100.0 + 20.0 * t, with_mask=True) for t in range(3)]
+    near.append(make_detection(3, 45.0, 166.0, label=1, with_mask=True))
+    bare = make_detection(3, 45.0, 169.0, label=2)
+    far = [make_detection(t, 400.0, 100.0 + 20.0 * t, label=3, with_mask=True) for t in range(3)]
+    far.append(make_detection(3, 400.0, 166.0, label=3, with_mask=True))
+    tracks, _ = track_detections(near + [bare] + far, 4, scale, tracking_config)
+    far_obs = next(o for t in tracks for o in t.observations if o.frame == 3 and o.det_label == 3)
+    near_obs = next(o for t in tracks for o in t.observations if o.frame == 3 and o.det_label == 1)
+    assert far_obs.breakdown.overlap > 0.0 and not far_obs.breakdown.overlap_withheld
+    assert near_obs.breakdown.overlap_withheld
 
 
 def test_the_direction_term_charges_a_reversal(scale, tracking_config):

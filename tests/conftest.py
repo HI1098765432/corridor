@@ -30,6 +30,11 @@ SAMPLE_DIR = Path(
     os.environ.get("CORRIDOR_SAMPLE_DIR")
     or REPO_ROOT / "data" / "confinedmig_cellTrack" / "sample_data"
 )
+#: ``CORRIDOR_BASELINE_DIR`` does the same for the frozen v1.3.0 runs, which
+#: live under ``build/`` and are therefore absent from a fresh checkout.
+BASELINE_DIR = Path(
+    os.environ.get("CORRIDOR_BASELINE_DIR") or REPO_ROOT / "build" / "baseline_v1.3.0"
+)
 
 
 def has_samples() -> bool:
@@ -114,6 +119,36 @@ def make_detection(
     if with_mask:
         attach_ellipse_mask(det)
     return det
+
+
+def make_body(
+    frame: int,
+    x: float,
+    y: float,
+    heading_rad: float,
+    *,
+    label: int = 1,
+    major: float = 60.0,
+    minor: float = 8.0,
+    with_mask: bool = True,
+) -> Detection:
+    """An elongated cell whose body lies along ``heading_rad`` (image x/y, y down).
+
+    The open-field case the axis-free tracker exists for: a polarised cell
+    migrates along its own long axis, so when it turns, its body turns with
+    it. 60 x 8 px is the reviewer's scene (aspect 7.5, about the supplied
+    cells' median 48.2/4.7 um body at half the length). Masks on by default,
+    because production detections carry them.
+    """
+    # scikit-image orientation is the angle from the row axis, so the body's
+    # unit vector (sin o, cos o) in (x, y) must equal (cos h, sin h).
+    o = math.atan2(math.cos(heading_rad), math.sin(heading_rad))
+    o = (o + math.pi / 2) % math.pi - math.pi / 2
+    return make_detection(
+        frame, x, y, label=label, major=major, minor=minor,
+        area=math.pi * major * minor / 4.0, orientation_rad=o,
+        eccentricity=math.sqrt(1.0 - (minor / major) ** 2), with_mask=with_mask,
+    )
 
 
 def attach_ellipse_mask(det: Detection) -> Detection:
