@@ -349,7 +349,10 @@ def test_a_candidate_just_outside_every_lane_is_not_refused(scale, tracking_conf
 
     The review's case: a track in lane 0 (centre y = 40, half-width 8 px) and
     a candidate at y = 49.5, 1.5 px past the measured half-width. The tracker
-    would link it; recovery used to refuse it as "in lane -1".
+    would link it; recovery used to refuse it as "in lane -1". Under the
+    merged geometry's Voronoi ``lane_of`` the gap between lanes 40 and 80
+    belongs to the nearer lane, so y = 49.5 is lane 0 (the same lane as the
+    track): still not refused, which is the point.
     """
     geometry = _two_narrow_lanes()
     shape = (7, 120, 400)
@@ -360,33 +363,39 @@ def test_a_candidate_just_outside_every_lane_is_not_refused(scale, tracking_conf
     stack = paint(primaries + [stray], shape)
     tracks, _ = track_detections(primaries, 7, scale, tracking_config, geometry=geometry)
     assert len(tracks) == 1 and tracks[0].channel == 0
-    assert geometry.lane_of(160.0, 49.5) == -1
+    assert geometry.lane_of(160.0, 49.5) == 0
+
+    result = recover(stack, tracks, _ThresholdService(), scale, tracking_config,
+                     RecoveryConfig(intensity=False), geometry=geometry)
+    [attempt] = result.attempts
+    assert attempt.found, attempt.detail
+    assert result.detections[0].channel == 0
+
+
+def test_a_track_with_no_lane_is_not_held_to_one(scale, tracking_config):
+    """A track outside every lane has no lane to refuse a candidate from.
+
+    The merged geometry's ``lane_of`` only returns -1 beyond the outermost
+    lane on its open side (between two lanes the nearer one owns the gap).
+    So the genuinely laneless track runs past both lanes, where neither the
+    tracker nor recovery may hold it -- or a candidate near it -- to a lane.
+    """
+    geometry = _two_narrow_lanes(y0=20.0, y1=80.0)
+    shape = (7, 200, 400)
+    cells = horizontal_cells(range(7), y=150.0)  # beyond lane 1 (centre 80)
+    stray = make_detection(3, 160.0, 150.0, major=140.0, minor=11.0,
+                           orientation_rad=HORIZONTAL, with_mask=True)
+    primaries = [d for d in cells if d.frame != 3]
+    stack = paint(primaries + [stray], shape)
+    tracks, _ = track_detections(primaries, 7, scale, tracking_config, geometry=geometry)
+    assert len(tracks) == 1 and tracks[0].channel == -1
+    assert geometry.lane_of(160.0, 150.0) == -1
 
     result = recover(stack, tracks, _ThresholdService(), scale, tracking_config,
                      RecoveryConfig(intensity=False), geometry=geometry)
     [attempt] = result.attempts
     assert attempt.found, attempt.detail
     assert result.detections[0].channel == -1
-
-
-def test_a_track_with_no_lane_is_not_held_to_one(scale, tracking_config):
-    """A track never seen inside a lane has no lane to refuse a candidate from."""
-    geometry = _two_narrow_lanes(y0=20.0, y1=100.0)
-    shape = (7, 120, 400)
-    cells = horizontal_cells(range(7), y=60.0)  # between the two lanes
-    stray = make_detection(3, 160.0, 96.0, major=140.0, minor=11.0,
-                           orientation_rad=HORIZONTAL, with_mask=True)
-    primaries = [d for d in cells if d.frame != 3]
-    stack = paint(primaries + [stray], shape)
-    tracks, _ = track_detections(primaries, 7, scale, tracking_config, geometry=geometry)
-    assert len(tracks) == 1 and tracks[0].channel == -1
-    assert geometry.lane_of(160.0, 96.0) == 1
-
-    result = recover(stack, tracks, _ThresholdService(), scale, tracking_config,
-                     RecoveryConfig(intensity=False), geometry=geometry)
-    [attempt] = result.attempts
-    assert attempt.found, attempt.detail
-    assert result.detections[0].channel == 1
 
 
 # --------------------------------------------------------------------------

@@ -411,13 +411,20 @@ def test_the_tracker_records_margins_qc_can_read(scale, tracking_config, metadat
     for f in range(5):
         dets.append(make_detection(f, 40.0, 20.0 + 20.0 * f, label=1))
         dets.append(make_detection(f, 48.0, 22.0 + 20.0 * f, label=2))
+        # A third cell far from the pair links unambiguously every frame,
+        # so there is always a clear link whatever the process-noise tuning.
+        dets.append(make_detection(f, 300.0, 20.0 + 20.0 * f, label=3))
     tracks, events = track_detections(dets, 5, scale, tracking_config)
-    assert len(tracks) == 2
+    assert len(tracks) == 3
     tight = {(o.frame, t.id) for t in tracks for o in t.observations[1:]
              if o.link_margin < LINK_AMBIGUOUS_MARGIN_CHI2}
     clear = {(o.frame, t.id) for t in tracks for o in t.observations[1:]
              if o.link_margin >= LINK_AMBIGUOUS_MARGIN_CHI2}
-    assert tight == {(1, tracks[0].id), (1, tracks[1].id)}, "the scene must have tight links"
+    # Which links are tight depends on the tracker's process-noise tuning
+    # (q is set per minute in TrackingConfig), not on QC. The QC contract,
+    # checked below, is that link_ambiguous fires for exactly the links the
+    # tracker itself recorded as tight -- so the scene need only produce both.
+    assert tight, "the scene must have tight links"
     assert clear, "and clear ones, or this tests nothing"
 
     issues = collect_issues(metadata, scale, [], events, tracks, summarise(tracks, scale),
