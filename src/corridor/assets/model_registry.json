@@ -1,0 +1,19 @@
+{
+  "registry_version": 1,
+  "description": "Every segmentation model Corridor is validated to run. Weights are not part of the source tree; each entry pins the exact file by SHA-256, and a file that does not match is never loaded.",
+  "models": [
+    {
+      "model_id": "jhu_confined_cp3_combi",
+      "model_version": "1.0.0",
+      "architecture": "cellpose3-cyto2-resnet",
+      "cellpose_version": ">=3,<4",
+      "filename": "cyto2_phase_microfluidic_KK1KK2_combi",
+      "sha256": "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+      "training_dataset_version": "KK1KK2-combi: 71 hand-labelled phase-contrast stills of confined cells (KK1 40, KK2 31), 246 instances, from two instruments",
+      "dimensions": ["2D"],
+      "pixel_size_range_um": [0.46, 0.65],
+      "validated_app_version": "1.0.0",
+      "notes": "The lab's Cellpose 3 model trained on both labelled groups together (a cyto2 start, as its file name records). The pixel-size range spans the two instruments of its training data (0.467 and 0.639 um/px). This checksum has been pinned in the application since version 1.0.0; model_version is this registry's label for these exact weights, not a training-run number."
+    }
+  ]
+}
