@@ -32,8 +32,9 @@ frame** instead: the major and minor axes of the observations that bracket the
 missing frame. The crop is sized from that body (v1 sized it as if every
 channel ran down the image, which cut a horizontal cell in half), the
 intensity tier bounds the candidate's offset *across the body*, and lanes enter
-only as the tracker's own lane gate does -- a candidate in another lane than
-the track is refused when the geometry is applied.
+only as the tracker's own lane gate does -- when that gate applies, a candidate
+in a different real lane from the track's is refused, and lane -1 (outside
+every lane) is never refused, on either side.
 
 A recovered detection that is a second copy of a cell the first pass already
 detected is dropped (see :func:`duplicate_of`). Measured before this rule
@@ -65,7 +66,14 @@ from scipy import ndimage
 from .config import Scale, TrackingConfig
 from .detections import SOURCE_PRIMARY, Detection, extract_detections
 from .geometry import ChannelGeometry
-from .tracking import Observation, Track, _probe_detection, shifted_iou
+from .tracking import (
+    Observation,
+    Track,
+    _is_legacy_axis,
+    _probe_detection,
+    lane_gate_applies,
+    shifted_iou,
+)
 
 SOURCE_WINDOW = "windowed"
 SOURCE_PERMISSIVE = "permissive"
@@ -224,16 +232,26 @@ class RecoveryAttempt:
     detail: str = ""
     bracket: Bracket | None = None
     first_pass_track_id: int | None = None
-    #: Label (same frame) of the primary detection a dropped candidate
-    #: duplicated; None when nothing was dropped as a duplicate.
+    #: Label (same frame) of the detection a dropped candidate duplicated, as
+    #: it was when the candidate was dropped; None when nothing was dropped
+    #: as a duplicate.  ``to_row`` prefers ``duplicate_of``'s label as it is
+    #: when the row is written.
     duplicate_of_label: int | None = None
     #: The recovered Detection object itself (None when nothing was found), so
     #: the final track holding it can be found by identity after relabelling.
     detection: Detection | None = field(default=None, repr=False, compare=False)
+    #: The detection a dropped candidate duplicated, held as the object: a
+    #: label copied at drop time goes stale if anything relabels that
+    #: detection afterwards (the review found it naming a different cell).
+    duplicate_of: Detection | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.first_pass_track_id is None:
             self.first_pass_track_id = self.track_id
+
+    @property
+    def is_duplicate(self) -> bool:
+        return self.duplicate_of is not None or self.duplicate_of_label is not None
 
     def to_row(self) -> dict[str, Any]:
         before_f, before_l, after_f, after_l = self.bracket or (None, None, None, None)
@@ -252,7 +270,10 @@ class RecoveryAttempt:
             "bracket_label_before": before_l,
             "bracket_frame_after": after_f,
             "bracket_label_after": after_l,
-            "duplicate_of_label": self.duplicate_of_label,
+            "duplicate_of_label": (
+                int(self.duplicate_of.label) if self.duplicate_of is not None
+                else self.duplicate_of_label
+            ),
         }
 
 
@@ -272,7 +293,7 @@ class RecoveryResult:
 
     @property
     def n_duplicates_dropped(self) -> int:
-        return sum(1 for a in self.attempts if a.duplicate_of_label is not None)
+        return sum(1 for a in self.attempts if a.is_duplicate)
 
 
 # --------------------------------------------------------------------------
@@ -463,25 +484,29 @@ def _acceptable(
 
 
 def _lane_check(
-    candidate: Detection, expectation: Expectation, geometry: ChannelGeometry | None
+    candidate: Detection,
+    track_lane: int,
+    geometry: ChannelGeometry | None,
+    tracking_cfg: TrackingConfig,
 ) -> str:
     """Empty when the candidate may belong to the track; the refusal otherwise.
 
-    Only an applied geometry (lanes measured from walls, constraint on) can
-    refuse, exactly like the tracker's lane gate: a recovered cell in another
-    lane could never be linked to this track anyway, and would only become a
-    one-observation track of its own.
+    The same rule as the tracker's lane gate (``tracking._hard_gates``): it
+    applies only when :func:`lane_gate_applies` says so (an applied geometry
+    with lanes, and a tracking configuration that constrains to them), and it
+    refuses only a candidate in a *different real lane* from the track's.  A
+    lane of -1 -- a centroid just outside every measured half-width, or a
+    track never seen inside a lane -- is never gated (``geometry.lane_of``):
+    there is no lane it could be refused from.  A stricter rule here would
+    throw away a cell the re-tracking pass would have linked.
     """
     if geometry is None:
         return ""
     candidate.channel = geometry.lane_of(candidate.x, candidate.y)
-    if not (geometry.applied and geometry.lanes):
+    if not lane_gate_applies(geometry, tracking_cfg):
         return ""
-    wanted = expectation.lane
-    if wanted < 0:
-        wanted = geometry.lane_of(float(expectation.position[0]), float(expectation.position[1]))
-    if candidate.channel != wanted:
-        return f"in lane {candidate.channel}, but the track is in lane {wanted}"
+    if track_lane >= 0 and candidate.channel >= 0 and candidate.channel != track_lane:
+        return f"in lane {candidate.channel}, but the track is in lane {track_lane}"
     return ""
 
 
@@ -675,6 +700,7 @@ def recover(
     scale: Scale,
     tracking_cfg: TrackingConfig,
     recovery_cfg: RecoveryConfig,
+    legacy_recovery_cfg: RecoveryConfig | None = None,
     *,
     geometry: ChannelGeometry | None = None,
     background: np.ndarray | None = None,
@@ -684,9 +710,32 @@ def recover(
 
     ``stack`` is ``(T, Y, X)``. ``scale`` is part of the interface but unused:
     every quantity here is in pixels of the image being searched.
-    ``geometry`` adds the lane test (applied geometries only) and stamps
-    recovered detections with their lane.
+    ``geometry`` adds the lane test (when the tracker's lane gate applies) and
+    stamps recovered detections with their lane.
+
+    Transition: ``recover(stack, tracks, service, axis, scale, tracking_cfg,
+    recovery_cfg, ...)`` (v1 order) still works, exactly as
+    ``track_detections`` and ``explain_unlinked_starts`` do: the axis only
+    supplies lanes, through :meth:`ChannelGeometry.from_legacy_axis`. Without
+    it a v1 pipeline raised TypeError on every run with recovery on. It goes
+    when the pipeline passes a real ``ChannelGeometry`` (E1).
     """
+    if _is_legacy_axis(scale):  # v1 order: (axis, scale, tracking_cfg, recovery_cfg)
+        axis = scale
+        scale, tracking_cfg = tracking_cfg, recovery_cfg  # type: ignore[assignment]
+        recovery_cfg = legacy_recovery_cfg  # type: ignore[assignment]
+        if geometry is None:
+            geometry = ChannelGeometry.from_legacy_axis(axis)
+    elif legacy_recovery_cfg is not None:
+        raise TypeError(
+            "recover() takes 6 positional arguments but 7 were given; geometry, "
+            "background and progress are keyword-only"
+        )
+    if not isinstance(recovery_cfg, RecoveryConfig):
+        raise TypeError(
+            "recover(stack, tracks, service, scale, tracking_cfg, recovery_cfg, *, "
+            f"geometry=None, background=None): recovery_cfg is {type(recovery_cfg).__name__}"
+        )
     cfg = recovery_cfg
     result = RecoveryResult()
     if not cfg.enabled or not tracks:
@@ -736,10 +785,16 @@ def recover(
         existing = primaries.get(frame_index, []) + recovered_by_frame.get(frame_index, [])
         attempt = _try_tiers(
             stack[frame_index], box, track, expectation, cfg, frame_index, service,
-            background, geometry, existing,
+            background, geometry, existing, tracking_cfg,
         )
         result.attempts.append(attempt)
         if attempt.detection is not None:
+            # A crop's labels start at 1 and collide with the frame's primary
+            # labels, so a recovered cell gets the next label free in its
+            # frame before anything can refer to it -- the rule the pipeline
+            # applies too (highest primary label, then one more per recovered
+            # cell in this order), so relabelling there changes nothing.
+            attempt.detection.label = 1 + max((int(d.label) for d in existing), default=0)
             result.detections.append(attempt.detection)
             recovered_by_frame.setdefault(frame_index, []).append(attempt.detection)
     return result
@@ -756,8 +811,13 @@ def _try_tiers(
     background: np.ndarray | None,
     geometry: ChannelGeometry | None,
     existing: Sequence[Detection],
+    tracking_cfg: TrackingConfig,
 ) -> RecoveryAttempt:
     x0, y0, x1, y1 = box
+    # The tracker gates on Track.channel (the first lane the track was seen
+    # in); the bracketing observation's lane stands in for a hand-built track
+    # that never had one set.
+    track_lane = int(track.channel) if int(track.channel) >= 0 else int(expectation.lane)
     crop = frame[y0:y1, x0:x1]
     attempt = RecoveryAttempt(
         track.id, frame_index, float(expectation.position[0]), float(expectation.position[1]),
@@ -771,7 +831,7 @@ def _try_tiers(
         if not ok:
             attempt.detail = why
             return False
-        why = _lane_check(candidate, expectation, geometry)
+        why = _lane_check(candidate, track_lane, geometry, tracking_cfg)
         if why:
             attempt.detail = why
             return False
@@ -782,11 +842,18 @@ def _try_tiers(
             # two tracks along one cell; a later tier would only find the same
             # pixels again, so the attempt ends here.
             other, reason = dup
-            kind = "primary detection" if other.source == SOURCE_PRIMARY else "recovered detection"
+            attempt.duplicate_of = other
             attempt.duplicate_of_label = int(other.label)
+            if other.source == SOURCE_PRIMARY:
+                # A primary label is the pixel value in masks.npz and is never
+                # changed, so it is safe to name in prose.
+                what = f"the primary detection labelled {other.label}"
+            else:
+                # Prose cannot follow a later relabelling; the column can.
+                what = "a cell already recovered (see duplicate_of_label)"
             attempt.detail = (
-                f"dropped as a duplicate: the {source} candidate is the {kind} "
-                f"labelled {other.label} in this frame ({reason})"
+                f"dropped as a duplicate: the {source} candidate is {what} "
+                f"in this frame ({reason})"
             )
             return True
         candidate.source = source

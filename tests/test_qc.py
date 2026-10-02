@@ -36,6 +36,7 @@ from corridor.core.qc import (
     collect_issues,
 )
 from corridor.core.tracking import (
+    CostBreakdown,
     FrameEvent,
     Track,
     UnlinkedStart,
@@ -251,6 +252,35 @@ def test_collect_issues_takes_no_axis_argument(scale, tracking_config, metadata)
     issues = collect_issues(metadata, scale, [], [], [], [], tracking_config)
     assert codes(issues) == {"no_tracks"}
     assert QCIssue is Issue
+    with pytest.raises(TypeError, match="keyword-only"):
+        collect_issues(metadata, scale, [], [], [], [], tracking_config, [])
+
+
+def test_the_v1_argument_order_still_runs(scale, tracking_config, metadata):
+    """Transition, like ``track_detections``: a v1 pipeline passes an axis second.
+
+    Without it the v1 pipeline on this branch raised TypeError on every
+    analysis (review of E2). The axis only supplies lanes, so a two-channel
+    v1 axis gives the lane note a two-lane applied geometry gives.
+    """
+    channel = lambda i, x: SimpleNamespace(index=i, origin=(x, 0.0), half_width_px=20.0,
+                                           detected=True)
+    axis = SimpleNamespace(ux=0.0, uy=1.0, channels=[channel(0, 20.0), channel(1, 60.0)],
+                           source="ridges", confidence=0.9, pitch_px=40.0, notes=[])
+    track = hand_track(3, straight_track(5, skip={2}))
+    tracks = [track]
+    summaries = summarise(tracks, scale)
+    unlinked = [UnlinkedStart(track_id=9, frame=4, candidate_track_id=3, candidate_last_frame=1,
+                              gap_frames=3, distance_px=40.0, cost_chi2=12.0,
+                              refused_because="gap_too_long")]
+
+    v1 = collect_issues(metadata, axis, scale, [], [], tracks, summaries, tracking_config, unlinked)
+    v2 = collect_issues(metadata, scale, [], [], tracks, summaries, tracking_config,
+                        geometry=_two_lanes(applied=True), unlinked=unlinked)
+    assert [(i.code, i.frame, i.track_id) for i in v1] == [(i.code, i.frame, i.track_id) for i in v2]
+    assert {"multichannel_field", "likely_missed_detection", "unlinked_start"} <= codes(v1)
+    with pytest.raises(TypeError, match="v1 order"):
+        collect_issues(metadata, axis, scale, [], [], tracks, summaries)
 
 
 # --------------------------------------------------------------------------
@@ -370,18 +400,29 @@ def test_a_clear_link_is_not_ambiguous(scale, tracking_config, metadata):
 
 
 def test_the_tracker_records_margins_qc_can_read(scale, tracking_config, metadata):
-    """End to end: two cells side by side swap evidence, so some link is tight."""
+    """End to end: two cells pressed side by side, 8 px apart, moving together.
+
+    Before either track has a velocity, swapping the two costs little more
+    than keeping them (margin 1.56 chi-square into frame 1); once each has
+    one, the swap is clearly worse (8.0 and up). The tight links, and only
+    those, are ambiguous.
+    """
     dets = []
     for f in range(5):
         dets.append(make_detection(f, 40.0, 20.0 + 20.0 * f, label=1))
-        dets.append(make_detection(f, 52.0, 22.0 + 20.0 * f, label=2))
+        dets.append(make_detection(f, 48.0, 22.0 + 20.0 * f, label=2))
     tracks, events = track_detections(dets, 5, scale, tracking_config)
-    margins = [o.link_margin for t in tracks for o in t.observations[1:]]
-    assert margins and all(m is not None for m in margins)
+    assert len(tracks) == 2
+    tight = {(o.frame, t.id) for t in tracks for o in t.observations[1:]
+             if o.link_margin < LINK_AMBIGUOUS_MARGIN_CHI2}
+    clear = {(o.frame, t.id) for t in tracks for o in t.observations[1:]
+             if o.link_margin >= LINK_AMBIGUOUS_MARGIN_CHI2}
+    assert tight == {(1, tracks[0].id), (1, tracks[1].id)}, "the scene must have tight links"
+    assert clear, "and clear ones, or this tests nothing"
+
     issues = collect_issues(metadata, scale, [], events, tracks, summarise(tracks, scale),
                             tracking_config)
-    tight = [m for m in margins if m < LINK_AMBIGUOUS_MARGIN_CHI2]
-    assert len([i for i in issues if i.code == "link_ambiguous"]) == len(tight)
+    assert {(i.frame, i.track_id) for i in only(issues, "link_ambiguous")} == tight
 
 
 def test_an_abrupt_change_of_shape_is_flagged(scale, tracking_config, metadata):
@@ -393,6 +434,8 @@ def test_an_abrupt_change_of_shape_is_flagged(scale, tracking_config, metadata):
                    "morphology_discontinuity")
     assert {(i.frame, i.track_id) for i in flagged} == {(3, 2), (4, 2)}
     assert MORPHOLOGY_JUMP_CHI2 == pytest.approx(9.21, abs=0.01)
+    # The sigmas behind the percentile are contract values, and it says so.
+    assert "assumed shape noise" in flagged[0].detail and "not measured" in flagged[0].detail
 
 
 def test_ordinary_shape_noise_is_not_a_discontinuity(scale, tracking_config, metadata):
@@ -411,6 +454,7 @@ def test_a_size_jump_is_flagged(scale, tracking_config, metadata):
     flagged = only(issues_of_tracks([track], scale, tracking_config, metadata), "size_jump")
     assert {i.frame for i in flagged} == {2, 3}
     assert "area" in flagged[0].title
+    assert "from 800 to 2400 pixels" in flagged[0].detail
     bound = math.exp(SIZE_JUMP_SIGMAS * tracking_config.sigma_ln_area)
     assert bound < tracking_config.area_ratio_max, "must be able to fire on an accepted link"
 
@@ -462,17 +506,38 @@ def test_a_mostly_observed_track_is_not_gap_dominated(scale, tracking_config, me
 
 
 def test_gap_closing_says_it_closed_the_gap(scale, tracking_config, metadata):
-    """The detail names the stage that made the link, from the tracker's breakdown."""
+    """The detail names the stage that made the link, from the tracker's breakdown.
+
+    A stage-2 link is one whose breakdown carries both directions
+    (``motion_forward``/``motion_backward``). Built by hand: the end-to-end
+    stage-2 scenes of tests/test_gap_closing.py do not close at the base this
+    package builds on (the reversal's forward d^2 is 54.3, so the averaged
+    motion 27.2 exceeds the 13.8 motion gate) -- a tracker matter, not QC's.
+    """
+    track = hand_track(4, straight_track(8, skip={3, 4}))
+    link = next(o for o in track.observations if o.frame == 5)
+    link.cost = 6.0
+    link.breakdown = CostBreakdown(total=6.0, motion=5.0, mahalanobis=5.0,
+                                   motion_forward=9.9, motion_backward=0.1)
+    issues = issues_of_tracks([track], scale, tracking_config, metadata)
+    bridged = only(issues, "gap_bridged")
+    assert [(i.frame, i.track_id) for i in bridged] == [(5, 4)]
+    assert "linked by global gap closing with cost 6.0" in bridged[0].detail
+    long = only(issues, "long_reacquisition")[0]
+    assert "linked by global gap closing" in long.detail
+
+
+def test_a_frame_to_frame_reacquisition_says_so(scale, tracking_config, metadata):
     dets = straight_track(8, skip={3, 4})
     tracks, events = track_detections(dets, 8, scale, tracking_config)
     assert len(tracks) == 1
+    link = next(o for o in tracks[0].observations if o.frame == 5)
+    assert link.breakdown is None or link.breakdown.motion_forward is None, "stage 1 made it"
     issues = collect_issues(metadata, scale, [], events, tracks, summarise(tracks, scale),
                             tracking_config)
     bridged = only(issues, "gap_bridged")[0]
     assert bridged.frame == 5
-    link = next(o for o in tracks[0].observations if o.frame == 5)
-    stage2 = link.breakdown is not None and link.breakdown.motion_forward is not None
-    assert ("global gap closing" if stage2 else "frame to frame") in bridged.detail
+    assert "frame to frame" in bridged.detail
 
 
 # --------------------------------------------------------------------------
