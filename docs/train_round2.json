@@ -1,0 +1,31 @@
+{
+  "train_group": "KK1",
+  "test_group": "KK2",
+  "augmented": true,
+  "copies_per_image": 3,
+  "contrast_range": [
+    0.35,
+    2.6
+  ],
+  "source_images": 40,
+  "training_images": 148,
+  "epochs": 80,
+  "learning_rate": 0.0002,
+  "minutes": 144.6,
+  "before": {
+    "precision": 0.7143,
+    "recall": 0.6019,
+    "f1": 0.6533,
+    "tp": 65,
+    "fp": 26,
+    "fn": 43
+  },
+  "after": {
+    "precision": 0.6422,
+    "recall": 0.6481,
+    "f1": 0.6452,
+    "tp": 70,
+    "fp": 39,
+    "fn": 38
+  }
+}

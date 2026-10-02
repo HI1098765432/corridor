@@ -1,0 +1,73 @@
+{
+  "group": "KK1",
+  "original_instances": 138,
+  "recovered": 9,
+  "corrected_instances": 147,
+  "frames_covered_by_temporal_evidence": 39,
+  "per_image": [
+    {
+      "image": "041824_2.tif",
+      "at": [
+        431.0,
+        77.7
+      ]
+    },
+    {
+      "image": "041824_4.tif",
+      "at": [
+        431.8,
+        90.2
+      ]
+    },
+    {
+      "image": "041824_4.tif",
+      "at": [
+        515.4,
+        138.5
+      ]
+    },
+    {
+      "image": "041824_7.tif",
+      "at": [
+        519.0,
+        179.7
+      ]
+    },
+    {
+      "image": "041824_9.tif",
+      "at": [
+        432.6,
+        146.0
+      ]
+    },
+    {
+      "image": "122324_9.tif",
+      "at": [
+        618.0,
+        103.3
+      ]
+    },
+    {
+      "image": "122324_10.tif",
+      "at": [
+        623.8,
+        213.4
+      ]
+    },
+    {
+      "image": "041824_17.tif",
+      "at": [
+        534.1,
+        254.2
+      ]
+    },
+    {
+      "image": "041824_18.tif",
+      "at": [
+        615.9,
+        91.9
+      ]
+    }
+  ],
+  "out_dir": "build\\corrected_reference\\KK1"
+}

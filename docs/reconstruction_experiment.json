@@ -1,0 +1,85 @@
+{
+  "test_1_held_out_frame_iou": {
+    "reconstruction": {
+      "n": 41,
+      "median": 0.4916,
+      "mean": 0.4743
+    },
+    "copy_previous": {
+      "n": 41,
+      "median": 0.3585,
+      "mean": 0.3869
+    },
+    "model": {
+      "n": 41,
+      "median": 0.7249,
+      "mean": 0.6727
+    }
+  },
+  "test_2_boundary_sharpness": {
+    "human": {
+      "n": 41,
+      "median": 1.2411,
+      "mean": 1.2589
+    },
+    "reconstruction": {
+      "n": 41,
+      "median": 1.6876,
+      "mean": 1.7339
+    },
+    "consensus_only": {
+      "n": 41,
+      "median": 1.1955,
+      "mean": 1.1499
+    }
+  },
+  "per_sequence": [
+    {
+      "sequence": "KK2-303x573",
+      "frames": 16,
+      "cells_followed": 9,
+      "held_out_iou_reconstruction": 0.5421,
+      "held_out_iou_copy_previous": 0.3222,
+      "sharpness_human": 1.1749,
+      "sharpness_reconstruction": 1.5019
+    },
+    {
+      "sequence": "KK1-264x727",
+      "frames": 12,
+      "cells_followed": 2,
+      "held_out_iou_reconstruction": 0.6173,
+      "held_out_iou_copy_previous": 0.5655,
+      "sharpness_human": 1.154,
+      "sharpness_reconstruction": 1.9999
+    },
+    {
+      "sequence": "KK1-290x762",
+      "frames": 12,
+      "cells_followed": 4,
+      "held_out_iou_reconstruction": 0.4813,
+      "held_out_iou_copy_previous": 0.3586,
+      "sharpness_human": 1.4153,
+      "sharpness_reconstruction": 1.6603
+    },
+    {
+      "sequence": "KK1-309x649",
+      "frames": 10,
+      "cells_followed": 5,
+      "held_out_iou_reconstruction": 0.4654,
+      "held_out_iou_copy_previous": 0.3809,
+      "sharpness_human": 1.2303,
+      "sharpness_reconstruction": 2.0791
+    },
+    {
+      "sequence": "KK1-381x864",
+      "frames": 5,
+      "cells_followed": 1,
+      "held_out_iou_reconstruction": 0.5021,
+      "held_out_iou_copy_previous": 0.6099,
+      "sharpness_human": 1.3489,
+      "sharpness_reconstruction": 1.5753
+    }
+  ],
+  "verdict": "the reconstruction is the better reference",
+  "reconstruction_wins_share": 0.9024
+}

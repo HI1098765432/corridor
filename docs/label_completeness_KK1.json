@@ -1,0 +1,88 @@
+{
+  "group": "KK1",
+  "labelled_instances": 138,
+  "missing_labels_found": 9,
+  "gaps": [
+    {
+      "sequence": "KK1-264x727",
+      "image": "041824_2.tif",
+      "at": [
+        431.0,
+        77.7
+      ],
+      "contrast_there": 0.905
+    },
+    {
+      "sequence": "KK1-264x727",
+      "image": "041824_4.tif",
+      "at": [
+        431.8,
+        90.2
+      ],
+      "contrast_there": 0.065
+    },
+    {
+      "sequence": "KK1-264x727",
+      "image": "041824_4.tif",
+      "at": [
+        515.4,
+        138.5
+      ],
+      "contrast_there": 0.16
+    },
+    {
+      "sequence": "KK1-264x727",
+      "image": "041824_7.tif",
+      "at": [
+        519.0,
+        179.7
+      ],
+      "contrast_there": 0.838
+    },
+    {
+      "sequence": "KK1-264x727",
+      "image": "041824_9.tif",
+      "at": [
+        432.6,
+        146.0
+      ],
+      "contrast_there": 1.632
+    },
+    {
+      "sequence": "KK1-290x762",
+      "image": "122324_9.tif",
+      "at": [
+        618.0,
+        103.3
+      ],
+      "contrast_there": 0.538
+    },
+    {
+      "sequence": "KK1-290x762",
+      "image": "122324_10.tif",
+      "at": [
+        623.8,
+        213.4
+      ],
+      "contrast_there": 0.583
+    },
+    {
+      "sequence": "KK1-309x649",
+      "image": "041824_17.tif",
+      "at": [
+        534.1,
+        254.2
+      ],
+      "contrast_there": 0.914
+    },
+    {
+      "sequence": "KK1-309x649",
+      "image": "041824_18.tif",
+      "at": [
+        615.9,
+        91.9
+      ],
+      "contrast_there": 0.902
+    }
+  ]
+}

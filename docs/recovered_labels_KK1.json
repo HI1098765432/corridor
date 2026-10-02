@@ -1,0 +1,50 @@
+{
+  "group": "KK1",
+  "model": "build/models/models/corridor_contrast_invariant",
+  "accepted": 12,
+  "rejected_no_labelled_neighbour": 16,
+  "rejected_stationary": 0,
+  "per_image": [
+    {
+      "image": "041824_1.tif",
+      "added": 1
+    },
+    {
+      "image": "041824_5.tif",
+      "added": 1
+    },
+    {
+      "image": "041824_9.tif",
+      "added": 1
+    },
+    {
+      "image": "122324_8.tif",
+      "added": 1
+    },
+    {
+      "image": "122324_9.tif",
+      "added": 2
+    },
+    {
+      "image": "041824_17.tif",
+      "added": 1
+    },
+    {
+      "image": "041824_19.tif",
+      "added": 2
+    },
+    {
+      "image": "041824_20.tif",
+      "added": 1
+    },
+    {
+      "image": "041824_21.tif",
+      "added": 1
+    },
+    {
+      "image": "061523_3.tif",
+      "added": 1
+    }
+  ],
+  "out_dir": "C:\\Users\\ironb\\Projects\\ConfinedMig\\build\\recovered_labels"
+}

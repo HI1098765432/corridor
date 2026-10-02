@@ -1,0 +1,77 @@
+{
+  "n_images": 71,
+  "strategies": {
+    "baseline (prob 0.0, flow 0.4)": {
+      "precision": 0.832,
+      "recall": 0.8455,
+      "f1": 0.8387,
+      "tp": 208,
+      "fp": 42,
+      "fn": 38,
+      "seconds_per_image": 3.22
+    },
+    "prob -2": {
+      "precision": 0.7982,
+      "recall": 0.7398,
+      "f1": 0.7679,
+      "tp": 182,
+      "fp": 46,
+      "fn": 64,
+      "seconds_per_image": 1.75
+    },
+    "flow 0.6": {
+      "precision": 0.8164,
+      "recall": 0.8496,
+      "f1": 0.8327,
+      "tp": 209,
+      "fp": 47,
+      "fn": 37,
+      "seconds_per_image": 1.79
+    },
+    "ensemble: prob 0 and -2": {
+      "precision": 0.8333,
+      "recall": 0.8537,
+      "f1": 0.8434,
+      "tp": 210,
+      "fp": 42,
+      "fn": 36,
+      "seconds_per_image": 3.33
+    },
+    "ensemble: flow 0.4 and 0.6": {
+      "precision": 0.8164,
+      "recall": 0.8496,
+      "f1": 0.8327,
+      "tp": 209,
+      "fp": 47,
+      "fn": 37,
+      "seconds_per_image": 3.21
+    },
+    "ensemble: 4 settings": {
+      "precision": 0.7934,
+      "recall": 0.874,
+      "f1": 0.8317,
+      "tp": 215,
+      "fp": 56,
+      "fn": 31,
+      "seconds_per_image": 7.19
+    },
+    "3 models, default settings": {
+      "precision": 0.7722,
+      "recall": 0.8821,
+      "f1": 0.8235,
+      "tp": 217,
+      "fp": 64,
+      "fn": 29,
+      "seconds_per_image": 6.08
+    },
+    "3 models x 2 settings": {
+      "precision": 0.7025,
+      "recall": 0.9024,
+      "f1": 0.79,
+      "tp": 222,
+      "fp": 94,
+      "fn": 24,
+      "seconds_per_image": 10.74
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "checkpoint": "build\\models\\models\\corridor_contrast_invariant",
+  "test_group": "KK2",
+  "window": "3,97",
+  "reloaded_diam_labels": 31.18410873413086,
+  "iou_first": {
+    "precision": 0.7157,
+    "recall": 0.6759,
+    "f1": 0.6952
+  },
+  "count_first": {
+    "precision": 0.7157,
+    "recall": 0.6759,
+    "f1": 0.6952
+  },
+  "disagreements": []
+}

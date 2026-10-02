@@ -1,0 +1,67 @@
+{
+  "sequences": [
+    {
+      "name": "KK2-303x573",
+      "n_frames": 16,
+      "frame_correlation": 0.593,
+      "typical_labelled_contrast": 0.4038,
+      "unlabelled_interior": [
+        {
+          "frame_index": 11,
+          "image": "052924_26.tif",
+          "contrast_found": 0.3976,
+          "typical_labelled_contrast": 0.4038,
+          "weakest_labelled_contrast": 0.1087,
+          "verdict": "a cell is there, unlabelled"
+        }
+      ]
+    },
+    {
+      "name": "KK1-264x727",
+      "n_frames": 12,
+      "frame_correlation": 0.77,
+      "typical_labelled_contrast": 0.4185,
+      "unlabelled_interior": [
+        {
+          "frame_index": 3,
+          "image": "041824_4.tif",
+          "contrast_found": 0.1254,
+          "typical_labelled_contrast": 0.4185,
+          "weakest_labelled_contrast": 0.2239,
+          "verdict": "plausibly empty"
+        },
+        {
+          "frame_index": 8,
+          "image": "041824_9.tif",
+          "contrast_found": 0.3575,
+          "typical_labelled_contrast": 0.4185,
+          "weakest_labelled_contrast": 0.2239,
+          "verdict": "a cell is there, unlabelled"
+        }
+      ]
+    },
+    {
+      "name": "KK1-290x762",
+      "n_frames": 12,
+      "frame_correlation": 0.853,
+      "typical_labelled_contrast": 0.1322,
+      "unlabelled_interior": []
+    },
+    {
+      "name": "KK1-309x649",
+      "n_frames": 10,
+      "frame_correlation": 0.678,
+      "typical_labelled_contrast": 0.3684,
+      "unlabelled_interior": []
+    },
+    {
+      "name": "KK1-381x864",
+      "n_frames": 5,
+      "frame_correlation": 0.562,
+      "typical_labelled_contrast": 0.174,
+      "unlabelled_interior": []
+    }
+  ],
+  "unlabelled_frames_examined": 3,
+  "unlabelled_frames_containing_a_cell": 2
+}

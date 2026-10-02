@@ -1,0 +1,70 @@
+{
+  "group": "KK2",
+  "labelled_instances": 57,
+  "missing_labels_found": 7,
+  "gaps": [
+    {
+      "sequence": "KK2-303x573",
+      "image": "052924_21.tif",
+      "at": [
+        380.9,
+        246.4
+      ],
+      "contrast_there": 0.752
+    },
+    {
+      "sequence": "KK2-303x573",
+      "image": "052924_22.tif",
+      "at": [
+        142.3,
+        34.0
+      ],
+      "contrast_there": 0.522
+    },
+    {
+      "sequence": "KK2-303x573",
+      "image": "052924_22.tif",
+      "at": [
+        387.2,
+        30.6
+      ],
+      "contrast_there": 0.388
+    },
+    {
+      "sequence": "KK2-303x573",
+      "image": "052924_24.tif",
+      "at": [
+        58.9,
+        182.9
+      ],
+      "contrast_there": 0.464
+    },
+    {
+      "sequence": "KK2-303x573",
+      "image": "052924_26.tif",
+      "at": [
+        389.4,
+        135.2
+      ],
+      "contrast_there": 0.984
+    },
+    {
+      "sequence": "KK2-303x573",
+      "image": "052924_26.tif",
+      "at": [
+        474.3,
+        54.6
+      ],
+      "contrast_there": 1.458
+    },
+    {
+      "sequence": "KK2-303x573",
+      "image": "052924_28.tif",
+      "at": [
+        228.0,
+        88.4
+      ],
+      "contrast_there": 1.536
+    }
+  ]
+}

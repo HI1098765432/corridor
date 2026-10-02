@@ -1,0 +1,76 @@
+{
+  "normalisation_window": "frozen at native",
+  "model": "combi",
+  "group": "KK1",
+  "n_images": 6,
+  "curve": [
+    {
+      "scale": 0.25,
+      "contrast": 0.0589,
+      "recall": 0.0976,
+      "found": 4,
+      "total": 41
+    },
+    {
+      "scale": 0.4,
+      "contrast": 0.0794,
+      "recall": 0.4878,
+      "found": 20,
+      "total": 41
+    },
+    {
+      "scale": 0.55,
+      "contrast": 0.0998,
+      "recall": 0.7317,
+      "found": 30,
+      "total": 41
+    },
+    {
+      "scale": 0.7,
+      "contrast": 0.1198,
+      "recall": 0.7805,
+      "found": 32,
+      "total": 41
+    },
+    {
+      "scale": 0.85,
+      "contrast": 0.1393,
+      "recall": 0.7805,
+      "found": 32,
+      "total": 41
+    },
+    {
+      "scale": 1.0,
+      "contrast": 0.1582,
+      "recall": 0.8293,
+      "found": 34,
+      "total": 41
+    },
+    {
+      "scale": 1.3,
+      "contrast": 0.1932,
+      "recall": 0.7561,
+      "found": 31,
+      "total": 41
+    },
+    {
+      "scale": 1.8,
+      "contrast": 0.2427,
+      "recall": 0.6829,
+      "found": 28,
+      "total": 41
+    },
+    {
+      "scale": 2.5,
+      "contrast": 0.2924,
+      "recall": 0.5122,
+      "found": 21,
+      "total": 41
+    }
+  ],
+  "usable_contrast_band": [
+    0.1582,
+    0.1582
+  ],
+  "band_width_ratio": 1.0
+}

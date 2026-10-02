@@ -1,0 +1,212 @@
+{
+  "iou_match": 0.5,
+  "n_images": {
+    "KK1": 40,
+    "KK2": 31
+  },
+  "strategies": {
+    "default (1, 99)": {
+      "KK2->KK1": {
+        "recall": 0.203,
+        "f1": 0.303,
+        "held_out": true
+      },
+      "KK1->KK2": {
+        "recall": 0.435,
+        "f1": 0.482,
+        "held_out": true
+      },
+      "KK1->KK1": {
+        "recall": 0.819,
+        "f1": 0.819,
+        "held_out": false
+      },
+      "KK2->KK2": {
+        "recall": 0.732,
+        "f1": 0.742,
+        "held_out": false
+      }
+    },
+    "percentile (3, 97)": {
+      "KK2->KK1": {
+        "recall": 0.203,
+        "f1": 0.303,
+        "held_out": true
+      },
+      "KK1->KK2": {
+        "recall": 0.602,
+        "f1": 0.653,
+        "held_out": true
+      },
+      "KK1->KK1": {
+        "recall": 0.717,
+        "f1": 0.779,
+        "held_out": false
+      },
+      "KK2->KK2": {
+        "recall": 0.694,
+        "f1": 0.704,
+        "held_out": false
+      }
+    },
+    "percentile (5, 95)": {
+      "KK2->KK1": {
+        "recall": 0.159,
+        "f1": 0.247,
+        "held_out": true
+      },
+      "KK1->KK2": {
+        "recall": 0.565,
+        "f1": 0.61,
+        "held_out": true
+      },
+      "KK1->KK1": {
+        "recall": 0.558,
+        "f1": 0.636,
+        "held_out": false
+      },
+      "KK2->KK2": {
+        "recall": 0.537,
+        "f1": 0.595,
+        "held_out": false
+      }
+    },
+    "percentile (10, 90)": {
+      "KK2->KK1": {
+        "recall": 0.109,
+        "f1": 0.148,
+        "held_out": true
+      },
+      "KK1->KK2": {
+        "recall": 0.5,
+        "f1": 0.551,
+        "held_out": true
+      },
+      "KK1->KK1": {
+        "recall": 0.297,
+        "f1": 0.317,
+        "held_out": false
+      },
+      "KK2->KK2": {
+        "recall": 0.296,
+        "f1": 0.309,
+        "held_out": false
+      }
+    },
+    "percentile (20, 80)": {
+      "KK2->KK1": {
+        "recall": 0.0,
+        "f1": 0.0,
+        "held_out": true
+      },
+      "KK1->KK2": {
+        "recall": 0.037,
+        "f1": 0.033,
+        "held_out": true
+      },
+      "KK1->KK1": {
+        "recall": 0.022,
+        "f1": 0.02,
+        "held_out": false
+      },
+      "KK2->KK2": {
+        "recall": 0.0,
+        "f1": 0.0,
+        "held_out": false
+      }
+    },
+    "tile norm 128": {
+      "KK2->KK1": {
+        "recall": 0.152,
+        "f1": 0.233,
+        "held_out": true
+      },
+      "KK1->KK2": {
+        "recall": 0.398,
+        "f1": 0.467,
+        "held_out": true
+      },
+      "KK1->KK1": {
+        "recall": 0.739,
+        "f1": 0.776,
+        "held_out": false
+      },
+      "KK2->KK2": {
+        "recall": 0.732,
+        "f1": 0.742,
+        "held_out": false
+      }
+    },
+    "tile norm 64": {
+      "KK2->KK1": {
+        "recall": 0.072,
+        "f1": 0.118,
+        "held_out": true
+      },
+      "KK1->KK2": {
+        "recall": 0.25,
+        "f1": 0.335,
+        "held_out": true
+      },
+      "KK1->KK1": {
+        "recall": 0.616,
+        "f1": 0.68,
+        "held_out": false
+      },
+      "KK2->KK2": {
+        "recall": 0.648,
+        "f1": 0.67,
+        "held_out": false
+      }
+    },
+    "sharpen 15": {
+      "KK2->KK1": {
+        "recall": 0.13,
+        "f1": 0.208,
+        "held_out": true
+      },
+      "KK1->KK2": {
+        "recall": 0.269,
+        "f1": 0.341,
+        "held_out": true
+      },
+      "KK1->KK1": {
+        "recall": 0.783,
+        "f1": 0.794,
+        "held_out": false
+      },
+      "KK2->KK2": {
+        "recall": 0.685,
+        "f1": 0.708,
+        "held_out": false
+      }
+    },
+    "sharpen 30": {
+      "KK2->KK1": {
+        "recall": 0.174,
+        "f1": 0.262,
+        "held_out": true
+      },
+      "KK1->KK2": {
+        "recall": 0.426,
+        "f1": 0.489,
+        "held_out": true
+      },
+      "KK1->KK1": {
+        "recall": 0.79,
+        "f1": 0.798,
+        "held_out": false
+      },
+      "KK2->KK2": {
+        "recall": 0.722,
+        "f1": 0.732,
+        "held_out": false
+      }
+    }
+  },
+  "not_run": [
+    "tile 128 + sharpen 15",
+    "percentile (5,95) + sharpen 15"
+  ],
+  "note": "The run ended after nine of eleven strategies. The two that did not complete are combinations of settings that each lost on their own (tile normalisation and sharpening), so they are reported as not run rather than quietly dropped."
+}

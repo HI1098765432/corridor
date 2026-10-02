@@ -1,0 +1,70 @@
+{
+  "model": "KK1",
+  "test_group": "KK2",
+  "results": {
+    "baseline (cellpose default)": {
+      "precision": 0.5402,
+      "recall": 0.4352,
+      "f1": 0.4821,
+      "tp": 47,
+      "fp": 40,
+      "fn": 61
+    },
+    "percentile window (3, 97)": {
+      "precision": 0.7143,
+      "recall": 0.6019,
+      "f1": 0.6533,
+      "tp": 65,
+      "fp": 26,
+      "fn": 43
+    },
+    "percentile window (2, 98)": {
+      "precision": 0.6667,
+      "recall": 0.5741,
+      "f1": 0.6169,
+      "tp": 62,
+      "fp": 31,
+      "fn": 46
+    },
+    "percentile window (5, 95)": {
+      "precision": 0.663,
+      "recall": 0.5648,
+      "f1": 0.61,
+      "tp": 61,
+      "fp": 31,
+      "fn": 47
+    },
+    "percentile window (10, 90)": {
+      "precision": 0.6136,
+      "recall": 0.5,
+      "f1": 0.551,
+      "tp": 54,
+      "fp": 34,
+      "fn": 54
+    },
+    "histogram matched to KK1": {
+      "precision": 0.4167,
+      "recall": 0.0926,
+      "f1": 0.1515,
+      "tp": 10,
+      "fp": 14,
+      "fn": 98
+    },
+    "local gain to the model's peak": {
+      "precision": 0.2745,
+      "recall": 0.2593,
+      "f1": 0.2667,
+      "tp": 28,
+      "fp": 74,
+      "fn": 80
+    },
+    "histogram + window (3, 97)": {
+      "precision": 0.2105,
+      "recall": 0.037,
+      "f1": 0.063,
+      "tp": 4,
+      "fp": 15,
+      "fn": 104
+    }
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "groups": {
+    "KK1": {
+      "images": 40,
+      "instances": 138,
+      "mean_masks_per_image": 3.45,
+      "histogram_masks_per_image": {
+        "0": 4,
+        "1": 3,
+        "2": 7,
+        "3": 8,
+        "4": 6,
+        "5": 4,
+        "6": 5,
+        "7": 1,
+        "8": 2
+      },
+      "images_surviving_default": 12,
+      "instances_surviving_default": 73
+    },
+    "KK2": {
+      "images": 31,
+      "instances": 108,
+      "mean_masks_per_image": 3.48,
+      "histogram_masks_per_image": {
+        "0": 5,
+        "1": 1,
+        "2": 2,
+        "3": 6,
+        "4": 6,
+        "5": 7,
+        "6": 3,
+        "8": 1
+      },
+      "images_surviving_default": 11,
+      "instances_surviving_default": 61
+    }
+  },
+  "days": {
+    "KK1": {
+      "041824": {
+        "images": 22,
+        "instances": 65
+      },
+      "061523": {
+        "images": 5,
+        "instances": 17
+      },
+      "122324": {
+        "images": 12,
+        "instances": 56
+      },
+      "unknown": {
+        "images": 1,
+        "instances": 0
+      }
+    },
+    "KK2": {
+      "052924": {
+        "images": 31,
+        "instances": 108
+      }
+    }
+  },
+  "contamination": {
+    "unlabelled_stack_days": [
+      "052924"
+    ],
+    "overlap": {
+      "KK1": [],
+      "KK2": [
+        "052924"
+      ]
+    }
+  },
+  "dropped_at_default": {
+    "images": 48,
+    "instances": 112,
+    "share_of_images": 0.6761,
+    "share_of_instances": 0.4553
+  },
+  "days_shared": []
+}

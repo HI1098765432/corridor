@@ -3,7 +3,7 @@ time-lapse, get cell trajectories and migration velocities you can check.
 
 ## Install
 
-Download **Corridor-1.1.0-Setup.exe** below and run it. It installs for the
+Download **Corridor-1.3.0-Setup.exe** below and run it. It installs for the
 current user, so no administrator is needed. Python, PyTorch, Cellpose, Napari
 and the trained segmentation model are all included — there is nothing else to
 install.
@@ -12,6 +12,109 @@ After installing, `Corridor.exe --self-test` checks that the installation is
 complete: it loads the model, verifies its checksum, runs the full
 torch/Cellpose path, tracks a known trajectory and checks the velocity
 arithmetic, round-trips every output format, and exercises Napari.
+
+## New in 1.3.0
+
+- **Corridor can now tell you when a newer version exists — if you let it.**
+  Until this release the application made **no network calls at all**, which
+  meant an improvement could ship and nobody running it would ever find out.
+  That is now fixed, and deliberately not by the usual route.
+
+  It **asks once**, on first run, before anything has touched the network. The
+  default is offline: a microscope workstation holding unpublished data is
+  frequently offline on purpose, and no answer is treated as no. Say yes and it
+  asks GitHub, once per session, whether a newer release exists — sending
+  nothing about you, your images or your results.
+
+  It **checks; it does not install**. A program that downloads an executable and
+  runs it is precisely the shape of the thing every security guide warns about,
+  and "but it is our own executable" is what somebody who had compromised the
+  release channel would be relying on. Corridor shows you what exists and hands
+  over a link. You download it, Windows checks the signature, and a person
+  decides. There is a test that fails if `subprocess`, `ShellExecute` or
+  `urlretrieve` ever appear in the updater.
+
+  Everything else about it is quiet: the check runs on a worker thread so a
+  captive-portal wifi cannot freeze the window; every failure — no network, a
+  proxy, a rate limit, a malformed reply — means "no information" rather than an
+  error in front of somebody mid-experiment; and dismissing one version does not
+  silence the next, so "not now" never becomes "never". The choice can be
+  changed at any time under *Settings → Updates*.
+
+- **One correct instance matcher instead of four.** Scores were computed by
+  solving the assignment on IoU and *then* applying the 0.5 threshold, which
+  maximises total overlap rather than the number of objects found — so a
+  high-overlap pair could capture a prediction a second cell needed. Measured on
+  this data the two rules agree on every image, so **no published figure
+  changes**; it is fixed anyway, in one place with the counterexample pinned as
+  a test, because a metric that is right by luck on today's data is not right.
+
+## New in 1.2.0
+
+- **A measured answer to "how accurate is it?"** — `docs/ACCURACY.md` separates
+  the three things that question can mean and gives the number for each: cell
+  outlines per frame (F1 0.839, and 0.30-0.48 held out), trajectory identity
+  (no error on any available ground truth), and the migration figures that
+  actually get published (net speed exact at the median, within 2.7-2.9% at the
+  90th percentile, at the detection loss this model really has).
+- **Robust speed estimators.** `track_summary.csv` now carries
+  `net_speed_um_per_min`, `along_speed_um_per_min` and `path_speed_um_per_min`
+  beside the mean and median of instantaneous speeds. The net figures were
+  measured to be two to three times less sensitive to a missed detection,
+  because they read the endpoints rather than averaging every interval.
+- **A detection fallback ladder, off by default.** Five settings under
+  *Detection effort*, from a single pass to every model at two thresholds.
+  Extra passes can only add detections, and anything only they found is marked
+  as such in `detections.csv`. **It is off by default because it was measured
+  end to end and no rung improved the result on this data** - two of them split
+  a correct trajectory in half, and three put cells in frames that contain
+  none. The measurement is in `docs/ACCURACY.md`; the mechanism is that a false
+  detection from channel-wall texture sits in the *same place* every frame, and
+  a stationary object is the most self-consistent thing a tracker can be shown.
+- **Two new quality-control findings** that catch exactly that failure:
+  `stationary_track` when a trajectory ends less than a cell's width from where
+  it began, after enough elapsed time for that to mean something; and
+  `fallback_dependent_track` when half or more of its positions came only from
+  a permissive pass. The first measures **net** displacement rather than path
+  length, because a fixed object's centroid wanders by a fraction of a pixel
+  each frame and a path-length test would let it accumulate its way out of the
+  very check meant to catch it. The time bar is in minutes rather than frames,
+  because four frames is an hour of the supplied data and two minutes of a fast
+  acquisition, and a cell that has not moved 4 µm in two minutes is just a cell.
+- **Track-guided recovery now runs, for interior gaps only** — and the story of
+  why is the most important correction in this release. Version 1.1 reported
+  that recovery "filled 1 of 13 holes" and shipped it disabled on that basis.
+  That measurement was taken while a defect skipped **every** interior gap in
+  silence: recovery asked the tracker to predict a position, and the tracker's
+  prediction refuses to look backwards, which is correct during tracking and
+  wrong afterwards. So it examined nothing but the frames past the end of each
+  track, and no output file said so.
+
+  Interior gaps now interpolate between the observations on either side. Scored
+  against the same ground truth, recovery fills **10 of 13** holes with a median
+  error of 3.5 px — about a quarter of a cell's width — and **no false
+  positives**. Frames *past* a track's last observation are a different claim
+  (the cell may simply have left) and produced every false position in the
+  measurement, so they stay off. Everything recovered carries its tier and
+  confidence in `detections.csv`, is counted in `run.json`, and trips
+  `fallback_dependent_track` if a trajectory comes to lean on it.
+- **An *Image normalisation* control, and the reason it exists.** The two halves
+  of the supplied training data hold cells of the same size — 12.1 against
+  12.2 px wide — at 1.7× different contrast: a cell stands 0.219 of the image
+  range above its background in one half and 0.378 in the other. That, and not
+  shape or scale, is most of what a model trained on one half meets in the
+  other, and it explains why the model trained on the *high*-contrast half is
+  the one that loses the most. Contrast can be changed before the image reaches
+  the network, so the setting is offered and each option's measured effect is
+  recorded in `docs/ACCURACY.md`. The default is unchanged, so existing results
+  stay comparable.
+- **`docs/THIRD_PARTY.md`, generated rather than hand-kept.**
+  `scripts/audit_licences.py` reads the built application's own package
+  metadata and fails the release if a copyleft dependency appears that the
+  document does not account for. Writing it found three that a hand-written
+  list had missed. Neither the trained model nor the research images are in the
+  source archive — `scripts/make_source_zip.py` enforces that with an
+  allow-list and re-checks the finished archive before it can be published.
 
 ## New in 1.1.0
 
@@ -30,7 +133,8 @@ arithmetic, round-trips every output format, and exercises Napari.
 ## How well does the segmentation work
 
 Measured with a properly constructed held-out split, because the combined model
-was trained on all 71 labelled images and has no held-out data of its own:
+was trained on all 71 labelled images and has no held-out data of its own.
+**`docs/ACCURACY.md` is the full treatment**; this is the summary.
 
 | Model | Evaluated on | Kind | F1 | Recall |
 |---|---|---|---:|---:|
@@ -39,9 +143,18 @@ was trained on all 71 labelled images and has no held-out data of its own:
 | KK2-only | KK1 | **held out** | **0.30** | 0.20 |
 
 Generalisation is roughly half of fit, and the failure mode is **missing
-cells, not inventing them** (precision holds at 0.54–0.60). Trajectories
+cells, not inventing them** (precision holds at 0.54-0.60). Trajectories
 fragment rather than go wrong — the safer failure, but it still biases anything
 computed over track lengths. Plan for it.
+
+What that actually costs the answer was then measured rather than assumed.
+Deleting detections at random from a stack whose complete answer is known, the
+net migration speed stays **exactly right at the median, and within 2.7 % at
+the 90th percentile at 15 % loss (4.6 % at 20 %)**, with no track truncated. The mean
+of instantaneous speeds drifts two to three times faster, because every missed
+frame merges two short intervals into one long one. Above about 30 % loss the
+endpoints themselves begin to disappear and the error jumps sharply — that is
+the point at which to check frame coverage before quoting a figure.
 
 ## What it does
 
@@ -87,10 +200,10 @@ used if one is present.
 ## Verifying the download
 
 The SHA-256 is published beside the installer in
-`Corridor-1.1.0-Setup.exe.sha256`:
+`Corridor-1.3.0-Setup.exe.sha256`:
 
 ```powershell
-Get-FileHash Corridor-1.1.0-Setup.exe -Algorithm SHA256
+Get-FileHash Corridor-1.3.0-Setup.exe -Algorithm SHA256
 ```
 
 The installer is also digitally signed, so any modification after build breaks

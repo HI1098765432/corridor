@@ -9,6 +9,17 @@ explicit physical units — with the provenance of every number attached.
 
 ---
 
+## Documentation
+
+**[`docs/USER_GUIDE.md`](docs/USER_GUIDE.md)** is the manual: install, what each
+stage does to your images, every output column, which speed number to publish,
+what each quality-control warning means, and what to do when something looks
+wrong. Read that first.
+
+[`docs/ACCURACY.md`](docs/ACCURACY.md) is the measured accuracy, at three levels.
+[`docs/TOWARDS_99.md`](docs/TOWARDS_99.md) is the ongoing research log, failures
+included.
+
 ## Download
 
 **[Download the Windows installer](https://github.com/HI1098765432/corridor/releases/latest)**
@@ -62,7 +73,7 @@ time-lapse TIFF
 | File | Contents |
 | --- | --- |
 | `tracks.csv` | one row per observation: position, area, gap, match cost, velocity |
-| `track_summary.csv` | one row per track: duration, path length, mean/median/max speed, straightness |
+| `track_summary.csv` | one row per track: duration, path length, straightness, and six speed estimators |
 | `detections.csv` | every segmented object, independent of tracking |
 | `segmentation_diagnostics.csv` | raw vs kept instance counts per frame |
 | `tracking_events.csv` | matches, new tracks, dormancies, suspected merges per frame |
@@ -74,6 +85,14 @@ time-lapse TIFF
 Velocity columns are named for their units: `speed_um_per_min`,
 `v_along_um_per_min`, `v_across_um_per_min`, plus `speed_px_per_frame`.
 
+`track_summary.csv` reports the speed several ways rather than choosing for
+you, because they do not degrade alike when detections are missed:
+`net_speed_um_per_min` and `along_speed_um_per_min` read only the endpoints and
+are the robust ones; `mean_speed_um_per_min` and `median_speed_um_per_min`
+average the intervals and drift two to three times faster;
+`path_speed_um_per_min` sits between. The measurement is in
+[`docs/ACCURACY.md`](docs/ACCURACY.md).
+
 ## Running without the interface
 
 ```bash
@@ -84,14 +103,34 @@ corridor stack.tif --pixel-size 0.4671 --frame-interval 20.0069
 
 `corridor --help` lists every parameter. The same analysis runs headless.
 
-## How well does the segmentation work?
+## How accurate is it?
 
-Measured, with a properly constructed held-out split, in
-[`docs/MODEL_EVALUATION.md`](docs/MODEL_EVALUATION.md). Short version: the
-bundled model scores F1 0.80–0.87 on its own training images, and **0.30–0.48
-on data it was not trained on**, where the failure mode is missing cells rather
-than inventing them. Trajectories fragment rather than go wrong, which is the
-safer failure but still biases anything computed over track lengths.
+**[`docs/ACCURACY.md`](docs/ACCURACY.md) is the full answer**, with every number
+reproducible from a script in `scripts/`. It exists because the question has
+three different answers and quoting the wrong one is misleading in both
+directions:
+
+| What is counted | Measured |
+| --- | --- |
+| Each cell outline, per frame | F1 **0.839** in-distribution, **0.30–0.48** held out |
+| Cell identity along a trajectory | **no error** on any available ground truth |
+| Net migration speed — the published quantity | **exact at the median**, within **2.7–2.9 %** at p90 |
+
+The detector is the weak link and it cannot be argued up: measuring eight
+detection strategies, recall can be bought to 0.902 only by paying precision
+down to 0.703, and **F1 never exceeds 0.843 at any price**. Raising that needs
+more labelled data and retraining, not parameters.
+
+What saves the result is that a missed detection costs far less than it looks.
+Displacement is divided by elapsed time rather than by one frame, so the net
+speed of a track survives losing a fifth of its detections almost unchanged.
+The failure mode is a *shorter* trajectory, not a wrong one.
+
+The held-out collapse was also diagnosed rather than just reported: the two
+halves of this dataset differ in **contrast**, not in cell size (12.1 vs 12.2 px
+wide, but 0.219 vs 0.378 of the image range above background), which is why the
+model trained on the high-contrast half loses the most. See
+[`docs/MODEL_EVALUATION.md`](docs/MODEL_EVALUATION.md) for the per-model split.
 
 ## Requirements
 
@@ -131,3 +170,22 @@ packaging/       PyInstaller spec and Inno Setup script
 
 MIT for the application. The bundled Cellpose model belongs to the researchers
 who trained it; see `LICENSE`.
+
+The installer carries a whole Python runtime, so what it bundles and on what
+terms is written down in
+**[`docs/THIRD_PARTY.md`](docs/THIRD_PARTY.md)** rather than left implicit. Five
+components are copyleft — PySide6/shiboken6, fastremap and fill_voids under the
+LGPL-3, certifi and tqdm under the MPL-2.0 — and the one-folder, uncompressed
+build in `packaging/corridor.spec` is what satisfies the LGPL's requirement that
+those parts remain replaceable. That list is generated, not hand-kept:
+
+```bash
+python scripts/audit_licences.py
+```
+
+It reads the built application's own package metadata and exits non-zero if any
+copyleft dependency appears that the document does not account for. Writing it
+found three that a hand-written list had missed.
+
+Neither the trained model nor the research images appear in the source archive.
+Publishing those is the researchers' decision, not this software's.

@@ -1,0 +1,135 @@
+[
+  {
+    "strategy": "interior: window only",
+    "holes": 13,
+    "recovered": 5,
+    "missed": 8,
+    "recovery_rate": 0.385,
+    "median_offset_px": 9.06,
+    "max_offset_px": 13.03,
+    "by_tier": {
+      "windowed": 5
+    },
+    "false_positives": 0,
+    "false_positive_tiers": {}
+  },
+  {
+    "strategy": "interior: + permissive",
+    "holes": 13,
+    "recovered": 10,
+    "missed": 3,
+    "recovery_rate": 0.769,
+    "median_offset_px": 3.51,
+    "max_offset_px": 13.03,
+    "by_tier": {
+      "permissive": 5,
+      "windowed": 5
+    },
+    "false_positives": 0,
+    "false_positive_tiers": {}
+  },
+  {
+    "strategy": "interior: intensity only",
+    "holes": 13,
+    "recovered": 10,
+    "missed": 3,
+    "recovery_rate": 0.769,
+    "median_offset_px": 4.87,
+    "max_offset_px": 10.97,
+    "by_tier": {
+      "intensity": 10
+    },
+    "false_positives": 0,
+    "false_positive_tiers": {}
+  },
+  {
+    "strategy": "interior: all three tiers",
+    "holes": 13,
+    "recovered": 10,
+    "missed": 3,
+    "recovery_rate": 0.769,
+    "median_offset_px": 3.51,
+    "max_offset_px": 13.03,
+    "by_tier": {
+      "permissive": 5,
+      "windowed": 5
+    },
+    "false_positives": 0,
+    "false_positive_tiers": {}
+  },
+  {
+    "strategy": "interior + trailing: all tiers",
+    "holes": 13,
+    "recovered": 11,
+    "missed": 2,
+    "recovery_rate": 0.846,
+    "median_offset_px": 2.89,
+    "max_offset_px": 13.03,
+    "by_tier": {
+      "permissive": 6,
+      "windowed": 5
+    },
+    "false_positives": 2,
+    "false_positive_tiers": {
+      "permissive": 2
+    }
+  },
+  {
+    "strategy": "trailing only: all tiers",
+    "holes": 13,
+    "recovered": 1,
+    "missed": 12,
+    "recovery_rate": 0.077,
+    "median_offset_px": 2.89,
+    "max_offset_px": 2.89,
+    "by_tier": {
+      "permissive": 1
+    },
+    "false_positives": 2,
+    "false_positive_tiers": {
+      "permissive": 2
+    }
+  },
+  {
+    "strategy": "interior, tighter offset",
+    "holes": 13,
+    "recovered": 10,
+    "missed": 3,
+    "recovery_rate": 0.769,
+    "median_offset_px": 3.51,
+    "max_offset_px": 13.03,
+    "by_tier": {
+      "permissive": 5,
+      "windowed": 5
+    },
+    "false_positives": 0,
+    "false_positive_tiers": {}
+  },
+  {
+    "strategy": "interior, intensity 8 sigma",
+    "holes": 13,
+    "recovered": 10,
+    "missed": 3,
+    "recovery_rate": 0.769,
+    "median_offset_px": 3.51,
+    "max_offset_px": 13.03,
+    "by_tier": {
+      "permissive": 5,
+      "windowed": 5
+    },
+    "false_positives": 0,
+    "false_positive_tiers": {}
+  },
+  {
+    "strategy": "disabled (the shipped default)",
+    "holes": 13,
+    "recovered": 0,
+    "missed": 13,
+    "recovery_rate": 0.0,
+    "median_offset_px": null,
+    "max_offset_px": null,
+    "by_tier": {},
+    "false_positives": 0,
+    "false_positive_tiers": {}
+  }
+]

@@ -1,0 +1,276 @@
+{
+  "rungs": {
+    "off": {
+      "052924_t1.tif": {
+        "seconds": 59.1,
+        "detections": 13,
+        "ensemble_only": 0,
+        "tracks_all": 1,
+        "tracks_real": 1,
+        "tracked_observations": 13,
+        "rejected_by_tracker": 0,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 13,
+        "speeds": [
+          0.4719
+        ],
+        "known_present_frames": 13,
+        "covered": 13,
+        "missed": []
+      },
+      "052924_t2_empty.tif": {
+        "seconds": 7.0,
+        "detections": 2,
+        "ensemble_only": 0,
+        "tracks_all": 1,
+        "tracks_real": 1,
+        "tracked_observations": 2,
+        "rejected_by_tracker": 0,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 2,
+        "speeds": [
+          0.0636
+        ],
+        "known_absent_frames": 3,
+        "false_detections": 0,
+        "false_tracked": 0
+      },
+      "052924_t3_dual.tif": {
+        "seconds": 15.0,
+        "detections": 8,
+        "ensemble_only": 0,
+        "tracks_all": 3,
+        "tracks_real": 2,
+        "tracked_observations": 7,
+        "rejected_by_tracker": 1,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 5,
+        "speeds": [
+          0.1831,
+          0.0224
+        ]
+      }
+    },
+    "thresholds": {
+      "052924_t1.tif": {
+        "seconds": 24.3,
+        "detections": 13,
+        "ensemble_only": 0,
+        "tracks_all": 1,
+        "tracks_real": 1,
+        "tracked_observations": 13,
+        "rejected_by_tracker": 0,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 13,
+        "speeds": [
+          0.4719
+        ],
+        "known_present_frames": 13,
+        "covered": 13,
+        "missed": []
+      },
+      "052924_t2_empty.tif": {
+        "seconds": 7.1,
+        "detections": 2,
+        "ensemble_only": 0,
+        "tracks_all": 1,
+        "tracks_real": 1,
+        "tracked_observations": 2,
+        "rejected_by_tracker": 0,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 2,
+        "speeds": [
+          0.0636
+        ],
+        "known_absent_frames": 3,
+        "false_detections": 0,
+        "false_tracked": 0
+      },
+      "052924_t3_dual.tif": {
+        "seconds": 9.4,
+        "detections": 8,
+        "ensemble_only": 0,
+        "tracks_all": 3,
+        "tracks_real": 2,
+        "tracked_observations": 7,
+        "rejected_by_tracker": 1,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 5,
+        "speeds": [
+          0.1831,
+          0.0224
+        ]
+      }
+    },
+    "wide": {
+      "052924_t1.tif": {
+        "seconds": 34.6,
+        "detections": 15,
+        "ensemble_only": 2,
+        "tracks_all": 2,
+        "tracks_real": 1,
+        "tracked_observations": 14,
+        "rejected_by_tracker": 1,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 14,
+        "speeds": [
+          0.4401
+        ],
+        "known_present_frames": 13,
+        "covered": 13,
+        "missed": []
+      },
+      "052924_t2_empty.tif": {
+        "seconds": 9.7,
+        "detections": 6,
+        "ensemble_only": 4,
+        "tracks_all": 2,
+        "tracks_real": 1,
+        "tracked_observations": 5,
+        "rejected_by_tracker": 1,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 5,
+        "speeds": [
+          0.0214
+        ],
+        "known_absent_frames": 3,
+        "false_detections": 4,
+        "false_tracked": 3
+      },
+      "052924_t3_dual.tif": {
+        "seconds": 20.7,
+        "detections": 8,
+        "ensemble_only": 0,
+        "tracks_all": 3,
+        "tracks_real": 2,
+        "tracked_observations": 7,
+        "rejected_by_tracker": 1,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 5,
+        "speeds": [
+          0.1831,
+          0.0224
+        ]
+      }
+    },
+    "models": {
+      "052924_t1.tif": {
+        "seconds": 19.9,
+        "detections": 17,
+        "ensemble_only": 4,
+        "tracks_all": 2,
+        "tracks_real": 2,
+        "tracked_observations": 17,
+        "rejected_by_tracker": 0,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 13,
+        "speeds": [
+          0.4719,
+          0.0427
+        ],
+        "known_present_frames": 13,
+        "covered": 13,
+        "missed": []
+      },
+      "052924_t2_empty.tif": {
+        "seconds": 6.4,
+        "detections": 3,
+        "ensemble_only": 1,
+        "tracks_all": 1,
+        "tracks_real": 1,
+        "tracked_observations": 3,
+        "rejected_by_tracker": 0,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 3,
+        "speeds": [
+          0.3513
+        ],
+        "known_absent_frames": 3,
+        "false_detections": 1,
+        "false_tracked": 1
+      },
+      "052924_t3_dual.tif": {
+        "seconds": 13.0,
+        "detections": 8,
+        "ensemble_only": 0,
+        "tracks_all": 3,
+        "tracks_real": 2,
+        "tracked_observations": 7,
+        "rejected_by_tracker": 1,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 5,
+        "speeds": [
+          0.1831,
+          0.0224
+        ]
+      }
+    },
+    "max_recall": {
+      "052924_t1.tif": {
+        "seconds": 40.9,
+        "detections": 19,
+        "ensemble_only": 6,
+        "tracks_all": 2,
+        "tracks_real": 2,
+        "tracked_observations": 19,
+        "rejected_by_tracker": 0,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 14,
+        "speeds": [
+          0.4401,
+          0.0427
+        ],
+        "known_present_frames": 13,
+        "covered": 13,
+        "missed": []
+      },
+      "052924_t2_empty.tif": {
+        "seconds": 10.2,
+        "detections": 5,
+        "ensemble_only": 3,
+        "tracks_all": 1,
+        "tracks_real": 1,
+        "tracked_observations": 5,
+        "rejected_by_tracker": 0,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 5,
+        "speeds": [
+          0.2381
+        ],
+        "known_absent_frames": 3,
+        "false_detections": 3,
+        "false_tracked": 3
+      },
+      "052924_t3_dual.tif": {
+        "seconds": 22.7,
+        "detections": 8,
+        "ensemble_only": 0,
+        "tracks_all": 3,
+        "tracks_real": 2,
+        "tracked_observations": 7,
+        "rejected_by_tracker": 1,
+        "channels": 1,
+        "cross_channel_tracks": 0,
+        "longest_observations": 5,
+        "speeds": [
+          0.1831,
+          0.0224
+        ]
+      }
+    }
+  }
+}

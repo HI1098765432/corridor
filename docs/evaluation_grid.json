@@ -1,0 +1,205 @@
+{
+  "group": "KK2",
+  "original_instances": 108,
+  "corrected_instances": 115,
+  "results": [
+    {
+      "model": "KK1Model (original)",
+      "window": "default",
+      "original": {
+        "precision": 0.5402,
+        "recall": 0.4352,
+        "f1": 0.4821,
+        "tp": 47,
+        "fp": 40,
+        "fn": 61,
+        "mean_iou_of_matches": 0.6592
+      },
+      "corrected": {
+        "precision": 0.5632,
+        "recall": 0.4261,
+        "f1": 0.4851,
+        "tp": 49,
+        "fp": 38,
+        "fn": 66,
+        "mean_iou_of_matches": 0.662
+      }
+    },
+    {
+      "model": "KK1Model (original)",
+      "window": "(3, 97)",
+      "original": {
+        "precision": 0.7143,
+        "recall": 0.6019,
+        "f1": 0.6533,
+        "tp": 65,
+        "fp": 26,
+        "fn": 43,
+        "mean_iou_of_matches": 0.6439
+      },
+      "corrected": {
+        "precision": 0.7363,
+        "recall": 0.5826,
+        "f1": 0.6505,
+        "tp": 67,
+        "fp": 24,
+        "fn": 48,
+        "mean_iou_of_matches": 0.6438
+      }
+    },
+    {
+      "model": "KK1Model (original)",
+      "window": "(5, 95)",
+      "original": {
+        "precision": 0.663,
+        "recall": 0.5648,
+        "f1": 0.61,
+        "tp": 61,
+        "fp": 31,
+        "fn": 47,
+        "mean_iou_of_matches": 0.6344
+      },
+      "corrected": {
+        "precision": 0.6739,
+        "recall": 0.5391,
+        "f1": 0.599,
+        "tp": 62,
+        "fp": 30,
+        "fn": 53,
+        "mean_iou_of_matches": 0.6346
+      }
+    },
+    {
+      "model": "round 1 (contrast aug)",
+      "window": "default",
+      "original": {
+        "precision": 0.6364,
+        "recall": 0.4537,
+        "f1": 0.5297,
+        "tp": 49,
+        "fp": 28,
+        "fn": 59,
+        "mean_iou_of_matches": 0.6785
+      },
+      "corrected": {
+        "precision": 0.6494,
+        "recall": 0.4348,
+        "f1": 0.5208,
+        "tp": 50,
+        "fp": 27,
+        "fn": 65,
+        "mean_iou_of_matches": 0.6783
+      }
+    },
+    {
+      "model": "round 1 (contrast aug)",
+      "window": "(3, 97)",
+      "original": {
+        "precision": 0.7157,
+        "recall": 0.6759,
+        "f1": 0.6952,
+        "tp": 73,
+        "fp": 29,
+        "fn": 35,
+        "mean_iou_of_matches": 0.6942
+      },
+      "corrected": {
+        "precision": 0.7353,
+        "recall": 0.6522,
+        "f1": 0.6912,
+        "tp": 75,
+        "fp": 27,
+        "fn": 40,
+        "mean_iou_of_matches": 0.6929
+      }
+    },
+    {
+      "model": "round 1 (contrast aug)",
+      "window": "(5, 95)",
+      "original": {
+        "precision": 0.729,
+        "recall": 0.7222,
+        "f1": 0.7256,
+        "tp": 78,
+        "fp": 29,
+        "fn": 30,
+        "mean_iou_of_matches": 0.6939
+      },
+      "corrected": {
+        "precision": 0.7477,
+        "recall": 0.6957,
+        "f1": 0.7207,
+        "tp": 80,
+        "fp": 27,
+        "fn": 35,
+        "mean_iou_of_matches": 0.6917
+      }
+    },
+    {
+      "model": "round 2 (aug + trained at 3,97)",
+      "window": "default",
+      "original": {
+        "precision": 0.618,
+        "recall": 0.5093,
+        "f1": 0.5584,
+        "tp": 55,
+        "fp": 34,
+        "fn": 53,
+        "mean_iou_of_matches": 0.6621
+      },
+      "corrected": {
+        "precision": 0.6404,
+        "recall": 0.4957,
+        "f1": 0.5588,
+        "tp": 57,
+        "fp": 32,
+        "fn": 58,
+        "mean_iou_of_matches": 0.6592
+      }
+    },
+    {
+      "model": "round 2 (aug + trained at 3,97)",
+      "window": "(3, 97)",
+      "original": {
+        "precision": 0.6182,
+        "recall": 0.6296,
+        "f1": 0.6239,
+        "tp": 68,
+        "fp": 42,
+        "fn": 40,
+        "mean_iou_of_matches": 0.6761
+      },
+      "corrected": {
+        "precision": 0.6364,
+        "recall": 0.6087,
+        "f1": 0.6222,
+        "tp": 70,
+        "fp": 40,
+        "fn": 45,
+        "mean_iou_of_matches": 0.6755
+      }
+    },
+    {
+      "model": "round 2 (aug + trained at 3,97)",
+      "window": "(5, 95)",
+      "original": {
+        "precision": 0.6552,
+        "recall": 0.7037,
+        "f1": 0.6786,
+        "tp": 76,
+        "fp": 40,
+        "fn": 32,
+        "mean_iou_of_matches": 0.6759
+      },
+      "corrected": {
+        "precision": 0.6724,
+        "recall": 0.6783,
+        "f1": 0.6753,
+        "tp": 78,
+        "fp": 38,
+        "fn": 37,
+        "mean_iou_of_matches": 0.6742
+      }
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "model": "build/models/models/corridor_contrast_invariant",
+  "test_group": "KK2",
+  "results": {
+    "baseline (cellpose default)": {
+      "precision": 0.6364,
+      "recall": 0.4537,
+      "f1": 0.5297,
+      "tp": 49,
+      "fp": 28,
+      "fn": 59
+    },
+    "percentile window (3, 97)": {
+      "precision": 0.7157,
+      "recall": 0.6759,
+      "f1": 0.6952,
+      "tp": 73,
+      "fp": 29,
+      "fn": 35
+    },
+    "percentile window (2, 98)": {
+      "precision": 0.7303,
+      "recall": 0.6019,
+      "f1": 0.6599,
+      "tp": 65,
+      "fp": 24,
+      "fn": 43
+    },
+    "percentile window (5, 95)": {
+      "precision": 0.729,
+      "recall": 0.7222,
+      "f1": 0.7256,
+      "tp": 78,
+      "fp": 29,
+      "fn": 30
+    },
+    "percentile window (10, 90)": {
+      "precision": 0.6091,
+      "recall": 0.6204,
+      "f1": 0.6147,
+      "tp": 67,
+      "fp": 43,
+      "fn": 41
+    },
+    "histogram matched to KK1": {
+      "precision": 0.551,
+      "recall": 0.25,
+      "f1": 0.3439,
+      "tp": 27,
+      "fp": 22,
+      "fn": 81
+    },
+    "local gain to the model's peak": {
+      "precision": 0.5824,
+      "recall": 0.4907,
+      "f1": 0.5327,
+      "tp": 53,
+      "fp": 38,
+      "fn": 55
+    },
+    "histogram + window (3, 97)": {
+      "precision": 0.6585,
+      "recall": 0.25,
+      "f1": 0.3624,
+      "tp": 27,
+      "fp": 14,
+      "fn": 81
+    }
+  }
+}

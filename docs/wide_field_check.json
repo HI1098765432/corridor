@@ -1,0 +1,50 @@
+{
+  "rungs": {
+    "off": {
+      "052924_1.tif": {
+        "seconds": 184.7,
+        "detections": 73,
+        "ensemble_only": 0,
+        "tracks_all": 12,
+        "tracks_real": 9,
+        "tracked_observations": 70,
+        "rejected_by_tracker": 3,
+        "channels": 6,
+        "cross_channel_tracks": 0,
+        "longest_observations": 14,
+        "speeds": [
+          0.3704,
+          0.161,
+          0.0388,
+          0.4763,
+          0.0505,
+          1.9563,
+          0.4889,
+          1.3208,
+          0.2243
+        ]
+      },
+      "052924_2.tif": {
+        "seconds": 136.1,
+        "detections": 43,
+        "ensemble_only": 0,
+        "tracks_all": 7,
+        "tracks_real": 7,
+        "tracked_observations": 43,
+        "rejected_by_tracker": 0,
+        "channels": 6,
+        "cross_channel_tracks": 0,
+        "longest_observations": 13,
+        "speeds": [
+          0.6337,
+          1.5385,
+          0.234,
+          1.445,
+          0.065,
+          0.4053,
+          1.9841
+        ]
+      }
+    }
+  }
+}

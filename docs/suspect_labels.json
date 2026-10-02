@@ -1,0 +1,243 @@
+{
+  "n_suspects": 13,
+  "counts": {
+    "a labelled cell is here in a neighbouring frame": 11,
+    "no support in neighbouring frames": 2
+  },
+  "verdicts": [
+    {
+      "contrast": 0.3044,
+      "area_px": 796,
+      "eccentricity": 0.994,
+      "major_px": 99.8,
+      "minor_px": 10.7,
+      "distance_to_border_px": 4,
+      "edge_strength": 3.801,
+      "centroid": [
+        264.8,
+        45.5
+      ],
+      "image": "052924.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 12.6,
+      "verdict": "a labelled cell is here in a neighbouring frame"
+    },
+    {
+      "contrast": 0.2657,
+      "area_px": 678,
+      "eccentricity": 0.995,
+      "major_px": 98.6,
+      "minor_px": 9.4,
+      "distance_to_border_px": 17,
+      "edge_strength": 3.732,
+      "centroid": [
+        426.5,
+        61.2
+      ],
+      "image": "052924.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 26.6,
+      "verdict": "a labelled cell is here in a neighbouring frame"
+    },
+    {
+      "contrast": 0.4234,
+      "area_px": 853,
+      "eccentricity": 0.995,
+      "major_px": 104.5,
+      "minor_px": 10.7,
+      "distance_to_border_px": 17,
+      "edge_strength": 4.271,
+      "centroid": [
+        506.8,
+        65.5
+      ],
+      "image": "052924.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 3.0,
+      "verdict": "a labelled cell is here in a neighbouring frame"
+    },
+    {
+      "contrast": 0.5128,
+      "area_px": 794,
+      "eccentricity": 0.988,
+      "major_px": 82.5,
+      "minor_px": 12.5,
+      "distance_to_border_px": 55,
+      "edge_strength": 4.14,
+      "centroid": [
+        338.5,
+        210.5
+      ],
+      "image": "052924.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 50.1,
+      "verdict": "no support in neighbouring frames"
+    },
+    {
+      "contrast": 0.5484,
+      "area_px": 517,
+      "eccentricity": 0.986,
+      "major_px": 63.4,
+      "minor_px": 10.6,
+      "distance_to_border_px": 51,
+      "edge_strength": 4.508,
+      "centroid": [
+        94.6,
+        217.7
+      ],
+      "image": "052924.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 33.1,
+      "verdict": "a labelled cell is here in a neighbouring frame"
+    },
+    {
+      "contrast": 0.6596,
+      "area_px": 779,
+      "eccentricity": 0.989,
+      "major_px": 82.8,
+      "minor_px": 12.3,
+      "distance_to_border_px": 18,
+      "edge_strength": 5.256,
+      "centroid": [
+        174.4,
+        250.2
+      ],
+      "image": "052924.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 2.4,
+      "verdict": "a labelled cell is here in a neighbouring frame"
+    },
+    {
+      "contrast": 0.4449,
+      "area_px": 516,
+      "eccentricity": 0.991,
+      "major_px": 70.2,
+      "minor_px": 9.5,
+      "distance_to_border_px": 12,
+      "edge_strength": 5.242,
+      "centroid": [
+        470.2,
+        42.7
+      ],
+      "image": "052924_24.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 4.7,
+      "verdict": "a labelled cell is here in a neighbouring frame"
+    },
+    {
+      "contrast": 0.496,
+      "area_px": 572,
+      "eccentricity": 0.991,
+      "major_px": 73.8,
+      "minor_px": 10.0,
+      "distance_to_border_px": 10,
+      "edge_strength": 5.201,
+      "centroid": [
+        473.6,
+        44.2
+      ],
+      "image": "052924_26.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 1.6,
+      "verdict": "a labelled cell is here in a neighbouring frame"
+    },
+    {
+      "contrast": 0.2175,
+      "area_px": 880,
+      "eccentricity": 0.997,
+      "major_px": 126.5,
+      "minor_px": 9.3,
+      "distance_to_border_px": 66,
+      "edge_strength": 4.07,
+      "centroid": [
+        388.7,
+        128.5
+      ],
+      "image": "052924_26.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 12.6,
+      "verdict": "a labelled cell is here in a neighbouring frame"
+    },
+    {
+      "contrast": 0.3783,
+      "area_px": 963,
+      "eccentricity": 0.997,
+      "major_px": 133.1,
+      "minor_px": 9.5,
+      "distance_to_border_px": 57,
+      "edge_strength": 5.02,
+      "centroid": [
+        62.9,
+        159.2
+      ],
+      "image": "052924_26.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 36.6,
+      "verdict": "a labelled cell is here in a neighbouring frame"
+    },
+    {
+      "contrast": 0.2954,
+      "area_px": 951,
+      "eccentricity": 0.996,
+      "major_px": 117.6,
+      "minor_px": 10.5,
+      "distance_to_border_px": 43,
+      "edge_strength": 3.77,
+      "centroid": [
+        304.1,
+        198.1
+      ],
+      "image": "052924_26.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 11.8,
+      "verdict": "a labelled cell is here in a neighbouring frame"
+    },
+    {
+      "contrast": 0.2388,
+      "area_px": 669,
+      "eccentricity": 0.985,
+      "major_px": 71.5,
+      "minor_px": 12.3,
+      "distance_to_border_px": 4,
+      "edge_strength": 4.826,
+      "centroid": [
+        66.9,
+        35.8
+      ],
+      "image": "052924_7.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 10.5,
+      "verdict": "a labelled cell is here in a neighbouring frame"
+    },
+    {
+      "contrast": 0.3229,
+      "area_px": 533,
+      "eccentricity": 0.983,
+      "major_px": 61.2,
+      "minor_px": 11.4,
+      "distance_to_border_px": 112,
+      "edge_strength": 4.464,
+      "centroid": [
+        306.2,
+        159.6
+      ],
+      "image": "052924_7.tif",
+      "best_iou": 0.0,
+      "kind": "looks exactly like a cell (suspect label)",
+      "nearest_labelled_in_neighbour_px": 79.2,
+      "verdict": "no support in neighbouring frames"
+    }
+  ]
+}
