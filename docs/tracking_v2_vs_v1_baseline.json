@@ -1,0 +1,1670 @@
+{
+  "what_this_is": "v2 axis-free tracker run on the exact detections of the frozen v1.3.0 baseline, compared track by track. The baseline is v1's answer, not ground truth: agreement measures consistency, not accuracy.",
+  "tracking_config": {
+    "max_speed_um_per_min": 5.0,
+    "max_perp_um": 4.0,
+    "area_ratio_min": 0.3,
+    "area_ratio_max": 3.0,
+    "sigma_along_um": 3.0,
+    "speed_uncertainty_fraction": 0.7,
+    "sigma_perp_um": 0.8,
+    "perp_width_fraction": 0.35,
+    "max_perp_widths": 1.6,
+    "sigma_ln_area": 0.3,
+    "w_reversal": 4.0,
+    "w_orientation": 1.0,
+    "orientation_min_eccentricity": 0.6,
+    "direction_noise_floor_um": 1.0,
+    "unmatched_chi2": 15.0,
+    "gate_chi2": 30.0,
+    "max_gap": 3,
+    "min_observations": 2,
+    "enforce_channel_identity": true,
+    "position_sigma_um": 0.5,
+    "shape_position_fraction": 0.06,
+    "width_position_fraction": 0.12,
+    "velocity_sigma_um_per_min": 0.4,
+    "initial_speed_sigma_um_per_min": null,
+    "w_shape": 0.5,
+    "w_overlap": 1.0,
+    "gap_penalty_chi2": 1.0,
+    "global_gap_closing": true,
+    "channel_constraint": "auto"
+  },
+  "summary": {
+    "baseline_tracks": 27,
+    "v2_tracks": 25,
+    "baseline_observations": 155,
+    "identity_agreement_obs_weighted": 0.942,
+    "links_only_in_v1": 3,
+    "links_only_in_v2": 5,
+    "v2_lane_crossings_in_wide_fields": 0,
+    "stage2_gap_closures": 1,
+    "unreviewed_disagreements": 0,
+    "stale_reviewed_explanations": 0
+  },
+  "movies": [
+    {
+      "movie": "052924_1",
+      "n_frames": 20,
+      "detections": {
+        "total": 80,
+        "source_primary": 73,
+        "primary_with_mask": 73,
+        "source_intensity": 6,
+        "source_windowed": 1
+      },
+      "geometry": {
+        "source": "channel_ridges",
+        "applied": true,
+        "n_lanes": 6,
+        "pitch_px": 81.75,
+        "lane_tilts_deg": [
+          -2.14,
+          -2.6,
+          -2.55,
+          -2.5,
+          -2.27,
+          -3.3
+        ],
+        "notes": [
+          "13 ridge traces were grouped into 5 lane(s); traces closer than 39 px belong to one channel.",
+          "1 lane(s) could not be seen directly and were placed from the spacing of the others. Check them if a cell appears to change lane.",
+          "Measured lane tilts: -2.1, -2.6, -2.5, -2.3, -3.3 degrees from vertical.",
+          "6 lanes were measured from the channel walls; a cell is never linked from one lane into another."
+        ]
+      },
+      "n_baseline_tracks": 15,
+      "n_v2_tracks": 13,
+      "baseline_observations": 80,
+      "identity_agreement": 0.9875,
+      "links": {
+        "v1": 65,
+        "v2": 67,
+        "shared": 64,
+        "only_v1": 1,
+        "only_v2": 3
+      },
+      "lane_crossings": {
+        "v2": [],
+        "v1": []
+      },
+      "stage2_gap_closures": [
+        {
+          "track": 9,
+          "frame": 13,
+          "det_label": 2,
+          "gap_frames": 1,
+          "in_v1": true,
+          "gated": null,
+          "total": 20.943,
+          "mahalanobis": 8.548,
+          "motion": 8.548,
+          "size": 7.066,
+          "shape": 0.338,
+          "orientation": 0.001,
+          "direction": 3.997,
+          "overlap": 0.993,
+          "gap": 0.0,
+          "motion_forward": 15.75,
+          "motion_backward": 1.347,
+          "link_margin": 9.057
+        }
+      ],
+      "stale_reviewed_explanations": [],
+      "v2_flags": {
+        "merge_suspected": 2,
+        "enters_at_border": 1,
+        "gap_closed": 1,
+        "split_suspected": 2
+      },
+      "v2_link_margin_chi2": {
+        "n": 67,
+        "min": 6.817,
+        "median": 26.514
+      },
+      "per_baseline_track": [
+        {
+          "baseline_track": 1,
+          "frames": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "n_obs": 9,
+          "majority_v2_track": 1,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "1": 9
+          }
+        },
+        {
+          "baseline_track": 2,
+          "frames": [
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "n_obs": 7,
+          "majority_v2_track": 2,
+          "agreement": 0.8571,
+          "v2_tracks_holding_it": {
+            "2": 6,
+            "9": 1
+          }
+        },
+        {
+          "baseline_track": 3,
+          "frames": [
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "n_obs": 6,
+          "majority_v2_track": 3,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "3": 6
+          }
+        },
+        {
+          "baseline_track": 4,
+          "frames": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16
+          ],
+          "n_obs": 13,
+          "majority_v2_track": 4,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "4": 13
+          }
+        },
+        {
+          "baseline_track": 5,
+          "frames": [
+            5
+          ],
+          "n_obs": 1,
+          "majority_v2_track": 5,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "5": 1
+          }
+        },
+        {
+          "baseline_track": 6,
+          "frames": [
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "n_obs": 14,
+          "majority_v2_track": 6,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "6": 14
+          }
+        },
+        {
+          "baseline_track": 7,
+          "frames": [
+            7,
+            8,
+            9
+          ],
+          "n_obs": 3,
+          "majority_v2_track": 7,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "7": 3
+          }
+        },
+        {
+          "baseline_track": 8,
+          "frames": [
+            9,
+            10
+          ],
+          "n_obs": 2,
+          "majority_v2_track": 8,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "8": 2
+          }
+        },
+        {
+          "baseline_track": 9,
+          "frames": [
+            9,
+            10,
+            11,
+            12,
+            13,
+            14
+          ],
+          "n_obs": 6,
+          "majority_v2_track": 10,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "10": 6
+          }
+        },
+        {
+          "baseline_track": 10,
+          "frames": [
+            10,
+            11,
+            12,
+            13,
+            14
+          ],
+          "n_obs": 5,
+          "majority_v2_track": 11,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "11": 5
+          }
+        },
+        {
+          "baseline_track": 11,
+          "frames": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ],
+          "n_obs": 6,
+          "majority_v2_track": 9,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "9": 6
+          }
+        },
+        {
+          "baseline_track": 12,
+          "frames": [
+            15
+          ],
+          "n_obs": 1,
+          "majority_v2_track": 12,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "12": 1
+          }
+        },
+        {
+          "baseline_track": 13,
+          "frames": [
+            15
+          ],
+          "n_obs": 1,
+          "majority_v2_track": 10,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "10": 1
+          }
+        },
+        {
+          "baseline_track": 14,
+          "frames": [
+            16,
+            17,
+            18,
+            19
+          ],
+          "n_obs": 4,
+          "majority_v2_track": 9,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "9": 4
+          }
+        },
+        {
+          "baseline_track": 15,
+          "frames": [
+            18,
+            19
+          ],
+          "n_obs": 2,
+          "majority_v2_track": 13,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "13": 2
+          }
+        }
+      ],
+      "per_v2_track": [
+        {
+          "v2_track": 1,
+          "frames": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "baseline_tracks_in_it": {
+            "1": 9
+          },
+          "flags": [],
+          "lanes": [
+            5
+          ]
+        },
+        {
+          "v2_track": 2,
+          "frames": [
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "baseline_tracks_in_it": {
+            "2": 6
+          },
+          "flags": [],
+          "lanes": [
+            3
+          ]
+        },
+        {
+          "v2_track": 3,
+          "frames": [
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "baseline_tracks_in_it": {
+            "3": 6
+          },
+          "flags": [
+            "merge_suspected"
+          ],
+          "lanes": [
+            1
+          ]
+        },
+        {
+          "v2_track": 4,
+          "frames": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16
+          ],
+          "baseline_tracks_in_it": {
+            "4": 13
+          },
+          "flags": [
+            "enters_at_border"
+          ],
+          "lanes": [
+            0
+          ]
+        },
+        {
+          "v2_track": 5,
+          "frames": [
+            5
+          ],
+          "baseline_tracks_in_it": {
+            "5": 1
+          },
+          "flags": [
+            "merge_suspected"
+          ],
+          "lanes": [
+            4
+          ]
+        },
+        {
+          "v2_track": 6,
+          "frames": [
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "baseline_tracks_in_it": {
+            "6": 14
+          },
+          "flags": [],
+          "lanes": [
+            4
+          ]
+        },
+        {
+          "v2_track": 7,
+          "frames": [
+            7,
+            8,
+            9
+          ],
+          "baseline_tracks_in_it": {
+            "7": 3
+          },
+          "flags": [],
+          "lanes": [
+            1
+          ]
+        },
+        {
+          "v2_track": 8,
+          "frames": [
+            9,
+            10
+          ],
+          "baseline_tracks_in_it": {
+            "8": 2
+          },
+          "flags": [],
+          "lanes": [
+            5
+          ]
+        },
+        {
+          "v2_track": 9,
+          "frames": [
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "baseline_tracks_in_it": {
+            "2": 1,
+            "11": 6,
+            "14": 4
+          },
+          "flags": [
+            "gap_closed"
+          ],
+          "lanes": [
+            3
+          ]
+        },
+        {
+          "v2_track": 10,
+          "frames": [
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ],
+          "baseline_tracks_in_it": {
+            "9": 6,
+            "13": 1
+          },
+          "flags": [
+            "split_suspected"
+          ],
+          "lanes": [
+            1
+          ]
+        },
+        {
+          "v2_track": 11,
+          "frames": [
+            10,
+            11,
+            12,
+            13,
+            14
+          ],
+          "baseline_tracks_in_it": {
+            "10": 5
+          },
+          "flags": [],
+          "lanes": [
+            2
+          ]
+        },
+        {
+          "v2_track": 12,
+          "frames": [
+            15
+          ],
+          "baseline_tracks_in_it": {
+            "12": 1
+          },
+          "flags": [
+            "split_suspected"
+          ],
+          "lanes": [
+            1
+          ]
+        },
+        {
+          "v2_track": 13,
+          "frames": [
+            18,
+            19
+          ],
+          "baseline_tracks_in_it": {
+            "15": 2
+          },
+          "flags": [],
+          "lanes": [
+            0
+          ]
+        }
+      ],
+      "disagreements": [
+        {
+          "kind": "v1_link_not_in_v2",
+          "link": [
+            [
+              8,
+              4
+            ],
+            [
+              9,
+              5
+            ]
+          ],
+          "baseline_track": 2,
+          "v2_tracks": [
+            2,
+            9
+          ],
+          "v2_cost_of_the_v1_link": {
+            "gated": "motion_outlier",
+            "total": null,
+            "mahalanobis": 25.472
+          },
+          "v2_instead": "track start",
+          "lanes": [
+            3,
+            3
+          ],
+          "step_px": 50.6,
+          "area_ratio": 0.489,
+          "sources": [
+            "primary",
+            "intensity"
+          ],
+          "recovered_detection_to_nearest_primary_px": [
+            null,
+            147.2
+          ],
+          "explanation": "Lane 3. v1 track 2 was moving down the lane (y 207 -> 247, +40 px/frame); (9,5) is an intensity-tier recovered detection 50.6 px back up the lane at half the area. v2 refuses it as a motion outlier (d2 25.5 > 13.8: a 90 px/frame reversal against the prediction) and instead starts a track at (9,5) that continues (10,6), (11,5), (12,2) on a steady ~-50 px/frame trajectory. v1's reading makes the cell reverse and then become another cell one frame later; v2's is kinematically coherent."
+        },
+        {
+          "kind": "v2_link_not_in_v1",
+          "link": [
+            [
+              9,
+              5
+            ],
+            [
+              10,
+              6
+            ]
+          ],
+          "v2_track": 9,
+          "baseline_tracks": [
+            2,
+            11
+          ],
+          "v2_cost": {
+            "gated": null,
+            "total": 0.512,
+            "mahalanobis": 0.43,
+            "motion": 0.43,
+            "size": 0.001,
+            "shape": 0.081,
+            "orientation": 0.0,
+            "direction": 0.0,
+            "overlap": 0.0,
+            "gap": 0.0
+          },
+          "v2_link_margin": 29.488,
+          "closed_by_stage_2": false,
+          "v1_reason": {
+            "refused_because": "above_cost_gate",
+            "explanation": "Track 2 ended at frame 9, 1 frames earlier and 47 px away (1.11 um/min if joined). Not joined because the overall fit was too poor."
+          },
+          "lanes": [
+            3,
+            3
+          ],
+          "step_px": 47.4,
+          "area_ratio": 1.007,
+          "gap_frames": 1,
+          "sources": [
+            "intensity",
+            "intensity"
+          ],
+          "recovered_detection_to_nearest_primary_px": [
+            147.2,
+            110.2
+          ],
+          "explanation": "Lane 3, the same scene: the second step of the steady upward trajectory (47 px, area ratio 1.01, cost 0.51). v1 had already given (9,5) to track 2 and refused this link (above_cost_gate)."
+        },
+        {
+          "kind": "v2_link_not_in_v1",
+          "link": [
+            [
+              14,
+              1
+            ],
+            [
+              15,
+              4
+            ]
+          ],
+          "v2_track": 10,
+          "baseline_tracks": [
+            9,
+            13
+          ],
+          "v2_cost": {
+            "gated": null,
+            "total": 15.103,
+            "mahalanobis": 10.52,
+            "motion": 10.52,
+            "size": 3.629,
+            "shape": 0.077,
+            "orientation": 0.0,
+            "direction": 0.01,
+            "overlap": 0.867,
+            "gap": 0.0
+          },
+          "v2_link_margin": 14.897,
+          "closed_by_stage_2": false,
+          "v1_reason": {
+            "refused_because": "above_cost_gate",
+            "explanation": "Track 9 ended at frame 14, 1 frames earlier and 71 px away (1.65 um/min if joined). Not joined because the overall fit was too poor."
+          },
+          "lanes": [
+            1,
+            1
+          ],
+          "step_px": 70.6,
+          "area_ratio": 0.565,
+          "gap_frames": 1,
+          "sources": [
+            "primary",
+            "primary"
+          ],
+          "recovered_detection_to_nearest_primary_px": [
+            null,
+            null
+          ],
+          "explanation": "Lane 1. At frame 15 the cell (122 px long at y 61 in frame 14) appears as two pieces, 221 px at y 34 and 454 px at y 131. v2 continues the track with the larger piece (cost 15.1: motion 10.5, size 3.6) and flags split_suspected on both tracks; v1 refused both continuations (above_cost_gate). Neither piece is seen after frame 15, so this is one observation either way; which reading is right is not decidable from the detections."
+        },
+        {
+          "kind": "v2_link_not_in_v1",
+          "link": [
+            [
+              15,
+              3
+            ],
+            [
+              16,
+              2
+            ]
+          ],
+          "v2_track": 9,
+          "baseline_tracks": [
+            11,
+            14
+          ],
+          "v2_cost": {
+            "gated": null,
+            "total": 10.702,
+            "mahalanobis": 9.617,
+            "motion": 9.617,
+            "size": 0.006,
+            "shape": 0.027,
+            "orientation": 0.0,
+            "direction": 0.053,
+            "overlap": 1.0,
+            "gap": 0.0
+          },
+          "v2_link_margin": 19.298,
+          "closed_by_stage_2": false,
+          "v1_reason": {
+            "refused_because": "above_cost_gate",
+            "explanation": "Track 11 ended at frame 15, 1 frames earlier and 44 px away (1.03 um/min if joined). Not joined because the overall fit was too poor."
+          },
+          "lanes": [
+            3,
+            3
+          ],
+          "step_px": 44.0,
+          "area_ratio": 0.978,
+          "gap_frames": 1,
+          "sources": [
+            "primary",
+            "primary"
+          ],
+          "recovered_detection_to_nearest_primary_px": [
+            null,
+            null
+          ],
+          "explanation": "Lane 3. The cell is accelerating down the lane (y 46, 67, 89, 127: +21, +22, +38 px/frame); the next step is +42 px at area ratio 0.98. v2 links it (motion d2 9.6, cost 10.7, margin 19.3); v1 refused it (above_cost_gate) and started a new track at frame 16."
+        }
+      ]
+    },
+    {
+      "movie": "052924_2",
+      "n_frames": 20,
+      "detections": {
+        "total": 52,
+        "source_primary": 43,
+        "primary_with_mask": 43,
+        "source_permissive": 2,
+        "source_windowed": 7
+      },
+      "geometry": {
+        "source": "channel_ridges",
+        "applied": true,
+        "n_lanes": 6,
+        "pitch_px": 85.2,
+        "lane_tilts_deg": [
+          -1.34,
+          -2.64,
+          -4.1,
+          -1.3,
+          -4.35,
+          -2.07
+        ],
+        "notes": [
+          "13 ridge traces were grouped into 6 lane(s); traces closer than 39 px belong to one channel.",
+          "Measured lane tilts: -1.3, -2.6, -4.1, -1.3, -4.4, -2.1 degrees from vertical.",
+          "6 lanes were measured from the channel walls; a cell is never linked from one lane into another."
+        ]
+      },
+      "n_baseline_tracks": 7,
+      "n_v2_tracks": 7,
+      "baseline_observations": 52,
+      "identity_agreement": 0.8462,
+      "links": {
+        "v1": 45,
+        "v2": 45,
+        "shared": 43,
+        "only_v1": 2,
+        "only_v2": 2
+      },
+      "lane_crossings": {
+        "v2": [],
+        "v1": []
+      },
+      "stage2_gap_closures": [],
+      "stale_reviewed_explanations": [],
+      "v2_flags": {
+        "merge_suspected": 1
+      },
+      "v2_link_margin_chi2": {
+        "n": 45,
+        "min": 0.157,
+        "median": 24.099
+      },
+      "per_baseline_track": [
+        {
+          "baseline_track": 1,
+          "frames": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "n_obs": 9,
+          "majority_v2_track": 1,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "1": 9
+          }
+        },
+        {
+          "baseline_track": 2,
+          "frames": [
+            0,
+            1,
+            2
+          ],
+          "n_obs": 3,
+          "majority_v2_track": 2,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "2": 3
+          }
+        },
+        {
+          "baseline_track": 3,
+          "frames": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14
+          ],
+          "n_obs": 15,
+          "majority_v2_track": 3,
+          "agreement": 0.7333,
+          "v2_tracks_holding_it": {
+            "3": 11,
+            "6": 4
+          }
+        },
+        {
+          "baseline_track": 4,
+          "frames": [
+            3,
+            4,
+            5,
+            6
+          ],
+          "n_obs": 4,
+          "majority_v2_track": 4,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "4": 4
+          }
+        },
+        {
+          "baseline_track": 5,
+          "frames": [
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17
+          ],
+          "n_obs": 10,
+          "majority_v2_track": 5,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "5": 10
+          }
+        },
+        {
+          "baseline_track": 6,
+          "frames": [
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "n_obs": 9,
+          "majority_v2_track": 3,
+          "agreement": 0.5556,
+          "v2_tracks_holding_it": {
+            "3": 5,
+            "6": 4
+          }
+        },
+        {
+          "baseline_track": 7,
+          "frames": [
+            13,
+            14
+          ],
+          "n_obs": 2,
+          "majority_v2_track": 7,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "7": 2
+          }
+        }
+      ],
+      "per_v2_track": [
+        {
+          "v2_track": 1,
+          "frames": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "baseline_tracks_in_it": {
+            "1": 9
+          },
+          "flags": [],
+          "lanes": [
+            2
+          ]
+        },
+        {
+          "v2_track": 2,
+          "frames": [
+            0,
+            1,
+            2
+          ],
+          "baseline_tracks_in_it": {
+            "2": 3
+          },
+          "flags": [],
+          "lanes": [
+            0
+          ]
+        },
+        {
+          "v2_track": 3,
+          "frames": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ],
+          "baseline_tracks_in_it": {
+            "3": 11,
+            "6": 5
+          },
+          "flags": [],
+          "lanes": [
+            4
+          ]
+        },
+        {
+          "v2_track": 4,
+          "frames": [
+            3,
+            4,
+            5,
+            6
+          ],
+          "baseline_tracks_in_it": {
+            "4": 4
+          },
+          "flags": [],
+          "lanes": [
+            1
+          ]
+        },
+        {
+          "v2_track": 5,
+          "frames": [
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17
+          ],
+          "baseline_tracks_in_it": {
+            "5": 10
+          },
+          "flags": [],
+          "lanes": [
+            3
+          ]
+        },
+        {
+          "v2_track": 6,
+          "frames": [
+            11,
+            12,
+            13,
+            14,
+            16,
+            17,
+            18,
+            19
+          ],
+          "baseline_tracks_in_it": {
+            "3": 4,
+            "6": 4
+          },
+          "flags": [
+            "merge_suspected"
+          ],
+          "lanes": [
+            4
+          ]
+        },
+        {
+          "v2_track": 7,
+          "frames": [
+            13,
+            14
+          ],
+          "baseline_tracks_in_it": {
+            "7": 2
+          },
+          "flags": [],
+          "lanes": [
+            0
+          ]
+        }
+      ],
+      "disagreements": [
+        {
+          "kind": "v1_link_not_in_v2",
+          "link": [
+            [
+              10,
+              1
+            ],
+            [
+              11,
+              3
+            ]
+          ],
+          "baseline_track": 3,
+          "v2_tracks": [
+            3,
+            6
+          ],
+          "v2_cost_of_the_v1_link": {
+            "gated": null,
+            "total": 10.591,
+            "mahalanobis": 4.926,
+            "motion": 4.926,
+            "size": 4.217,
+            "shape": 1.41,
+            "orientation": 0.0,
+            "direction": 0.037,
+            "overlap": 0.0,
+            "gap": 0.0
+          },
+          "v2_instead": "track start",
+          "lanes": [
+            4,
+            4
+          ],
+          "step_px": 50.5,
+          "area_ratio": 0.54,
+          "sources": [
+            "primary",
+            "windowed"
+          ],
+          "recovered_detection_to_nearest_primary_px": [
+            null,
+            20.7
+          ],
+          "explanation": "Lane 4, frames 11-14: v1's recovery (windowed tier) added a detection at each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same cell -- the cell detected twice. Both trackers therefore carry two tracks along one cell for those frames, and differ only in which track gets which copy: v2's choice at frame 11 has a link margin of 0.16 chi2, a tie. A recovery artefact, not a tracking disagreement."
+        },
+        {
+          "kind": "v1_link_not_in_v2",
+          "link": [
+            [
+              15,
+              1
+            ],
+            [
+              16,
+              1
+            ]
+          ],
+          "baseline_track": 6,
+          "v2_tracks": [
+            3,
+            6
+          ],
+          "v2_cost_of_the_v1_link": {
+            "gated": null,
+            "total": 12.189,
+            "mahalanobis": 7.958,
+            "motion": 7.958,
+            "size": 0.367,
+            "shape": 0.008,
+            "orientation": 0.0,
+            "direction": 2.88,
+            "overlap": 0.977,
+            "gap": 0.0
+          },
+          "v2_instead": {
+            "previous": [
+              14,
+              4
+            ],
+            "cost": 6.018,
+            "link_margin": 6.351
+          },
+          "lanes": [
+            4,
+            4
+          ],
+          "step_px": 10.5,
+          "area_ratio": 0.834,
+          "sources": [
+            "primary",
+            "primary"
+          ],
+          "recovered_detection_to_nearest_primary_px": [
+            null,
+            null
+          ],
+          "explanation": "Lane 4, frames 11-14: v1's recovery (windowed tier) added a detection at each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same cell -- the cell detected twice. Both trackers therefore carry two tracks along one cell for those frames, and differ only in which track gets which copy: v2's choice at frame 11 has a link margin of 0.16 chi2, a tie. A recovery artefact, not a tracking disagreement."
+        },
+        {
+          "kind": "v2_link_not_in_v1",
+          "link": [
+            [
+              10,
+              1
+            ],
+            [
+              11,
+              2
+            ]
+          ],
+          "v2_track": 3,
+          "baseline_tracks": [
+            3,
+            6
+          ],
+          "v2_cost": {
+            "gated": null,
+            "total": 10.433,
+            "mahalanobis": 9.168,
+            "motion": 9.168,
+            "size": 0.349,
+            "shape": 0.009,
+            "orientation": 0.0,
+            "direction": 0.033,
+            "overlap": 0.874,
+            "gap": 0.0
+          },
+          "v2_link_margin": 0.157,
+          "closed_by_stage_2": false,
+          "v1_reason": {
+            "refused_because": "different_channel",
+            "explanation": "Track 1 ended at frame 8, 3 frames earlier and 163 px away (1.27 um/min if joined). Not joined because it is in a different channel."
+          },
+          "lanes": [
+            4,
+            4
+          ],
+          "step_px": 71.2,
+          "area_ratio": 1.194,
+          "gap_frames": 1,
+          "sources": [
+            "primary",
+            "primary"
+          ],
+          "recovered_detection_to_nearest_primary_px": [
+            null,
+            null
+          ],
+          "explanation": "Lane 4, frames 11-14: v1's recovery (windowed tier) added a detection at each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same cell -- the cell detected twice. Both trackers therefore carry two tracks along one cell for those frames, and differ only in which track gets which copy: v2's choice at frame 11 has a link margin of 0.16 chi2, a tie. A recovery artefact, not a tracking disagreement."
+        },
+        {
+          "kind": "v2_link_not_in_v1",
+          "link": [
+            [
+              14,
+              4
+            ],
+            [
+              16,
+              1
+            ]
+          ],
+          "v2_track": 6,
+          "baseline_tracks": [
+            3,
+            6
+          ],
+          "v2_cost": {
+            "gated": null,
+            "total": 6.018,
+            "mahalanobis": 3.535,
+            "motion": 3.535,
+            "size": 1.469,
+            "shape": 0.013,
+            "orientation": 0.0,
+            "direction": 0.0,
+            "overlap": 0.0,
+            "gap": 1.0
+          },
+          "v2_link_margin": 6.351,
+          "closed_by_stage_2": false,
+          "v1_reason": null,
+          "lanes": [
+            4,
+            4
+          ],
+          "step_px": 24.6,
+          "area_ratio": 1.439,
+          "gap_frames": 2,
+          "sources": [
+            "windowed",
+            "primary"
+          ],
+          "recovered_detection_to_nearest_primary_px": [
+            0.6,
+            null
+          ],
+          "explanation": "Lane 4, frames 11-14: v1's recovery (windowed tier) added a detection at each frame 20.7, 7.9, 1.2 and 0.6 px from the primary detection of the same cell -- the cell detected twice. Both trackers therefore carry two tracks along one cell for those frames, and differ only in which track gets which copy: v2's choice at frame 11 has a link margin of 0.16 chi2, a tie. A recovery artefact, not a tracking disagreement."
+        }
+      ]
+    },
+    {
+      "movie": "052924_t1",
+      "n_frames": 18,
+      "detections": {
+        "total": 13,
+        "source_primary": 13,
+        "primary_with_mask": 13
+      },
+      "geometry": {
+        "source": "channel_ridges",
+        "applied": true,
+        "n_lanes": 1,
+        "pitch_px": null,
+        "lane_tilts_deg": [
+          -2.2
+        ],
+        "notes": [
+          "3 ridge traces were grouped into 1 lane(s); traces closer than 39 px belong to one channel.",
+          "Only one lane was found, so there is no lane spacing to measure; its half-width is half the field, not a measurement.",
+          "Measured lane tilts: -2.2 degrees from vertical."
+        ]
+      },
+      "n_baseline_tracks": 1,
+      "n_v2_tracks": 1,
+      "baseline_observations": 13,
+      "identity_agreement": 1.0,
+      "links": {
+        "v1": 12,
+        "v2": 12,
+        "shared": 12,
+        "only_v1": 0,
+        "only_v2": 0
+      },
+      "lane_crossings": {
+        "v2": [],
+        "v1": []
+      },
+      "stage2_gap_closures": [],
+      "stale_reviewed_explanations": [],
+      "v2_flags": {},
+      "v2_link_margin_chi2": {
+        "n": 12,
+        "min": 17.112,
+        "median": 27.72
+      },
+      "per_baseline_track": [
+        {
+          "baseline_track": 1,
+          "frames": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16
+          ],
+          "n_obs": 13,
+          "majority_v2_track": 1,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "1": 13
+          }
+        }
+      ],
+      "per_v2_track": [
+        {
+          "v2_track": 1,
+          "frames": [
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16
+          ],
+          "baseline_tracks_in_it": {
+            "1": 13
+          },
+          "flags": [],
+          "lanes": [
+            0
+          ]
+        }
+      ],
+      "disagreements": []
+    },
+    {
+      "movie": "052924_t2_empty",
+      "n_frames": 5,
+      "detections": {
+        "total": 2,
+        "source_primary": 2,
+        "primary_with_mask": 2
+      },
+      "geometry": {
+        "source": "channel_ridges",
+        "applied": true,
+        "n_lanes": 1,
+        "pitch_px": null,
+        "lane_tilts_deg": [
+          -2.25
+        ],
+        "notes": [
+          "Only one lane was found, so there is no lane spacing to measure; its half-width is half the field, not a measurement.",
+          "Measured lane tilts: -2.2 degrees from vertical."
+        ]
+      },
+      "n_baseline_tracks": 1,
+      "n_v2_tracks": 1,
+      "baseline_observations": 2,
+      "identity_agreement": 1.0,
+      "links": {
+        "v1": 1,
+        "v2": 1,
+        "shared": 1,
+        "only_v1": 0,
+        "only_v2": 0
+      },
+      "lane_crossings": {
+        "v2": [],
+        "v1": []
+      },
+      "stage2_gap_closures": [],
+      "stale_reviewed_explanations": [],
+      "v2_flags": {},
+      "v2_link_margin_chi2": {
+        "n": 1,
+        "min": 29.336,
+        "median": 29.336
+      },
+      "per_baseline_track": [
+        {
+          "baseline_track": 1,
+          "frames": [
+            1,
+            2
+          ],
+          "n_obs": 2,
+          "majority_v2_track": 1,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "1": 2
+          }
+        }
+      ],
+      "per_v2_track": [
+        {
+          "v2_track": 1,
+          "frames": [
+            1,
+            2
+          ],
+          "baseline_tracks_in_it": {
+            "1": 2
+          },
+          "flags": [],
+          "lanes": [
+            0
+          ]
+        }
+      ],
+      "disagreements": []
+    },
+    {
+      "movie": "052924_t3_dual",
+      "n_frames": 11,
+      "detections": {
+        "total": 8,
+        "source_primary": 8,
+        "primary_with_mask": 8
+      },
+      "geometry": {
+        "source": "channel_ridges",
+        "applied": true,
+        "n_lanes": 1,
+        "pitch_px": null,
+        "lane_tilts_deg": [
+          -2.76
+        ],
+        "notes": [
+          "Only one lane was found, so there is no lane spacing to measure; its half-width is half the field, not a measurement.",
+          "Measured lane tilts: -2.8 degrees from vertical."
+        ]
+      },
+      "n_baseline_tracks": 3,
+      "n_v2_tracks": 3,
+      "baseline_observations": 8,
+      "identity_agreement": 1.0,
+      "links": {
+        "v1": 5,
+        "v2": 5,
+        "shared": 5,
+        "only_v1": 0,
+        "only_v2": 0
+      },
+      "lane_crossings": {
+        "v2": [],
+        "v1": []
+      },
+      "stage2_gap_closures": [],
+      "stale_reviewed_explanations": [],
+      "v2_flags": {},
+      "v2_link_margin_chi2": {
+        "n": 5,
+        "min": 7.72,
+        "median": 25.461
+      },
+      "per_baseline_track": [
+        {
+          "baseline_track": 1,
+          "frames": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "n_obs": 5,
+          "majority_v2_track": 1,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "1": 5
+          }
+        },
+        {
+          "baseline_track": 2,
+          "frames": [
+            0,
+            1
+          ],
+          "n_obs": 2,
+          "majority_v2_track": 2,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "2": 2
+          }
+        },
+        {
+          "baseline_track": 3,
+          "frames": [
+            10
+          ],
+          "n_obs": 1,
+          "majority_v2_track": 3,
+          "agreement": 1.0,
+          "v2_tracks_holding_it": {
+            "3": 1
+          }
+        }
+      ],
+      "per_v2_track": [
+        {
+          "v2_track": 1,
+          "frames": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "baseline_tracks_in_it": {
+            "1": 5
+          },
+          "flags": [],
+          "lanes": [
+            0
+          ]
+        },
+        {
+          "v2_track": 2,
+          "frames": [
+            0,
+            1
+          ],
+          "baseline_tracks_in_it": {
+            "2": 2
+          },
+          "flags": [],
+          "lanes": [
+            0
+          ]
+        },
+        {
+          "v2_track": 3,
+          "frames": [
+            10
+          ],
+          "baseline_tracks_in_it": {
+            "3": 1
+          },
+          "flags": [],
+          "lanes": [
+            0
+          ]
+        }
+      ],
+      "disagreements": []
+    }
+  ]
+}

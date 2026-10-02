@@ -8,6 +8,7 @@ reproduce an assignment bug is not a useful test.
 from __future__ import annotations
 
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -23,8 +24,11 @@ PIXEL_SIZE_UM = 0.467060342995564
 FRAME_INTERVAL_MIN = 20.006894938151042
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SAMPLE_DIR = (
-    REPO_ROOT / "data" / "confinedmig_cellTrack" / "sample_data"
+#: ``CORRIDOR_SAMPLE_DIR`` points a checkout without ``data/`` (an agent's
+#: isolated copy, a CI runner) at the supplied sample TIFFs, read-only.
+SAMPLE_DIR = Path(
+    os.environ.get("CORRIDOR_SAMPLE_DIR")
+    or REPO_ROOT / "data" / "confinedmig_cellTrack" / "sample_data"
 )
 
 
@@ -44,7 +48,13 @@ def scale() -> Scale:
 
 @pytest.fixture
 def vertical_axis() -> ConfinementAxis:
-    """A perfectly vertical single channel, as in the narrow sample crops."""
+    """Legacy v1: a perfectly vertical single channel, as in the narrow crops.
+
+    Only the modules that still take a ``ConfinementAxis`` (measurements,
+    QC, recovery, the manifest) use this, until the integration package
+    removes the axis from them. The tracker accepts it in the v1 argument
+    position and reads only its channels.
+    """
     return ConfinementAxis(
         ux=0.0, uy=1.0, source="configured", confidence=1.0,
         angle_sigma_rad=math.radians(0.5),
@@ -69,14 +79,21 @@ def make_detection(
     eccentricity: float = 0.99,
     orientation_rad: float = 0.0,
     channel: int = 0,
+    solidity: float = 0.95,
+    touches_border: bool = False,
+    with_mask: bool = False,
 ) -> Detection:
     """A detection shaped like the cells in the supplied training data.
 
     Those labelled cells are 9-15 px wide and 46-201 px long, so the defaults
-    here are a real cell, not a generic blob.
+    here are a real cell, not a generic blob. ``orientation_rad = 0`` is a
+    body along the image rows (vertical), scikit-image's convention.
+
+    ``with_mask`` attaches an elliptical ``mask_crop`` of the same size and
+    orientation, so the tracker's overlap term has pixels to compare.
     """
     half_h, half_w = major / 2.0, minor / 2.0
-    return Detection(
+    det = Detection(
         frame=frame,
         label=label,
         x=float(x),
@@ -90,10 +107,33 @@ def make_detection(
         orientation_rad=orientation_rad,
         major_axis_px=major,
         minor_axis_px=minor,
-        solidity=0.95,
-        touches_border=False,
+        solidity=solidity,
+        touches_border=touches_border,
         channel=channel,
     )
+    if with_mask:
+        attach_ellipse_mask(det)
+    return det
+
+
+def attach_ellipse_mask(det: Detection) -> Detection:
+    """Give ``det`` an elliptical mask crop matching its axes and orientation."""
+    a, b = det.major_axis_px / 2.0, det.minor_axis_px / 2.0
+    reach = int(math.ceil(max(a, b))) + 1
+    min_r, min_c = int(math.floor(det.y)) - reach, int(math.floor(det.x)) - reach
+    rows = np.arange(min_r, min_r + 2 * reach + 2)[:, None]
+    cols = np.arange(min_c, min_c + 2 * reach + 2)[None, :]
+    u = np.array([math.sin(det.orientation_rad), math.cos(det.orientation_rad)])
+    dx, dy = cols - det.x, rows - det.y
+    along = dx * u[0] + dy * u[1]
+    across = -dx * u[1] + dy * u[0]
+    mask = (along / a) ** 2 + (across / b) ** 2 <= 1.0
+    r_idx, c_idx = np.nonzero(mask)
+    r0, r1, c0, c1 = r_idx.min(), r_idx.max() + 1, c_idx.min(), c_idx.max() + 1
+    det.mask_crop = mask[r0:r1, c0:c1]
+    det.bbox = (min_r + int(r0), min_c + int(c0), min_r + int(r1), min_c + int(c1))
+    det.area_px = float(det.mask_crop.sum())
+    return det
 
 
 def straight_track(
@@ -125,3 +165,12 @@ def group_by_frame(detections) -> dict[int, list[Detection]]:
     for d in detections:
         out.setdefault(int(d.frame), []).append(d)
     return out
+
+
+def identity_of(tracks, frame: int, label: int):
+    """The id of the track holding detection ``(frame, label)``, or None."""
+    for tr in tracks:
+        for obs in tr.observations:
+            if obs.frame == frame and obs.det_label == label:
+                return tr.id
+    return None
