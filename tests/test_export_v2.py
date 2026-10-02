@@ -79,8 +79,57 @@ def test_new_columns_are_declared():
             "distance_from_reference_um", "speed_um_per_hr", "acceleration_um_per_hr2",
             "turning_angle_deg", "link_margin_chi2", "segmentation_confidence",
             "detection_source", "z_um", "volume_um3"} <= set(export.TRACK_COLUMNS)
-    assert {"split_suspected", "gap_closed"} <= set(export.EVENT_COLUMNS)
+    assert {"split_suspected_tracks", "gap_closed_tracks"} <= set(export.EVENT_COLUMNS)
     assert {"dx_px", "dy_px", "dz_px", "mahalanobis"} <= set(export.UNLINKED_COLUMNS)
+
+
+def test_every_tracker_event_key_has_a_column():
+    """``write_csv`` drops a key the schema lacks without a word: an empty column."""
+    from corridor.core.tracking import FrameEvent
+
+    event = FrameEvent(
+        frame=3, n_detections=2, n_candidates=2, n_matched=1, n_new=1,
+        n_dormant=0, n_terminated=0, merge_suspected=[4], notes=["x"],
+    )
+    # The 2.0 tracker also records splits and closed gaps; set them when it
+    # has them, so the test checks the keys whichever tracker is installed.
+    for name, value in (("split_suspected", [5]), ("gap_closed", [6])):
+        if hasattr(event, name):
+            setattr(event, name, value)
+    row = event.to_row()
+    assert set(row) <= set(export.EVENT_COLUMNS), set(row) - set(export.EVENT_COLUMNS)
+
+
+def test_every_unlinked_key_has_a_column_and_v1_jumps_survive():
+    """The 1.x tracker's along/across is rotated to dx/dy, never dropped."""
+
+    class V1Unlinked:  # the 1.x ``UnlinkedStart`` fields the writer reads
+        track_id, frame, candidate_track_id, candidate_last_frame = 3, 5, 2, 3
+        gap_frames, distance_px, cost_chi2, refused_because = 2, 22.83, None, "lateral_jump"
+        along_px, across_px, speed_um_per_min = 11.0, 20.0, 0.5
+
+        def describe(self):
+            return "synthetic"
+
+    class Axis:  # straight down the image: u = (0, 1), n = (-1, 0)
+        ux, uy = 0.0, 1.0
+
+    row = export.unlinked_row(V1Unlinked(), axis=Axis())
+    assert set(row) == set(export.UNLINKED_COLUMNS)
+    assert row["dx_px"] == pytest.approx(-20.0) and row["dy_px"] == pytest.approx(11.0)
+    assert row["implied_speed_um_per_hr"] == pytest.approx(30.0)
+    assert row["mahalanobis"] is None and row["dz_px"] is None
+    # No axis: the jump is unknown, not invented.
+    assert export.unlinked_row(V1Unlinked())["dx_px"] is None
+
+
+def test_along_across_inverse_is_exact_for_a_tilted_axis():
+    angle = 0.3
+    ux, uy = np.cos(angle), np.sin(angle)
+    step = np.array([3.0, -7.0])
+    along, across = step @ (ux, uy), step @ (-uy, ux)
+    dx, dy = export.along_across_to_dx_dy(along, across, {"ux": ux, "uy": uy})
+    assert (dx, dy) == (pytest.approx(3.0, abs=1e-12), pytest.approx(-7.0, abs=1e-12))
     assert export.MSD_COLUMNS == [
         "track_id", "lag_frames", "lag_time_min", "lag_time_hr", "n_pairs",
         "msd_um2", "msd_px2",
@@ -175,6 +224,20 @@ def test_sheet_names_follow_excel_rules():
 def test_long_duplicate_names_stay_within_31_characters():
     names = export.sanitise_sheet_names(["b" * 40, "b" * 35])
     assert names == ["b" * 31, "b" * 27 + " (2)"]
+
+
+def test_a_cut_never_leaves_an_apostrophe_at_either_end():
+    """Cutting to 31 characters can expose an apostrophe Excel then rejects."""
+    names = export.sanitise_sheet_names(
+        ["a" * 30 + "'b", "a" * 30 + "'c", "a' '", "' 'x", "c" * 26 + "'" + "d" * 10]
+    )
+    for name in names:
+        assert 1 <= len(name) <= 31
+        assert name[0] != "'" and name[-1] != "'", name
+        assert name == name.strip(), name
+    assert names[0] == "a" * 30
+    assert names[1] == "a" * 27 + " (2)"
+    assert names[2] == "a" and names[3] == "x"
 
 
 def test_xlsx_refuses_an_empty_workbook(tmp_path):

@@ -1,0 +1,3 @@
+severity,code,title,detail,frame,track_id
+info,gap_bridged,Synthetic gap,Synthetic: track 1 reacquired after 1 missing frame.,4,1
+info,fragment,Synthetic fragment,Synthetic: track 3 has 1 observation.,5,3

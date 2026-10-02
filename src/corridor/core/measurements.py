@@ -43,7 +43,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from dataclasses import dataclass, fields
-from typing import TYPE_CHECKING, Any, Iterable, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence
 
 import numpy as np
 
@@ -91,7 +91,8 @@ class TrackSummary:
     path_length_um: float | None
     #: The largest D2S along the track: how far the cell ever got from where
     #: it started, which a cell that went out and came back hides from the net
-    #: displacement.
+    #: displacement.  ``_px`` in isotropic pixels, for uncalibrated data.
+    max_distance_from_start_px: float | None
     max_distance_from_start_um: float | None
     #: Net over path length.  1 for a straight run, 0 for a return trip.
     straightness: float | None
@@ -137,7 +138,11 @@ class TrackSummary:
     #: (``persistence_fit_r2``, ``persistence_fit_lags``); empty when too few
     #: lags qualify or when no decay was observed.  It is the persistence
     #: *time of the fitted model*: a high r² is not proof the cell performs a
-    #: persistent random walk.
+    #: persistent random walk.  ``_frames`` is the fitted value itself and
+    #: needs no time calibration: without one the fit and its quality are still
+    #: honest, and dropping the time while keeping the r² would report the
+    #: quality of a number nobody can see.
+    persistence_time_frames: float | None
     persistence_time_min: float | None
     persistence_time_hr: float | None
     persistence_fit_r2: float | None
@@ -570,6 +575,49 @@ def _turning_angle_deg(a: np.ndarray, b: np.ndarray) -> float | None:
 # --------------------------------------------------------------------------
 
 
+#: Observation pairs materialised at once by :func:`_sum_pairs_by_lag`.  Each
+#: pair costs a few dozen bytes of index, lag and difference arrays, so this
+#: bounds the transient at roughly 10-20 MB whatever the track length.
+_PAIRS_PER_CHUNK = 1 << 18
+
+
+def _sum_pairs_by_lag(
+    frames: np.ndarray,
+    weights: Sequence[Callable[[np.ndarray, np.ndarray], np.ndarray]],
+) -> tuple[np.ndarray, list[np.ndarray]]:
+    """Pair count and per-quantity sums, indexed by frame lag, over all ``i < j``.
+
+    ``frames`` must be sorted.  ``weights[q](i, j)`` gives quantity ``q`` for
+    the index pairs ``(i, j)``.  Pairs are visited by index offset
+    ``k = j - i``, a batch of offsets at a time, so peak memory is
+    O(``_PAIRS_PER_CHUNK`` + span), not O(n^2): all n(n-1)/2 pairs at once
+    (``np.triu_indices``) is 12.5 M pairs and hundreds of MB transient for a
+    5000-point track.  One ``bincount`` per quantity per batch, never one mask
+    per lag, which is cubic in the track length and took minutes on a
+    2000-point track.
+    """
+    n = len(frames)
+    size = int(frames[-1] - frames[0]) + 1 if n else 1
+    counts = np.zeros(size, dtype=np.int64)
+    sums = [np.zeros(size, dtype=float) for _ in weights]
+    offset = 1
+    while offset < n:
+        stop, total = offset, 0
+        while stop < n and (stop == offset or total + (n - stop) <= _PAIRS_PER_CHUNK):
+            total += n - stop
+            stop += 1
+        ks = np.arange(offset, stop)
+        lengths = n - ks
+        i = np.concatenate([np.arange(length) for length in lengths])
+        j = i + np.repeat(ks, lengths)
+        lags = frames[j] - frames[i]  # >= 0: frames are sorted
+        counts += np.bincount(lags, minlength=size)
+        for acc, weight in zip(sums, weights):
+            acc += np.bincount(lags, weights=weight(i, j), minlength=size)
+        offset = stop
+    return counts, sums
+
+
 def _msd_by_lag(g: _TrackGeometry) -> dict[int, list[float]]:
     """``lag -> [n_pairs, sum_sq_px, sum_sq_um]`` over every observation pair.
 
@@ -582,21 +630,14 @@ def _msd_by_lag(g: _TrackGeometry) -> dict[int, list[float]]:
     out: dict[int, list[float]] = {}
     if n < 2:
         return out
-    i, j = np.triu_indices(n, k=1)
-    lags = g.frames[j] - g.frames[i]  # >= 0: frames are sorted
-    # One pass per quantity (bincount), not one mask per lag: the latter is
-    # cubic in the track length and took minutes on a 2000-point track.
-    counts = np.bincount(lags)
-    sum_px = (
-        np.bincount(lags, weights=np.sum((g.px[j] - g.px[i]) ** 2, axis=1))
-        if g.px is not None
-        else None
-    )
-    sum_um = (
-        np.bincount(lags, weights=np.sum((g.um[j] - g.um[i]) ** 2, axis=1))
-        if g.um is not None
-        else None
-    )
+
+    def sq(pos: np.ndarray):
+        return lambda i, j: np.sum((pos[j] - pos[i]) ** 2, axis=1)
+
+    quantities = [p for p in (g.px, g.um) if p is not None]
+    counts, sums = _sum_pairs_by_lag(g.frames, [sq(p) for p in quantities])
+    sum_px = sums.pop(0) if g.px is not None else None
+    sum_um = sums.pop(0) if g.um is not None else None
     for lag in np.flatnonzero(counts):
         if lag <= 0:
             continue  # duplicate frames: not a time lag
@@ -741,10 +782,9 @@ def directional_autocorrelation(
         return {}
     u = np.asarray(units)
     e = np.asarray(ends)
-    i, j = np.triu_indices(len(units), k=1)
-    lags = e[j] - e[i]
-    counts = np.bincount(lags)
-    sums = np.bincount(lags, weights=np.einsum("ij,ij->i", u[i], u[j]))
+    counts, (sums,) = _sum_pairs_by_lag(
+        e, [lambda i, j: np.einsum("ij,ij->i", u[i], u[j])]
+    )
     return {
         int(lag): (float(sums[lag] / counts[lag]), int(counts[lag]))
         for lag in np.flatnonzero(counts)
@@ -860,6 +900,11 @@ def summarise(
 
         net_px = _finite(_norm(g.px[-1] - g.px[0])) if g.px is not None else None
         net_um = _finite(_norm(g.um[-1] - g.um[0])) if g.um is not None else None
+        max_d2s_px = (
+            _finite(float(np.max(np.linalg.norm(g.px - g.px[0], axis=1))))
+            if g.px is not None
+            else None
+        )
         max_d2s_um = (
             _finite(float(np.max(np.linalg.norm(g.um - g.um[0], axis=1))))
             if g.um is not None
@@ -928,6 +973,7 @@ def summarise(
                 net_displacement_um=net_um,
                 path_length_px=path_px,
                 path_length_um=path_um,
+                max_distance_from_start_px=max_d2s_px,
                 max_distance_from_start_um=max_d2s_um,
                 straightness=(
                     net_px / path_px
@@ -956,6 +1002,7 @@ def summarise(
                 ),
                 mean_turning_angle_deg=_mean(turning),
                 directional_autocorrelation=curve[1][0] if 1 in curve else None,
+                persistence_time_frames=persistence[0] if persistence else None,
                 persistence_time_min=p_min,
                 persistence_time_hr=None if p_min is None else p_min / MIN_PER_HR,
                 persistence_fit_r2=persistence[1] if persistence else None,

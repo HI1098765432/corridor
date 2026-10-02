@@ -1,12 +1,27 @@
 """Build the synthetic legacy-run fixtures in this folder.
 
 Every number here is invented (the repository is public; no cell data is
-copied).  What is real is the *shape* of each release's output: the column
-headers of every CSV and the key structure of ``run.json``, read from runs
-written by Corridor 1.0.0, 1.1.0 and 1.3.0 (1.2.0 wrote the same files as
-1.3.0), and the v1 arithmetic that filled them (``measurements.py`` at the
-``shipped-1.3.0`` tag), so the values are what that release would have
-written for these positions.
+copied).  What is real is the *shape* of each release's output: the file set,
+the column headers of every CSV and the key structure of ``run.json``, read
+from runs written by Corridor 1.0.0, 1.1.0, 1.2.0 and 1.3.0, and the v1
+arithmetic that filled them (``measurements.py`` at the ``shipped-1.3.0``
+tag), so the values are what that release would have written for these
+positions.
+
+1.2.0 is not one shape.  Its CSV headers equal 1.3.0's in every run on disk,
+but its ``run.json`` came in three key sets as the 1.2.0 builds evolved:
+``build/rec_*`` match 1.3.0 exactly; ``build/e2e_ensemble`` lacks
+``segmentation/ensemble_passes_requested``, ``ensemble_models_unavailable``
+and ``recovery/interior``/``trailing``; ``build/e2e_check`` also lacks every
+normalisation and ensemble key and ``detections_from_fallback``.  The
+``v1_2_0`` fixture takes the sparsest (``e2e_check``), because the 1.3.0
+fixture already covers the full set.
+
+1.0.0 wrote ``unlinked_starts.csv`` only when a track began mid-stack
+(``data/_runs/052924_t3_dual`` has one, the other 1.0.0 runs none); the
+fixture has one, and a test removes it to cover the other case.  Every real
+run also holds ``masks_raw.npz`` (the masks before size filtering, same
+shape and dtype); the fixtures carry one so the file set matches.
 
 The synthetic movie: 6 frames of 60 x 40 px at 0.5 µm/px and 10 min/frame.
 
@@ -242,7 +257,7 @@ def manifest(version: str) -> dict:
         "channels": [0, 0],
         "normalize": True,
     }
-    if version == "1.3.0":
+    if version == "1.3.0":  # the 1.2.0 fixture is the e2e_check key set: none of these
         segmentation.update({
             "normalisation_mode": "whole_frame", "normalize_percentiles": [1.0, 99.0],
             "normalize_tile_px": 0, "normalize_sharpen_px": 0, "ensemble": "off",
@@ -309,8 +324,8 @@ def manifest(version: str) -> dict:
             "max_offset_lengths": 1.0, "attempted": 1, "recovered": 1,
             "by_tier": {"intensity": 1},
         }
-    elif version == "1.3.0":
-        data["recovery"] = {
+    elif version in ("1.2.0", "1.3.0"):
+        recovery = {
             "enabled": True, "interior": True, "trailing": False, "window": True,
             "permissive": True, "intensity": True, "window_scale": 2.2, "window_min_px": 48,
             "permissive_cellprob": -2.0, "permissive_flow": 0.8, "intensity_snr": 4.0,
@@ -318,6 +333,10 @@ def manifest(version: str) -> dict:
             "intensity_min_eccentricity": 0.8, "intensity_max_channel_offset": 0.5,
             "max_offset_lengths": 1.0, "attempted": 1, "recovered": 1, "by_tier": {},
         }
+        if version == "1.2.0":  # interior/trailing arrived within 1.2.0 (e2e_check lacks them)
+            del recovery["interior"], recovery["trailing"]
+            recovery["by_tier"] = {"intensity": 1}
+        data["recovery"] = recovery
     tracks = tracks_by_id(version)
     data["results"] = {
         "n_detections": sum(n_by_frame), "n_tracks": len(tracks),
@@ -333,7 +352,8 @@ def build(version: str) -> None:
     out = HERE / ("v" + version.replace(".", "_"))
     later = version != "1.0.0"
     write(out / "tracks.csv", TRACKS_1_1 if later else TRACKS_1_0, track_rows(version))
-    write(out / "track_summary.csv", SUMMARY_1_3 if version == "1.3.0" else SUMMARY_1_0,
+    write(out / "track_summary.csv",
+          SUMMARY_1_3 if version in ("1.2.0", "1.3.0") else SUMMARY_1_0,
           summary_rows(version))
     write(out / "detections.csv", DETECTIONS_1_1 if later else DETECTIONS_1_0,
           detection_rows(version))
@@ -374,8 +394,22 @@ def build(version: str) -> None:
              "would_have_cost_chi2": None, "refused_because": "lateral_jump",
              "explanation": "Synthetic: would have had to jump sideways."},
         ])
+    else:
+        # 1.0.0 has no recovered frame 3, so track 2 ends at (31, 47) at frame
+        # 2.  Step to (10, 55): (-21, 8); along u=(0,1) is 8, across n=(-1,0) 21.
+        write(out / "unlinked_starts.csv", UNLINKED, [
+            {"track_id": 3, "starts_at_frame": 5, "nearest_earlier_track": 2,
+             "that_track_ended_at_frame": 2, "gap_frames": 3,
+             "distance_px": math.hypot(21.0, 8.0), "along_channel_px": 8.0,
+             "across_channel_px": 21.0,
+             "implied_speed_um_per_min": math.hypot(21.0, 8.0) * PIXEL_UM / 30.0,
+             "would_have_cost_chi2": None, "refused_because": "lateral_jump",
+             "explanation": "Synthetic: would have had to jump sideways."},
+        ])
     (out / "run.json").write_text(json.dumps(manifest(version), indent=2), encoding="utf-8")
     np.savez_compressed(out / "masks.npz", masks=masks(version))
+    # The unfiltered masks; nothing synthetic is filtered, so they are equal.
+    np.savez_compressed(out / "masks_raw.npz", masks=masks(version))
 
 
 def build_db_copies() -> None:
@@ -411,7 +445,7 @@ def build_db_copies() -> None:
 
 
 if __name__ == "__main__":
-    for v in ("1.0.0", "1.1.0", "1.3.0"):
+    for v in ("1.0.0", "1.1.0", "1.2.0", "1.3.0"):
         build(v)
     build_db_copies()
     print("fixtures written to", HERE)

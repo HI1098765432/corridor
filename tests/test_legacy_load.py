@@ -1,9 +1,11 @@
 """Every output a 1.x release wrote must still open, upgraded in memory (§7).
 
 The fixtures in ``tests/fixtures/legacy`` are synthetic numbers in the exact
-file layout, column headers and ``run.json`` key structure of 1.0.0, 1.1.0
-and 1.3.0 (1.2.0 wrote what 1.3.0 did); ``make_fixtures.py`` there says how
-they were built.  The last test opens every real legacy run present on disk.
+file set, column headers and ``run.json`` key structure of 1.0.0, 1.1.0,
+1.2.0 and 1.3.0.  1.2.0's ``run.json`` came in three key sets as its builds
+evolved; the fixture is the sparsest, and ``make_fixtures.py`` there lists
+all three and says how the fixtures were built.  The last tests open every
+real legacy run present on disk.
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from corridor.store.project import (
 )
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "legacy"
-VERSIONS = {"v1_0_0": "1.0.0", "v1_1_0": "1.1.0", "v1_3_0": "1.3.0"}
+VERSIONS = {"v1_0_0": "1.0.0", "v1_1_0": "1.1.0", "v1_2_0": "1.2.0", "v1_3_0": "1.3.0"}
 
 
 @pytest.fixture(params=sorted(VERSIONS))
@@ -140,7 +142,7 @@ def test_provenance_and_recovery_from_1_1_0(legacy):
         # 1.0.0 had no recovery and recorded no provenance: every position was primary.
         assert [r["frame"] for r in track2] == [1, 2]
         assert {r["detection_source"] for r in track2} == {"primary"}
-        assert analysis.recovery == [] and analysis.unlinked == []
+        assert analysis.recovery == []
         return
     assert track2[-1]["detection_source"] == "intensity"
     assert track2[-1]["segmentation_confidence"] == pytest.approx(0.4)
@@ -150,15 +152,31 @@ def test_provenance_and_recovery_from_1_1_0(legacy):
 
 
 def test_unlinked_along_across_becomes_dx_dy(legacy):
+    """Track 3 starts at (10, 55); the jump is from where track 2 ended.
+
+    1.0.0 never recovered track 2's frame-3 position, so there it ended at
+    (31, 47) at frame 2: a jump of (-21, 8).  From 1.1.0 it ended at (30, 44)
+    at frame 3: (-20, 11).
+    """
     version, analysis = legacy
-    if version == "1.0.0":
-        pytest.skip("1.0.0 wrote no unlinked_starts.csv")
     row = next(r for r in analysis.unlinked if r["track_id"] == 3)
-    assert row["dx_px"] == pytest.approx(-20.0)
-    assert row["dy_px"] == pytest.approx(11.0)
-    assert "along_channel_px" not in row and "across_channel_px" not in row
-    assert row["mahalanobis"] is None if "mahalanobis" in row else True
+    dx, dy = (-21.0, 8.0) if version == "1.0.0" else (-20.0, 11.0)
+    assert row["dx_px"] == pytest.approx(dx)
+    assert row["dy_px"] == pytest.approx(dy)
+    # Exactly the v2 columns: no v1 name survives and no v2 name is missing.
+    assert set(row) == set(export.UNLINKED_COLUMNS)
+    assert row["mahalanobis"] is None and row["dz_px"] is None
     assert row["implied_speed_um_per_hr"] == pytest.approx(row["implied_speed_um_per_min"] * 60)
+
+
+def test_a_1_0_0_run_without_unlinked_starts_loads(tmp_path):
+    """Most 1.0.0 runs have no unlinked_starts.csv: nothing began mid-stack."""
+    run = tmp_path / "run"
+    shutil.copytree(FIXTURES / "v1_0_0", run)
+    (run / "unlinked_starts.csv").unlink()
+    analysis = load_analysis(run)
+    assert analysis.unlinked == []
+    assert analysis.track_ids() == [1, 2, 3]
 
 
 def test_text_that_looks_like_a_number_stays_text(legacy):
@@ -243,7 +261,8 @@ def test_the_database_copies_of_a_v1_project_still_load(tmp_path, monkeypatch):
 
 
 def _real_runs() -> list[Path]:
-    """Runs under ``data/_runs`` and ``build/baseline_v1.3.0``.
+    """Runs under ``data/_runs``, ``build/baseline_v1.3.0`` (1.3.0), and
+    ``build/rec_*`` and ``build/e2e_*`` (the 1.2.0 builds, all three key sets).
 
     Looked for in this checkout and, when set, under ``CORRIDOR_LEGACY_ROOT``
     (a worktree has no data/ or build/ of its own).  Read only.
@@ -253,7 +272,10 @@ def _real_runs() -> list[Path]:
         roots.append(Path(os.environ["CORRIDOR_LEGACY_ROOT"]))
     found: dict[str, Path] = {}
     for root in roots:
-        for pattern in ("data/_runs/*/run.json", "build/baseline_v1.3.0/*/run.json"):
+        for pattern in (
+            "data/_runs/*/run.json", "build/baseline_v1.3.0/*/run.json",
+            "build/rec_*/run.json", "build/e2e_*/run.json",
+        ):
             for manifest in glob.glob(str(root / pattern)):
                 found.setdefault(str(Path(manifest).parent.resolve()), Path(manifest).parent)
     return sorted(found.values())
@@ -282,3 +304,28 @@ def test_every_real_legacy_run_loads(run):
     assert [s["track_id"] for s in analysis.summaries] == analysis.track_ids()
     multi = {s["track_id"] for s in analysis.summaries if s["n_observations"] >= 2}
     assert {r["track_id"] for r in analysis.msd} == multi
+
+
+@pytest.mark.skipif(not REAL_RUNS, reason="no legacy runs on disk")
+@pytest.mark.parametrize(
+    "run", REAL_RUNS, ids=[f"{p.parent.name}/{p.name}" for p in REAL_RUNS]
+)
+def test_every_real_unlinked_jump_is_rotated_back_exactly(run):
+    """dx/dy must re-project onto the run's own axis as the along/across it wrote."""
+    analysis = load_analysis(run)
+    raw = read_table(run / "unlinked_starts.csv")
+    assert len(analysis.unlinked) == len(raw)
+    axis = analysis.manifest.get("confinement") or {}
+    ux, uy = axis.get("ux"), axis.get("uy")
+    for old, new in zip(raw, analysis.unlinked):
+        assert set(new) == set(export.UNLINKED_COLUMNS)
+        assert new["track_id"] == old["track_id"]
+        if old.get("along_channel_px") is None or old.get("across_channel_px") is None:
+            assert new["dx_px"] is None and new["dy_px"] is None
+            continue
+        assert new["dx_px"] * ux + new["dy_px"] * uy == pytest.approx(
+            old["along_channel_px"], abs=1e-9
+        )
+        assert -new["dx_px"] * uy + new["dy_px"] * ux == pytest.approx(
+            old["across_channel_px"], abs=1e-9
+        )

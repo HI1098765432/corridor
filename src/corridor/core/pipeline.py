@@ -372,21 +372,10 @@ def save_result(result: AnalysisResult, out_dir: Path) -> None:
     export.write_csv(
         out_dir / F_UNLINKED,
         export.UNLINKED_COLUMNS,
+        # Schema 2 has no along/across columns: export.unlinked_row writes the
+        # jump as dx/dy (rotated back with the axis while the 1.x tracker runs).
         [
-            {
-                "track_id": u.track_id,
-                "starts_at_frame": u.frame,
-                "nearest_earlier_track": u.candidate_track_id,
-                "that_track_ended_at_frame": u.candidate_last_frame,
-                "gap_frames": u.gap_frames,
-                "distance_px": u.distance_px,
-                "along_channel_px": u.along_px,
-                "across_channel_px": u.across_px,
-                "implied_speed_um_per_min": u.speed_um_per_min,
-                "would_have_cost_chi2": u.cost_chi2,
-                "refused_because": u.refused_because,
-                "explanation": u.describe(),
-            }
+            export.unlinked_row(u, axis=getattr(result, "axis", None))
             for u in result.unlinked
         ],
     )

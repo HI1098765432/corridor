@@ -68,8 +68,12 @@ _INTEGER = {
 #: came back as a float -- ``float()`` parses all of those.
 _TEXT = {
     "cellpose_message", "track_flags", "flags", "detection_source", "source",
-    "found_by", "detail", "notes", "merge_suspected_tracks", "split_suspected",
-    "gap_closed", "severity", "code", "title", "refused_because", "explanation",
+    "found_by", "detail", "notes", "merge_suspected_tracks",
+    # The tracker's spelling (``FrameEvent.to_row``), and the bare names an
+    # early 2.0 draft of ``EVENT_COLUMNS`` used: a list holding one id reads
+    # "3", which ``float()`` would otherwise turn into 3.0.
+    "split_suspected_tracks", "gap_closed_tracks", "split_suspected", "gap_closed",
+    "severity", "code", "title", "refused_because", "explanation",
     "dimensionality",
 }
 
@@ -382,23 +386,29 @@ def _min_observations(manifest: dict[str, Any]) -> int:
 
 
 def _upgrade_unlinked(rows: list[dict[str, Any]], confinement: dict[str, Any]) -> list[dict[str, Any]]:
-    """v1 ``along/across_channel_px`` back to ``dx/dy_px``.
+    """v1 rows normalised to exactly ``UNLINKED_COLUMNS``.
 
-    v1 computed ``along = step @ u`` and ``across = step @ n`` with
-    ``u = (ux, uy)`` and ``n = (-uy, ux)`` (confinement.py), a rotation, so
-    ``step = along * u + across * n`` recovers it exactly.  ``mahalanobis``
-    did not exist in v1 and stays empty.
+    ``along/across_channel_px`` go back to ``dx/dy_px`` through the run's
+    recorded axis (``export.along_across_to_dx_dy``, an exact inverse).
+    ``dz_px`` and ``mahalanobis`` did not exist in v1: present and empty, so a
+    consumer indexing ``row["mahalanobis"]`` behaves the same on a v1 run as
+    on a v2 one instead of raising KeyError on v1 only.
+
+    A run written by the transition pipeline (2.0 column names, no
+    ``schema_version`` in run.json yet) is also read as v1: its rows already
+    hold ``dx/dy_px`` and no along/across, and those are kept, not blanked.
     """
-    ux, uy = confinement.get("ux"), confinement.get("uy")
     out = []
     for row in rows:
-        new = {k: v for k, v in row.items() if k not in ("along_channel_px", "across_channel_px")}
-        along, across = row.get("along_channel_px"), row.get("across_channel_px")
-        if None not in (ux, uy, along, across):
-            new["dx_px"] = along * ux - across * uy
-            new["dy_px"] = along * uy + across * ux
+        new = {key: row.get(key) for key in export.UNLINKED_COLUMNS}
+        if "along_channel_px" in row or "across_channel_px" in row:
+            new["dx_px"], new["dy_px"] = export.along_across_to_dx_dy(
+                row.get("along_channel_px"), row.get("across_channel_px"), confinement
+            )
         speed = row.get("implied_speed_um_per_min")
-        new["implied_speed_um_per_hr"] = speed * 60.0 if isinstance(speed, float) else None
+        new["implied_speed_um_per_hr"] = (
+            speed * 60.0 if isinstance(speed, (int, float)) and not isinstance(speed, bool) else None
+        )
         out.append(new)
     return out
 

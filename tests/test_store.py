@@ -174,7 +174,8 @@ def _write_minimal_analysis(directory: Path, *, schema_version: int | None = 2) 
     export.write_csv(directory / pipeline.F_QC, export.QC_COLUMNS, [])
     export.write_csv(
         directory / pipeline.F_EVENTS, export.EVENT_COLUMNS,
-        [{"frame": 1, "detections": 1, "merge_suspected_tracks": "3", "gap_closed": "1"}],
+        [{"frame": 1, "detections": 1, "merge_suspected_tracks": "3",
+          "split_suspected_tracks": "4", "gap_closed_tracks": "1"}],
     )
     export.write_csv(
         directory / pipeline.F_RECOVERY, export.RECOVERY_COLUMNS,
@@ -216,7 +217,10 @@ def test_saved_analysis_round_trip(tmp_path):
     assert analysis.msd_for_track(1)[0]["msd_um2"] == pytest.approx(87.27)
     assert analysis.masks.shape == (2, 50, 30)
     # Loaded in 2.0, never in 1.x.
-    assert analysis.events[0]["gap_closed"] == "1"
+    # A single id is text, not the float 1.0 (the _coerce trap).
+    assert analysis.events[0]["gap_closed_tracks"] == "1"
+    assert analysis.events[0]["split_suspected_tracks"] == "4"
+    assert analysis.events[0]["merge_suspected_tracks"] == "3"
     assert analysis.recovery[0]["recovered"] is False
 
 
@@ -273,6 +277,20 @@ def test_integer_columns_are_never_truncated(tmp_path):
     assert row["track_id"] == 7 and isinstance(row["track_id"], int)
     assert row["label"] == "x9", "kept as written rather than replaced by None"
     assert row["unknown"] == "nan", "the writer never emits NaN; this cell is text"
+
+
+def test_event_id_lists_stay_text_in_either_spelling(tmp_path):
+    """The tracker's ``*_tracks`` names and the bare draft names are both text."""
+    path = tmp_path / "e.csv"
+    path.write_text(
+        "frame,split_suspected,gap_closed,split_suspected_tracks,gap_closed_tracks\n"
+        "2,3,4,5,6\n",
+        encoding="utf-8",
+    )
+    assert read_table(path) == [{
+        "frame": 2, "split_suspected": "3", "gap_closed": "4",
+        "split_suspected_tracks": "5", "gap_closed_tracks": "6",
+    }]
 
 
 def test_booleans_come_back_as_booleans(tmp_path):
@@ -467,3 +485,45 @@ def test_naming_an_output_directory_runs_headless():
     assert wants_interface(parser.parse_args(["movie.tif", "--headless"])) is False
     # An explicit --gui still wins, even with an output directory.
     assert wants_interface(parser.parse_args(["--gui", "movie.tif", "-o", "out"])) is True
+
+
+def test_the_transition_pipeline_keeps_the_unlinked_jump(tmp_path, vertical_axis):
+    """pipeline.save_result must write dx/dy, and loading must keep them.
+
+    Schema 2 has no along/across columns and ``write_csv`` drops unknown keys,
+    so writing the 1.x tracker's along/across under their v1 names lost the
+    jump for good.  The run this writes has no ``schema_version`` yet, so it
+    is loaded through the v1 upgrade, which must not blank what is there.
+    """
+    import types
+    from dataclasses import fields as dc_fields
+
+    from corridor.core.config import Scale
+    from corridor.core.tracking import UnlinkedStart
+
+    names = {f.name for f in dc_fields(UnlinkedStart)}
+    jump = (
+        {"along_px": 11.0, "across_px": 20.0}  # 1.x tracker: axis frame
+        if "along_px" in names
+        else {"dx_px": -20.0, "dy_px": 11.0}  # 2.0 tracker: image frame
+    )
+    unlinked = UnlinkedStart(
+        track_id=3, frame=5, candidate_track_id=2, candidate_last_frame=3, gap_frames=2,
+        distance_px=22.8, speed_um_per_min=0.5, cost_chi2=40.0, **jump,
+    )
+    result = types.SimpleNamespace(
+        scale=Scale.from_values(0.5, 10.0),
+        metadata=types.SimpleNamespace(source_frames=list(range(6))),
+        all_detections=[], rows=[], summaries=[], events=[], issues=[], recovery=None,
+        segmentation=types.SimpleNamespace(diagnostics=[], masks=np.zeros((6, 8, 8), np.int32)),
+        unlinked=[unlinked], axis=vertical_axis,
+        manifest={"input": {"shape_tyx": [6, 8, 8]}, "confinement": vertical_axis.to_dict()},
+    )
+    pipeline.save_result(result, tmp_path / "run")
+
+    (written,) = read_table(tmp_path / "run" / pipeline.F_UNLINKED)
+    assert written["dx_px"] == pytest.approx(-20.0) and written["dy_px"] == pytest.approx(11.0)
+    assert written["implied_speed_um_per_hr"] == pytest.approx(30.0)
+    (loaded,) = load_analysis(tmp_path / "run").unlinked
+    assert loaded["dx_px"] == pytest.approx(-20.0) and loaded["dy_px"] == pytest.approx(11.0)
+    assert set(loaded) == set(export.UNLINKED_COLUMNS)

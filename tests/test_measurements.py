@@ -270,6 +270,8 @@ def test_speeds_are_absent_rather_than_wrong_without_a_calibration():
     assert summary.net_speed_px_per_frame == pytest.approx(20.0)
     assert summary.mean_speed_px_per_frame == pytest.approx(20.0)
     assert summary.net_displacement_px == pytest.approx(80.0)
+    assert summary.max_distance_from_start_px == pytest.approx(80.0)
+    assert summary.max_distance_from_start_um is None
 
 
 def test_a_track_seen_only_once_has_no_speed_at_all(scale):
@@ -302,6 +304,60 @@ def test_three_d_summary_needs_a_z_step():
     for name in ("path_length_um", "net_displacement_um", "net_displacement_px",
                  "mean_speed_um_per_hr", "straightness", "msd_alpha"):
         assert getattr(without_z, name) is None, name
+
+
+# --------------------------------------------------------------------------
+# The units invariant, end to end through the tracker
+# --------------------------------------------------------------------------
+
+
+def _track_with_tracker(detections, n_frames, scale, config, axis):
+    """Call ``track_detections`` in whichever signature the installed tracker has.
+
+    The 1.x tracker takes ``(dets, n, axis, scale, cfg)``; the 2.0 tracker
+    takes ``(dets, n, scale, cfg)`` (and accepts the v1 order only during the
+    transition).  Reading the signature keeps this test valid before, during
+    and after that change.
+    """
+    import inspect
+
+    from corridor.core.tracking import track_detections
+
+    params = list(inspect.signature(track_detections).parameters)
+    if len(params) > 2 and params[2] == "axis":
+        return track_detections(detections, n_frames, axis, scale, config)
+    return track_detections(detections, n_frames, scale, config)
+
+
+def test_uncalibrated_defaults_refuse_rather_than_guess(vertical_axis, tracking_config):
+    """The physical defaults must not quietly become plausible pixel values.
+
+    5 um/min read as 5 px/frame rejects a 20 px step.  Producing fragments plus
+    a loud calibration warning is the honest outcome; inventing a pixel size
+    would not be.  (Kept here as well as in the tracker's tests: it is the
+    measurement-unit invariant seen from the tracker's side.)
+    """
+    bare = Scale.from_values(None, None)
+    tracks, _ = _track_with_tracker(
+        straight_track(4, step=20.0), 4, bare, tracking_config, vertical_axis
+    )
+    assert len(tracks) == 4, "each detection should stand alone under the px reading"
+
+
+def test_a_bridged_gap_reaches_the_measurements_as_one_track(
+    vertical_axis, scale, tracking_config
+):
+    """Net speed survives a missed detection only if the tracker bridges it."""
+    complete, _ = _track_with_tracker(
+        straight_track(11, step=20.0), 11, scale, tracking_config, vertical_axis
+    )
+    gappy, _ = _track_with_tracker(
+        straight_track(11, step=20.0, skip={4, 7}), 11, scale, tracking_config, vertical_axis
+    )
+    assert len(gappy) == 1, "the gap must be bridged, not split"
+    assert summarise(gappy, scale)[0].net_speed_um_per_min == pytest.approx(
+        summarise(complete, scale)[0].net_speed_um_per_min, rel=1e-9
+    )
 
 
 # --------------------------------------------------------------------------

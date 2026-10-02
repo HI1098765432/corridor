@@ -199,8 +199,83 @@ def test_persistence_time_of_a_heading_diffusion_walk():
     assert lag1 == pytest.approx(math.exp(-(sigma**2) / 2.0), abs=0.005)
     persistence_frames = [s.persistence_time_min / 10.0 for s in summaries]
     assert np.median(persistence_frames) == pytest.approx(truth, rel=0.25)
+    assert all(
+        s.persistence_time_frames == pytest.approx(s.persistence_time_min / 10.0)
+        for s in summaries
+    )
     # Reported only with its fit quality.
     assert all(s.persistence_fit_r2 is not None and s.persistence_fit_lags for s in summaries)
     assert all(
         s.persistence_time_hr == pytest.approx(s.persistence_time_min / 60.0) for s in summaries
     )
+
+
+def test_without_a_time_calibration_the_fitted_persistence_is_kept_in_frames():
+    """The fit and its quality need no clock; only the minutes do."""
+    rng = np.random.default_rng(11)
+    theta = np.cumsum(rng.normal(scale=0.3, size=200))
+    steps = np.column_stack([np.cos(theta), np.sin(theta)])
+    (summary,) = summarise(
+        [track(np.vstack([[0, 0], np.cumsum(steps, axis=0)]))], Scale.from_values(0.5, None)
+    )
+    assert summary.persistence_fit_r2 is not None and summary.persistence_fit_lags
+    assert summary.persistence_time_frames is not None and summary.persistence_time_frames > 0
+    assert summary.persistence_time_min is None and summary.persistence_time_hr is None
+
+
+def test_max_distance_from_start_has_a_pixel_counterpart():
+    points = [(0, 0), (30, 40), (6, 8)]  # 50 px out, then most of the way back
+    (bare,) = summarise([track(points)], Scale.from_values(None, None))
+    assert bare.max_distance_from_start_px == pytest.approx(50.0)
+    assert bare.max_distance_from_start_um is None
+    (calibrated,) = summarise([track(points)], Scale.from_values(0.5, 10.0))
+    assert calibrated.max_distance_from_start_um == pytest.approx(25.0)
+
+
+def _brute_force_msd(points, frames):
+    """Every pair, one at a time: the definition, with no batching to get wrong."""
+    sums: dict[int, list[float]] = {}
+    for a in range(len(frames)):
+        for b in range(a + 1, len(frames)):
+            d2 = (points[b][0] - points[a][0]) ** 2 + (points[b][1] - points[a][1]) ** 2
+            acc = sums.setdefault(frames[b] - frames[a], [0, 0.0])
+            acc[0] += 1
+            acc[1] += d2
+    return {lag: (n, s / n) for lag, (n, s) in sums.items()}
+
+
+@pytest.mark.parametrize("chunk", [1, 7, 1 << 18])
+def test_batched_pair_sums_match_the_definition(monkeypatch, chunk):
+    """Batch boundaries must not drop or double-count a pair.
+
+    A chunk of 1 forces one index offset per batch, 7 splits offsets
+    mid-way, and the default takes this track in one batch.
+    """
+    from corridor.core import measurements
+
+    monkeypatch.setattr(measurements, "_PAIRS_PER_CHUNK", chunk)
+    rng = np.random.default_rng(3)
+    frames = sorted(rng.choice(60, size=25, replace=False).tolist())
+    points = rng.normal(scale=4.0, size=(25, 2)).tolist()
+    expected = _brute_force_msd(points, frames)
+    rows = by_lag(msd_rows([track(points, frames=frames)], UNIT))
+    assert set(rows) == set(expected)
+    for lag, (n_pairs, msd) in expected.items():
+        assert rows[lag]["n_pairs"] == n_pairs
+        assert rows[lag]["msd_px2"] == pytest.approx(msd, rel=1e-12)
+
+
+def test_a_long_track_is_measured_in_bounded_memory():
+    """5000 points is 12.5 M pairs: all at once was hundreds of MB transient."""
+    import tracemalloc
+
+    rng = np.random.default_rng(5)
+    points = np.cumsum(rng.normal(size=(5000, 2)), axis=0)
+    tracemalloc.start()
+    try:
+        rows = msd_rows([track(points)], UNIT)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert len(rows) == 4999 and rows[0]["n_pairs"] == 4999
+    assert peak < 64 * 2**20, f"peak {peak / 2**20:.0f} MB"

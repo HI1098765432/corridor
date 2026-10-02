@@ -97,14 +97,14 @@ SUMMARY_COLUMNS = [
     "duration_min", "duration_hr",
     "net_displacement_px", "net_displacement_um",
     "path_length_px", "path_length_um",
-    "max_distance_from_start_um", "straightness",
+    "max_distance_from_start_px", "max_distance_from_start_um", "straightness",
     "mean_speed_um_per_min", "median_speed_um_per_min", "max_speed_um_per_min",
     "mean_speed_um_per_hr", "median_speed_um_per_hr", "max_speed_um_per_hr",
     "net_speed_um_per_min", "net_speed_um_per_hr",
     "path_speed_um_per_min", "path_speed_um_per_hr",
     "mean_speed_px_per_frame", "net_speed_px_per_frame",
     "mean_turning_angle_deg", "directional_autocorrelation",
-    "persistence_time_min", "persistence_time_hr",
+    "persistence_time_frames", "persistence_time_min", "persistence_time_hr",
     "persistence_fit_r2", "persistence_fit_lags",
     "msd_alpha", "msd_alpha_r2", "msd_fit_lags",
     "mean_area_px", "mean_area_um2", "mean_volume_um3",
@@ -123,12 +123,15 @@ DIAGNOSTIC_COLUMNS = [
     "removed_max_extent_px", "removed_max_area_px", "cellpose_message",
 ]
 
-#: ``split_suspected`` and ``gap_closed`` hold ";"-joined track ids, like
-#: ``merge_suspected_tracks``.
+#: ``split_suspected_tracks`` and ``gap_closed_tracks`` hold ";"-joined track
+#: ids, like ``merge_suspected_tracks``.  These are exactly the keys
+#: ``tracking.FrameEvent.to_row`` emits: ``write_csv`` drops a key that is not
+#: listed here without a word, so a spelling that differs from the tracker's
+#: is a silently empty column (tests/test_export_v2.py holds the two together).
 EVENT_COLUMNS = [
     "frame", "detections", "candidate_tracks", "matched", "new_tracks",
     "dormant", "terminated", "merge_suspected_tracks",
-    "split_suspected", "gap_closed", "notes",
+    "split_suspected_tracks", "gap_closed_tracks", "notes",
 ]
 
 QC_COLUMNS = ["severity", "code", "title", "detail", "frame", "track_id"]
@@ -152,6 +155,63 @@ UNLINKED_COLUMNS = [
     "implied_speed_um_per_min", "implied_speed_um_per_hr",
     "would_have_cost_chi2", "refused_because", "explanation",
 ]
+
+
+def along_across_to_dx_dy(
+    along_px: float | None, across_px: float | None, axis: Any
+) -> tuple[float | None, float | None]:
+    """v1's ``along/across_channel_px`` back to the image-frame jump ``dx/dy``.
+
+    v1 computed ``along = step @ u`` and ``across = step @ n`` with
+    ``u = (ux, uy)`` and ``n = (-uy, ux)`` (confinement.py): a rotation, so
+    ``step = along * u + across * n`` recovers it exactly.  ``axis`` is
+    anything with ``ux``/``uy`` (a ``ConfinementAxis``) or a mapping with
+    those keys (run.json's ``confinement`` block).  ``(None, None)`` when
+    either component or the axis is missing: a jump is never guessed.
+    """
+    if isinstance(axis, Mapping):
+        ux, uy = axis.get("ux"), axis.get("uy")
+    else:
+        ux, uy = getattr(axis, "ux", None), getattr(axis, "uy", None)
+    if None in (ux, uy, along_px, across_px):
+        return None, None
+    along, across, ux, uy = float(along_px), float(across_px), float(ux), float(uy)
+    return along * ux - across * uy, along * uy + across * ux
+
+
+def unlinked_row(u: Any, *, axis: Any = None) -> dict[str, Any]:
+    """One ``unlinked_starts.csv`` row (``UNLINKED_COLUMNS``) from an ``UnlinkedStart``.
+
+    Reads the 2.0 tracker's ``dx_px``/``dy_px``/``dz_px``/``mahalanobis``
+    when it has them.  The 1.x tracker still running during the transition
+    records only ``along_px``/``across_px``, which schema 2 has no column for
+    -- writing them under their v1 names would be dropped by ``write_csv``
+    and the jump lost for good -- so they are rotated back to ``dx/dy`` with
+    the run's axis (exact; see :func:`along_across_to_dx_dy`).
+    """
+    dx, dy = getattr(u, "dx_px", None), getattr(u, "dy_px", None)
+    if dx is None and dy is None:
+        dx, dy = along_across_to_dx_dy(
+            getattr(u, "along_px", None), getattr(u, "across_px", None), axis
+        )
+    speed = getattr(u, "speed_um_per_min", None)
+    return {
+        "track_id": u.track_id,
+        "starts_at_frame": u.frame,
+        "nearest_earlier_track": getattr(u, "candidate_track_id", None),
+        "that_track_ended_at_frame": getattr(u, "candidate_last_frame", None),
+        "gap_frames": getattr(u, "gap_frames", None),
+        "distance_px": getattr(u, "distance_px", None),
+        "dx_px": dx,
+        "dy_px": dy,
+        "dz_px": getattr(u, "dz_px", None),
+        "mahalanobis": getattr(u, "mahalanobis", None),
+        "implied_speed_um_per_min": speed,
+        "implied_speed_um_per_hr": None if speed is None else speed * 60.0,
+        "would_have_cost_chi2": getattr(u, "cost_chi2", None),
+        "refused_because": getattr(u, "refused_because", None),
+        "explanation": u.describe(),
+    }
 
 
 # --------------------------------------------------------------------------
@@ -307,6 +367,13 @@ _SHEET_NAME_MAX = 31
 _SHEET_NAME_FORBIDDEN = re.compile(r"[\[\]:*?/\\]")
 #: Characters XML 1.0 cannot carry at all, even escaped.
 _XML_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
+#: Any run of whitespace and apostrophes at either end.  One pass of
+#: ``strip().strip("'")`` is not enough: "a' '" strips to "a'".
+_SHEET_NAME_EDGES = re.compile(r"^[\s']+|[\s']+$")
+
+
+def _sheet_name_trim(name: str) -> str:
+    return _SHEET_NAME_EDGES.sub("", name)
 
 
 def sanitise_sheet_names(names: Sequence[str]) -> list[str]:
@@ -316,20 +383,24 @@ def sanitise_sheet_names(names: Sequence[str]) -> list[str]:
     or ending with an apostrophe, unique ignoring case, and not ``History``
     (reserved).  Forbidden characters become ``_``; a duplicate gets `` (2)``,
     `` (3)``... within the 31 characters.
+
+    The ends are trimmed *after* every cut, not before: cutting a long name
+    to 31 characters can expose an apostrophe at the new end, and Excel
+    rejects the file (measured with openpyxl on ``'a' * 30 + "'b"``).
     """
     out: list[str] = []
     seen: set[str] = set()
     for raw in names:
         name = _SHEET_NAME_FORBIDDEN.sub("_", _XML_ILLEGAL.sub("", str(raw)))
-        name = name.strip().strip("'").strip() or "Sheet"
+        name = _sheet_name_trim(_sheet_name_trim(name)[:_SHEET_NAME_MAX]) or "Sheet"
         if name.lower() == "history":
             name = "History_"
-        name = name[:_SHEET_NAME_MAX]
         candidate, n = name, 1
         while candidate.lower() in seen:
             n += 1
             suffix = f" ({n})"
-            candidate = name[: _SHEET_NAME_MAX - len(suffix)] + suffix
+            base = _sheet_name_trim(name[: _SHEET_NAME_MAX - len(suffix)]) or "Sheet"
+            candidate = base + suffix
         seen.add(candidate.lower())
         out.append(candidate)
     return out
