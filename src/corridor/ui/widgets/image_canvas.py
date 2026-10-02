@@ -8,6 +8,16 @@ reviewer must be able to see that a track really sits on the cell.
 Rendering cost is kept off the interaction path by caching, per frame, the
 8-bit display image and the mask outline layer.  Both are derived data, so
 they are recomputed silently whenever the source changes.
+
+There is no migration axis here (contract §5).  The device is drawn, when
+asked for, as *lanes* -- each with its own centre line and half-width, read
+from the run's ``channel_geometry`` or converted from a 1.x run's recorded
+channel lines by :mod:`corridor.ui.lanes`.  When a run recorded no lanes,
+nothing is drawn: a missing block is never turned into a default direction.
+
+The canvas is 2-D (``TYX``).  A 3-D result is shown by the orthogonal viewer
+instead (:mod:`corridor.ui.widgets.ortho_viewer`), which shares this module's
+contrast stretch and outline drawing.
 """
 
 from __future__ import annotations
@@ -30,6 +40,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QWidget
 
+from ..lanes import LaneOverlay, offset_polyline
 from ..theme import PALETTE, TYPE, track_color
 
 MIN_SCALE = 0.05
@@ -43,8 +54,8 @@ class Layers:
     centroids: bool = True
     trails: bool = True
     labels: bool = True
-    axis: bool = False
-    channels: bool = False
+    lanes: bool = False
+    reference: bool = True
 
 
 def _stretch_to_uint8(frame: np.ndarray, low: float = 0.5, high: float = 99.5) -> np.ndarray:
@@ -82,6 +93,9 @@ class ImageCanvas(QWidget):
 
     track_clicked = Signal(int)  # track_id, or -1 for "nothing here"
     frame_changed = Signal(int)
+    #: A left click in picking mode, in image pixels (x, y). Emitted instead
+    #: of a selection, so setting a reference point never selects a track.
+    point_picked = Signal(float, float)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -106,8 +120,10 @@ class ImageCanvas(QWidget):
         self.rows_for_frame: Callable[[int], list[dict[str, Any]]] = lambda _f: []
         self.rows_for_track: Callable[[int], list[dict[str, Any]]] = lambda _t: []
         self.selected_track: int | None = None
-        self.axis_vector: tuple[float, float] | None = None
-        self.channel_lines: list[tuple[float, float]] = []  # (origin_x, origin_y)
+        self.lanes: list[LaneOverlay] = []
+        #: The analysis's reference point (x, y) in image pixels, or None.
+        self.reference_point: tuple[float, float] | None = None
+        self._picking = False
         self.trail_length = 0  # 0 == the whole track so far
 
     # ------------------------------------------------------------------ data
@@ -137,9 +153,20 @@ class ImageCanvas(QWidget):
         self._image_cache.clear()
         self._outline_cache.clear()
         self.selected_track = None
-        self.channel_lines = []
-        self.axis_vector = None
+        self.lanes = []
+        self.reference_point = None
+        self.set_picking(False)
         self.update()
+
+    # -------------------------------------------------------------- picking
+    @property
+    def picking(self) -> bool:
+        return self._picking
+
+    def set_picking(self, enabled: bool) -> None:
+        """While picking, a left click reports a point instead of selecting."""
+        self._picking = bool(enabled)
+        self.setCursor(QCursor(Qt.CrossCursor if self._picking else Qt.ArrowCursor))
 
     @property
     def n_frames(self) -> int:
@@ -221,6 +248,18 @@ class ImageCanvas(QWidget):
             (point.y() - self._offset.y()) / self._scale,
         )
 
+    # Data coordinates are pixel *indices* (a centroid of a one-pixel object
+    # at column c is x = c, as scikit-image reports it), while the image is
+    # drawn with pixel c covering [c, c + 1). Every overlay therefore goes
+    # through the pixel centre, or it sits half a pixel up and left of the
+    # cell -- invisible at fit, obvious at the zoom a reviewer checks at.
+    def _to_overlay(self, x: float, y: float) -> QPointF:
+        return self._to_widget(x + 0.5, y + 0.5)
+
+    def _from_overlay(self, point: QPointF) -> QPointF:
+        image = self._to_image(point)
+        return QPointF(image.x() - 0.5, image.y() - 0.5)
+
     # --------------------------------------------------------------- caching
     def _frame_pixmap(self, index: int) -> QPixmap | None:
         if self._stack is None:
@@ -279,7 +318,11 @@ class ImageCanvas(QWidget):
             self._pan_anchor = event.position().toPoint()
             self.setCursor(QCursor(Qt.ClosedHandCursor))
         elif event.button() == Qt.LeftButton:
-            self._select_at(QPointF(event.position()))
+            if self._picking:
+                point = self._from_overlay(QPointF(event.position()))
+                self.point_picked.emit(float(point.x()), float(point.y()))
+            else:
+                self._select_at(QPointF(event.position()))
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         if self._panning:
@@ -291,7 +334,7 @@ class ImageCanvas(QWidget):
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if self._panning:
             self._panning = False
-            self.setCursor(QCursor(Qt.ArrowCursor))
+            self.setCursor(QCursor(Qt.CrossCursor if self._picking else Qt.ArrowCursor))
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
         self.fit_to_view()
@@ -312,7 +355,7 @@ class ImageCanvas(QWidget):
             super().keyPressEvent(event)
 
     def _select_at(self, position: QPointF) -> None:
-        point = self._to_image(position)
+        point = self._from_overlay(position)
         best_id, best_distance = -1, 1e12
         for row in self.rows_for_frame(self._frame):
             x, y = row.get("x_px"), row.get("y_px")
@@ -353,14 +396,19 @@ class ImageCanvas(QWidget):
             if outline is not None:
                 painter.drawPixmap(target, outline, QRectF(outline.rect()))
 
-        if self.layers.channels and self.channel_lines:
-            self._paint_channels(painter, h)
-        if self.layers.axis and self.axis_vector:
-            self._paint_axis(painter, w, h)
+        if self.layers.lanes and self.lanes:
+            # A slanted lane's walls run past the image corners; the device
+            # outside the field of view was never seen, so it is not drawn.
+            painter.save()
+            painter.setClipRect(target)
+            self._paint_lanes(painter)
+            painter.restore()
         if self.layers.trails:
             self._paint_trails(painter)
         if self.layers.centroids or self.layers.labels:
             self._paint_markers(painter)
+        if self.layers.reference and self.reference_point is not None:
+            self._paint_reference(painter)
 
         # A thin frame keeps the image distinct from the canvas behind it.
         painter.setPen(QPen(QColor(PALETTE.border_strong), 1))
@@ -368,32 +416,47 @@ class ImageCanvas(QWidget):
         painter.drawRect(target)
         painter.end()
 
-    def _paint_channels(self, painter: QPainter, height: int) -> None:
-        ux, uy = self.axis_vector or (0.0, 1.0)
-        pen = QPen(QColor(PALETTE.axis_guide), 1.0, Qt.DashLine)
-        pen.setCosmetic(True)
-        painter.setPen(pen)
-        span = height * 2
-        for origin_x, origin_y in self.channel_lines:
-            start = self._to_widget(origin_x - ux * span, origin_y - uy * span)
-            end = self._to_widget(origin_x + ux * span, origin_y + uy * span)
-            painter.drawLine(start, end)
+    def _paint_lanes(self, painter: QPainter) -> None:
+        """Each lane's centre line (dashed) and its walls at +/- half-width."""
+        centre_pen = QPen(QColor(PALETTE.lane_guide), 1.0, Qt.DashLine)
+        centre_pen.setCosmetic(True)
+        wall_colour = QColor(PALETTE.lane_guide)
+        wall_colour.setAlpha(110)
+        wall_pen = QPen(wall_colour, 1.0)
+        wall_pen.setCosmetic(True)
+        for lane in self.lanes:
+            if len(lane.centre) < 2:
+                continue
+            painter.setPen(centre_pen)
+            path = QPainterPath(self._to_overlay(*lane.centre[0]))
+            for point in lane.centre[1:]:
+                path.lineTo(self._to_overlay(*point))
+            painter.drawPath(path)
+            if lane.half_width_px:
+                painter.setPen(wall_pen)
+                for side in (-1.0, 1.0):
+                    wall = offset_polyline(lane.centre, side * lane.half_width_px)
+                    edge = QPainterPath(self._to_overlay(*wall[0]))
+                    for point in wall[1:]:
+                        edge.lineTo(self._to_overlay(*point))
+                    painter.drawPath(edge)
 
-    def _paint_axis(self, painter: QPainter, width: int, height: int) -> None:
-        ux, uy = self.axis_vector or (0.0, 1.0)
-        cx, cy = width / 2.0, height / 2.0
-        length = min(width, height) * 0.35
-        pen = QPen(QColor(PALETTE.axis_guide), 2.0)
-        pen.setCosmetic(True)
-        painter.setPen(pen)
-        painter.drawLine(
-            self._to_widget(cx - ux * length, cy - uy * length),
-            self._to_widget(cx + ux * length, cy + uy * length),
-        )
-        head = self._to_widget(cx + ux * length, cy + uy * length)
-        painter.setBrush(QColor(PALETTE.axis_guide))
-        painter.drawEllipse(head, 4, 4)
+    def _paint_reference(self, painter: QPainter) -> None:
+        """A crosshair at the reference point used for D2R."""
+        x, y = self.reference_point[0], self.reference_point[1]  # type: ignore[index]
+        centre = self._to_overlay(x, y)
         painter.setBrush(Qt.NoBrush)
+        for colour, width in ((QColor(0, 0, 0, 170), 4.0), (QColor(PALETTE.reference_marker), 2.0)):
+            pen = QPen(colour, width)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.drawEllipse(centre, 8, 8)
+            cx, cy = centre.x(), centre.y()
+            for (x0, y0, x1, y1) in (
+                (cx - 15, cy, cx - 4, cy), (cx + 4, cy, cx + 15, cy),
+                (cx, cy - 15, cx, cy - 4), (cx, cy + 4, cx, cy + 15),
+            ):
+                painter.drawLine(QPointF(x0, y0), QPointF(x1, y1))
 
     def _paint_trails(self, painter: QPainter) -> None:
         ids = {
@@ -425,7 +488,7 @@ class ImageCanvas(QWidget):
             path = QPainterPath()
             previous_frame = None
             for row in rows:
-                point = self._to_widget(row["x_px"], row["y_px"])
+                point = self._to_overlay(row["x_px"], row["y_px"])
                 gap = row.get("gap_frames") or 1
                 if previous_frame is None:
                     path.moveTo(point)
@@ -460,7 +523,7 @@ class ImageCanvas(QWidget):
             colour = QColor(track_color(track_id))
             if self.selected_track is not None and not selected:
                 colour.setAlpha(110)
-            centre = self._to_widget(x, y)
+            centre = self._to_overlay(x, y)
 
             if self.layers.centroids:
                 radius = 7.0 if selected else 5.0

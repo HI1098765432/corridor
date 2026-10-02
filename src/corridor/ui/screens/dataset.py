@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from ...core.config import RunConfig
 from ...core.imaging import StackMetadata
+from ..model_status import registered_model
 from ..theme import PALETTE, SPACE
 from ..widgets.advanced import AdvancedPanel
 from ..widgets.common import (
@@ -38,12 +39,40 @@ from ..widgets.common import (
 from ..widgets.image_canvas import ImageCanvas
 
 
+def preview_stack(stack: np.ndarray) -> np.ndarray:
+    """What the 2-D preview canvas shows: the stack, or its Z projection.
+
+    A ``TZYX`` stack is previewed as its maximum projection over Z, frame by
+    frame, which shows every cell at once; the results screen then reviews it
+    plane by plane in the orthogonal viewer.
+    """
+    if stack is not None and stack.ndim == 4:
+        return stack.max(axis=1)
+    return stack
+
+
+def _depth(metadata, stack: np.ndarray | None) -> int | None:
+    """The number of Z slices, or None for a 2-D time-lapse."""
+    axes = str(getattr(metadata, "axes", "") or "")
+    if stack is not None and stack.ndim == 4:
+        return int(stack.shape[1])
+    if "Z" in axes.upper():
+        shape = getattr(metadata, "shape", None) or ()
+        index = axes.upper().index("Z")
+        if index < len(shape):
+            return int(shape[index])
+    return None
+
+
 class DatasetScreen(QWidget):
     """Preview, interpreted metadata, and the analyse action."""
 
     back_requested = Signal()
     analyse_requested = Signal()
     cancel_requested = Signal()
+    #: Measure and track a label image instead of segmenting (``True``), or
+    #: go back to the validated model (``False``).
+    labels_requested = Signal(bool)
 
     #: The panel grows when the advanced parameters are shown, so the controls
     #: have room instead of being clipped.
@@ -149,6 +178,15 @@ class DatasetScreen(QWidget):
             self.field_source, self.field_model,
         ):
             self._panel_layout.addWidget(field)
+        # The only route for 3-D data (no 3-D model is validated), and the way
+        # to analyse a segmentation made elsewhere. ImportConfig.labels_path.
+        self.labels_button = ghost_button("Use a label image…", "", self._labels_clicked)
+        self.labels_button.setToolTip(
+            "Measure and track an existing label image (one integer label per "
+            "cell, same frames as this file) instead of segmenting with the model."
+        )
+        self._labels_set = False
+        self._panel_layout.addWidget(self.labels_button, 0, Qt.AlignLeft)
 
         self.notes = label("", "tertiary")
         self.notes.setWordWrap(True)
@@ -216,11 +254,14 @@ class DatasetScreen(QWidget):
         self.subtitle.setText(str(metadata.path.parent))
         self.subtitle.setToolTip(str(metadata.path))
 
-        self.canvas.set_stack(stack)
+        self.canvas.set_stack(preview_stack(stack))
         self.canvas.fit_to_view()
 
         self.metric_frames.set_value(str(metadata.n_frames))
-        self.metric_size.set_value(f"{metadata.width}×{metadata.height}")
+        depth = _depth(metadata, stack)
+        self.metric_size.set_value(
+            f"{metadata.width}×{metadata.height}" + (f"×{depth}" if depth else "")
+        )
         duration = metadata.duration_min
         self.metric_duration.set_value(
             f"{duration / 60:.1f} h" if duration and duration >= 90
@@ -239,7 +280,17 @@ class DatasetScreen(QWidget):
             f"{pixel.value:.6g} µm/px" if pixel.known else "unknown",
             source_label(pixel.source),
         )
-        self.field_axes.set_value(f"{metadata.axes_raw} · {metadata.axes_interpretation}")
+        axes_parts = [
+            str(part)
+            for part in (
+                getattr(metadata, "axes", None),
+                getattr(metadata, "axes_raw", None),
+                getattr(metadata, "axes_interpretation", None),
+            )
+            if part
+        ]
+        # De-duplicated: a canonical order equal to the file's own reads once.
+        self.field_axes.set_value("  ·  ".join(dict.fromkeys(axes_parts)) or "—")
         if metadata.source_frames:
             self.field_source.set_value(
                 f"{metadata.source_frames[0]}–{metadata.source_frames[-1]}"
@@ -249,11 +300,7 @@ class DatasetScreen(QWidget):
         else:
             self.field_source.hide()
 
-        model = config.segmentation.model_path
-        self.field_model.set_value(
-            Path(model).name if model else "built-in " + config.segmentation.builtin_model,
-            model or "",
-        )
+        self.show_model(config, "3D" if depth else "2D")
 
         self.notes.setText("\n".join(f"· {note}" for note in metadata.notes))
         self.notes.setVisible(bool(metadata.notes))
@@ -273,6 +320,36 @@ class DatasetScreen(QWidget):
 
         self.advanced.set_config(config, metadata)
 
+    def show_model(self, config: RunConfig, dimensionality: str) -> None:
+        """Which segmentation will run: the registered model, or imported labels.
+
+        Read from the registry, not from the configuration: the configuration
+        no longer chooses a model (contract §2), and a stale ``model_path`` in
+        a saved project must never be displayed as if it were used. Nothing
+        is hashed here; the check happens when Analyse is pressed.
+        """
+        labels_path = getattr(getattr(config, "import_", None), "labels_path", None)
+        self._labels_set = bool(labels_path)
+        self.labels_button.setText(
+            "Segment with the model instead" if labels_path else "Use a label image…"
+        )
+        if labels_path:
+            self.field_model.set_value(
+                f"imported labels: {Path(labels_path).name}", str(labels_path)
+            )
+            return
+        status = registered_model(dimensionality)
+        if status.model_id:
+            self.field_model.set_value(
+                f"{status.model_id} {status.model_version}",
+                f"SHA-256 {status.sha256}\nVerified against this checksum before the analysis starts.",
+            )
+        else:
+            self.field_model.set_value("none validated for " + dimensionality, status.message)
+
+    def _labels_clicked(self) -> None:
+        self.labels_requested.emit(not self._labels_set)
+
     def _toggle_advanced(self, shown: bool) -> None:
         self.advanced.setVisible(shown)
         self._advanced_divider.setVisible(shown)
@@ -283,6 +360,7 @@ class DatasetScreen(QWidget):
     # ----------------------------------------------------------------- status
     def set_busy(self, busy: bool, message: str = "") -> None:
         self.analyse_button.setEnabled(not busy)
+        self.labels_button.setEnabled(not busy)
         self.advanced.setEnabled(not busy)
         self.status_row.setVisible(busy)
         self.cancel_button.setVisible(busy)
