@@ -112,10 +112,15 @@ def test_v1_analysis_reports_per_hour_speeds_and_no_invented_msd(qt_app, v1):
     summary = v1.summary_for(1)
     assert detail(screen, "mean") == f"{summary['mean_speed_um_per_min'] * 60:.1f} µm/h"
     assert detail(screen, "len") == f"{syn.expected_len_um(1):.1f} µm"
-    # A 1.x run has no MSD at all (until the store upgrades it): an em dash,
-    # not "not enough lags", which would claim a fit was attempted.
+    # The 2.0 store derives a 1.x run's MSD from its positions when it loads
+    # it. An analysis with no MSD at all -- nothing derived, nothing fitted --
+    # must read as an em dash, not "not enough lags", which would claim a fit
+    # was attempted.
     v1.msd = []
     v1.msd_for_track = lambda tid: []
+    for row in v1.summaries:
+        for key in [k for k in row if k.startswith("msd")]:
+            row.pop(key)
     screen.select_track(2)
     assert detail(screen, "alpha") == "—"
     assert screen.msd_plot.is_empty
