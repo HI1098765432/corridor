@@ -32,9 +32,15 @@ from ...core.config import (
     AXIS_AUTO,
     AXIS_HORIZONTAL,
     AXIS_VERTICAL,
+    ENSEMBLE_LABELS,
+    ENSEMBLE_MODES,
+    NORMALISATION_LABELS,
+    NORMALISATION_MODES,
     RunConfig,
+    SegmentationConfig,
 )
 from ...core.imaging import StackMetadata
+from ...core.segmentation import discover_companion_models
 from ..theme import PALETTE, SPACE
 from .common import divider, ghost_button, label
 
@@ -203,6 +209,43 @@ class AdvancedPanel(QWidget):
         )
         form.addRow("Smallest object", self.min_extent)
 
+        self.normalisation = QComboBox()
+        for mode in NORMALISATION_MODES:
+            self.normalisation.addItem(NORMALISATION_LABELS[mode], mode)
+        # A configuration edited outside this panel may match no preset. Rather
+        # than silently snapping it to the nearest one, the panel grows an entry
+        # that says so.
+        self.normalisation.addItem("Custom", "custom")
+        self.normalisation.currentIndexChanged.connect(self._emit)
+        self.normalisation.setToolTip(
+            "How the image is rescaled before the model sees it.\n\n"
+            "This matters more than it looks. The two halves of the supplied "
+            "training data hold cells of the same size (12.1 and 12.2 px wide) "
+            "at very different contrast (0.22 and 0.38 of the image range above "
+            "background), and that difference — not shape, not scale — is most "
+            "of what a model trained on one meets in the other.\n\n"
+            "Local contrast rescales each region to its own background instead "
+            "of to a global range one bright structure can dominate.\n\n"
+            "See docs/ACCURACY.md for what each setting was measured to do."
+        )
+        form.addRow("Image normalisation", self.normalisation)
+
+        self.ensemble = QComboBox()
+        for mode in ENSEMBLE_MODES:
+            self.ensemble.addItem(ENSEMBLE_LABELS[mode], mode)
+        self._refresh_ensemble_costs()
+        self.ensemble.currentIndexChanged.connect(self._emit)
+        self.ensemble.setToolTip(
+            "How hard to look for cells the default settings miss.\n\n"
+            "Extra passes can only add detections, never remove them, and "
+            "anything only they found is marked in the results. On the supplied "
+            "labelled images, two thresholds finds about 1% more cells for "
+            "twice the time; the slowest setting finds about 7% more but "
+            "proposes considerably more debris for the tracker to reject.\n\n"
+            "See docs/ACCURACY.md for the measured figures."
+        )
+        form.addRow("Detection effort", self.ensemble)
+
         self.use_gpu = QCheckBox("Use the GPU if available")
         self.use_gpu.toggled.connect(self._emit)
         form.addRow("", self.use_gpu)
@@ -248,6 +291,37 @@ class AdvancedPanel(QWidget):
         form.addRow("Minimum observations", self.min_observations)
         return form
 
+    def _refresh_ensemble_costs(self) -> None:
+        """Label each rung with the work it will actually do on this machine.
+
+        The rungs that run several models cost nothing extra when there is only
+        one model to run -- which is the normal case in the installed
+        application, since it ships the combined model alone. Advertising a
+        fixed "3× slower" there promises an effect the run cannot produce, and
+        a user who picks it would get byte-identical output while believing
+        they had traded time for recall.
+        """
+        companions = discover_companion_models(self._model_for_discovery())
+        for index in range(self.ensemble.count()):
+            mode = self.ensemble.itemData(index)
+            if mode is None:
+                continue
+            cost = SegmentationConfig(
+                ensemble=mode, ensemble_model_paths=companions
+            ).ensemble_cost_factor()
+            label_text = ENSEMBLE_LABELS.get(mode, mode)
+            if cost > 1:
+                label_text += f"  ·  {cost}× slower"
+            elif SegmentationConfig(ensemble=mode).uses_companion_models():
+                label_text += "  ·  no other model found"
+            self.ensemble.setItemText(index, label_text)
+
+    def _model_for_discovery(self) -> str | None:
+        text = self.model_path.text().strip()
+        if text:
+            return text
+        return self._config.segmentation.resolved_model() if self._config else None
+
     # ------------------------------------------------------------------ state
     def set_config(self, config: RunConfig, metadata: StackMetadata | None = None) -> None:
         self._loading = True
@@ -272,6 +346,11 @@ class AdvancedPanel(QWidget):
         self.flow.setValue(seg.flow_threshold)
         self.diameter.setValue(seg.diameter or 0.0)
         self.min_extent.setValue(seg.min_extent_px)
+        self._refresh_ensemble_costs()
+        index = self.normalisation.findData(seg.normalisation_mode)
+        self.normalisation.setCurrentIndex(max(0, index))
+        index = self.ensemble.findData(seg.ensemble)
+        self.ensemble.setCurrentIndex(max(0, index))
         self.use_gpu.setChecked(seg.use_gpu)
 
         trk = config.tracking
@@ -315,6 +394,12 @@ class AdvancedPanel(QWidget):
         seg.flow_threshold = self.flow.value()
         seg.diameter = self.diameter.value() if self.diameter.value() > 0 else None
         seg.min_extent_px = self.min_extent.value()
+        # "Custom" means the fields were set elsewhere and this panel has no
+        # opinion about them; applying a preset for it would discard them.
+        chosen = self.normalisation.currentData()
+        if chosen != "custom":
+            seg.apply_normalisation_preset(chosen)
+        seg.ensemble = self.ensemble.currentData()
         seg.use_gpu = self.use_gpu.isChecked()
 
         trk = config.tracking
@@ -343,6 +428,9 @@ class AdvancedPanel(QWidget):
         if path:
             self.model_path.setText(path)
             self.model_path.setToolTip(path)
+            # Which companion models exist depends entirely on where this one
+            # lives, so the rung costs are only true for the model in the box.
+            self._refresh_ensemble_costs()
             self._emit()
 
     def _emit(self) -> None:

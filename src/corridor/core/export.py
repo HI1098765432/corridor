@@ -32,7 +32,7 @@ DETECTION_COLUMNS = [
     "area_px", "area_um2", "extent_px",
     "bbox_min_x", "bbox_min_y", "bbox_max_x", "bbox_max_y",
     "eccentricity", "orientation_rad", "major_axis_px", "minor_axis_px",
-    "solidity", "touches_border",
+    "solidity", "touches_border", "source", "confidence",
 ]
 
 TRACK_COLUMNS = [
@@ -45,6 +45,7 @@ TRACK_COLUMNS = [
     "v_along_um_per_min", "v_across_um_per_min",
     "step_px", "step_um",
     "observation_index", "n_observations", "track_flags",
+    "detection_source", "detection_confidence",
 ]
 
 SUMMARY_COLUMNS = [
@@ -55,6 +56,7 @@ SUMMARY_COLUMNS = [
     "net_displacement_um", "net_along_um", "net_across_um",
     "path_length_um", "straightness",
     "mean_speed_um_per_min", "median_speed_um_per_min", "max_speed_um_per_min",
+    "net_speed_um_per_min", "along_speed_um_per_min", "path_speed_um_per_min",
     "mean_area_px", "flags",
 ]
 
@@ -72,6 +74,13 @@ QC_COLUMNS = ["severity", "code", "title", "detail", "frame", "track_id"]
 
 #: Why each mid-stack track was not joined to an earlier one. This is the
 #: evidence behind a judgement the tracker made, not a result in itself.
+#: Every attempt to find a cell a track predicted but segmentation missed,
+#: successful or not. A failed attempt is as informative as a successful one.
+RECOVERY_COLUMNS = [
+    "track_id", "frame", "predicted_x", "predicted_y", "recovered",
+    "found_by", "confidence", "offset_from_prediction_px", "detail",
+]
+
 UNLINKED_COLUMNS = [
     "track_id", "starts_at_frame", "nearest_earlier_track",
     "that_track_ended_at_frame", "gap_frames", "distance_px",

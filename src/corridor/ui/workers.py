@@ -224,3 +224,26 @@ def friendly_error(exc: BaseException) -> str:
         return "The disk is full. Free some space and try again."
     message = str(exc).strip()
     return message or f"Something went wrong ({type(exc).__name__})."
+
+
+class UpdateWorker(QObject):
+    """Asks once whether a newer release exists, off the UI thread.
+
+    A network call on the interface thread freezes the window for as long as
+    the socket takes, which on a captive-portal wifi is however long the
+    timeout is. Nobody should watch Corridor hang because a hotel router
+    swallowed a packet.
+
+    It never fails loudly: no network, a proxy, a rate limit and a malformed
+    reply all arrive as ``finished(None)``.
+    """
+
+    finished = Signal(object)  # Release | None
+
+    def run(self) -> None:
+        from ..core import updates
+
+        try:
+            self.finished.emit(updates.check())
+        except Exception:  # noqa: BLE001 - an update check may never break a run
+            self.finished.emit(None)

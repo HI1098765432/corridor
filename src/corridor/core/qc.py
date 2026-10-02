@@ -12,7 +12,7 @@ from typing import Any, Sequence
 
 from .config import Scale, TrackingConfig
 from .confinement import ConfinementAxis
-from .detections import FrameDiagnostics
+from .detections import SOURCE_PRIMARY, FrameDiagnostics
 from .imaging import StackMetadata
 from .measurements import TrackSummary
 from .tracking import FrameEvent, Track, UnlinkedStart
@@ -22,6 +22,26 @@ SEVERITY_WARN = "warning"
 SEVERITY_CRITICAL = "critical"
 
 _ORDER = {SEVERITY_CRITICAL: 0, SEVERITY_WARN: 1, SEVERITY_INFO: 2}
+
+#: Below this **net** displacement a trajectory has gone nowhere.  The cells in
+#: the supplied labelled data are 9-15 px wide, which at 0.4671 µm/px is
+#: 4.2-7.0 µm, so a track whose start and end are less than 4 µm apart has not
+#: moved its own width.
+#:
+#: Net displacement, not path length: path length accumulates centroid jitter,
+#: so a fixed object whose centroid wanders half a pixel a frame racks up
+#: several µm of "path" over ten frames and escapes the very check meant to
+#: catch it.  Start-to-end distance does not accumulate anything.
+STATIONARY_NET_UM = 4.0
+#: ...and only once enough *time* has passed to call it. A frame count is the
+#: wrong unit here: four frames is an hour of the supplied data but two minutes
+#: of a fast acquisition, and a cell that has not moved 4 µm in two minutes is
+#: simply a cell. Half an hour is roughly 1.5 frames of the supplied data and
+#: sixty frames of a 30-second acquisition; either way it is long enough that
+#: going nowhere means something.
+STATIONARY_MIN_MINUTES = 30.0
+#: Fallback when the file carries no timing at all and minutes do not exist.
+STATIONARY_MIN_SPAN = 3
 
 
 @dataclass
@@ -237,6 +257,61 @@ def collect_issues(
                 frame=start.frame, track_id=start.track_id,
             )
         )
+
+    # -- what the trajectory is actually made of ----------------------------
+    # Measured on the supplied data (scripts/experiment_fallback.py): the
+    # assignment step does *not* filter out a false detection that repeats in
+    # the same place, because a stationary object is the most self-consistent
+    # thing a cost model based on predicted position can see. Channel-wall
+    # texture at a permissive flow threshold is exactly that. So the two
+    # properties below are checked directly rather than assumed away.
+    for summary in summaries:
+        track = next((t for t in tracks if t.id == summary.track_id), None)
+        if track is None or summary.n_observations < cfg.min_observations:
+            continue
+
+        borrowed = sum(1 for o in track.observations if o.source != SOURCE_PRIMARY)
+        if borrowed and borrowed * 2 >= summary.n_observations:
+            issues.append(
+                QCIssue(
+                    "fallback_dependent_track", SEVERITY_WARN,
+                    f"Track {summary.track_id} depends on the extra detection passes",
+                    f"{borrowed} of its {summary.n_observations} positions were found "
+                    "only by a more permissive setting, not by the model's own "
+                    "thresholds. Those passes raise recall and lower precision "
+                    "together, so this trajectory deserves a look at the images "
+                    "before it is used.",
+                    frame=summary.first_frame, track_id=summary.track_id,
+                )
+            )
+
+        long_enough = (
+            summary.duration_min >= STATIONARY_MIN_MINUTES
+            if summary.duration_min is not None
+            else summary.span_frames >= STATIONARY_MIN_SPAN
+        )
+        if (
+            summary.net_displacement_um is not None
+            and summary.net_displacement_um < STATIONARY_NET_UM
+            and long_enough
+        ):
+            elapsed = (
+                f"{summary.duration_min:.0f} min"
+                if summary.duration_min is not None
+                else f"{summary.span_frames} frames"
+            )
+            issues.append(
+                QCIssue(
+                    "stationary_track", SEVERITY_WARN,
+                    f"Track {summary.track_id} barely moves",
+                    f"It ends {summary.net_displacement_um:.1f} µm from where it "
+                    f"started, after {elapsed} — less than the width of a cell in "
+                    "this data. That is either a cell that never migrated or a "
+                    "fixed feature of the device being tracked as one; the images "
+                    "distinguish them and this software cannot.",
+                    frame=summary.first_frame, track_id=summary.track_id,
+                )
+            )
 
     if not tracks:
         issues.append(

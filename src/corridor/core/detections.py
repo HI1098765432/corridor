@@ -10,6 +10,15 @@ import numpy as np
 from skimage.measure import regionprops
 
 
+#: Where a detection came from.  These live here, beside the field that holds
+#: them, rather than in the segmentation module: quality control and export
+#: both need to read provenance, and neither should have to import the
+#: segmentation service to learn the name of a string.
+SOURCE_PRIMARY = "primary"
+#: Found only by an extra, more permissive segmentation pass.
+SOURCE_ENSEMBLE = "ensemble"
+
+
 @dataclass
 class Detection:
     """One segmented object in one frame.
@@ -33,6 +42,11 @@ class Detection:
     solidity: float
     touches_border: bool
     channel: int = -1  # assigned later; -1 == unassigned
+    #: How this detection was found. A detection the network asserted on its
+    #: own is a stronger claim than one recovered where a track predicted it,
+    #: and the two must never be indistinguishable downstream.
+    source: str = SOURCE_PRIMARY
+    confidence: float = 1.0
 
     @property
     def xy(self) -> np.ndarray:

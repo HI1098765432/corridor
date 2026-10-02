@@ -106,7 +106,7 @@ def _check_segmentation() -> str:
     rng = np.random.default_rng(0)
     frame = rng.normal(1000, 30, size=(160, 96)).astype(np.uint16)
     frame[40:120, 44:56] += 2500  # something cell-shaped to find
-    mask, _ = service.segment_frame(frame)
+    mask, _, _ = service.segment_frame(frame)
     if mask.shape != frame.shape:
         raise RuntimeError(f"mask shape {mask.shape} does not match input {frame.shape}")
     # What matters here is that the whole torch/cellpose path executed and

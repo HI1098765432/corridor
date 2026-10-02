@@ -37,7 +37,9 @@ from .screens.dataset import DatasetScreen
 from .screens.home import HomeScreen
 from .screens.results import ResultsScreen
 from .theme import PALETTE, SPACE, stylesheet
+from .widgets.update_banner import UpdateBanner, UpdateConsent
 from .workers import AnalysisWorker, DatasetWorker, ExportWorker, Job, ResultsWorker
+from ..core import updates
 
 SCREEN_HOME = 0
 SCREEN_DATASET = 1
@@ -67,6 +69,14 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # Update notices sit above everything and are never modal: a banner
+        # over somebody's analysis is an interruption, not a service.
+        self.update_consent = UpdateConsent()
+        self.update_banner = UpdateBanner()
+        self.update_consent.hide()
+        layout.addWidget(self.update_consent)
+        layout.addWidget(self.update_banner)
+
         self.stack = QStackedWidget()
         self.home = HomeScreen()
         self.dataset = DatasetScreen()
@@ -80,6 +90,7 @@ class MainWindow(QMainWindow):
         self._connect()
         self._install_shortcuts()
         self.refresh_recent()
+        self._offer_update_check()
 
     # ------------------------------------------------------------------ wiring
     def _connect(self) -> None:
@@ -97,6 +108,10 @@ class MainWindow(QMainWindow):
         self.results.export_requested.connect(self.export_results)
         self.results.napari_requested.connect(self.open_in_napari)
         self.results.open_folder_requested.connect(self.open_results_folder)
+
+        self.update_consent.answered.connect(self._update_consent_given)
+        self.update_banner.dismissed.connect(self._update_dismissed)
+        self.update_banner.open_requested.connect(self._open_release_page)
 
     def _install_shortcuts(self) -> None:
         def shortcut(sequence: str, handler) -> None:
@@ -426,6 +441,51 @@ class MainWindow(QMainWindow):
         ErrorDialog(message, detail, self).exec()
 
     # --------------------------------------------------------------------- jobs
+    # ------------------------------------------------------------ updates
+    def _offer_update_check(self) -> None:
+        """Ask on first run; check only if the user has already said yes.
+
+        Nothing here touches the network until consent exists. A user who has
+        never been asked is treated as having said no.
+        """
+        if not updates.has_been_asked(self.store):
+            self.update_consent.show()
+            return
+        if updates.should_check(self.store):
+            self._check_for_updates()
+
+    def _update_consent_given(self, enabled: bool) -> None:
+        updates.record_choice(self.store, enabled)
+        if enabled:
+            self._check_for_updates()
+
+    def _check_for_updates(self) -> None:
+        from .workers import UpdateWorker
+
+        self._start_job(UpdateWorker(), finished=self._update_checked)
+
+    def _update_checked(self, release) -> None:
+        """Runs on the UI thread. A None release means no information, not an error."""
+        if release is None or not release.is_newer:
+            return
+        if updates.already_seen(self.store, release.version):
+            return
+        self.update_banner.show_release(release)
+
+    def _update_dismissed(self, version: str) -> None:
+        # Remembered per version, so dismissing 1.3.0 does not silence 1.4.0.
+        if version:
+            updates.remember_seen(self.store, version)
+
+    def _open_release_page(self, url: str) -> None:
+        """Open the page in a browser. Corridor downloads and runs nothing."""
+        if not url:
+            return
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+
+        QDesktopServices.openUrl(QUrl(url))
+
     def _start_job(self, worker, *, finished=None, failed=None, cancelled=None) -> Job:
         """Run a worker, delivering every callback on the UI thread.
 

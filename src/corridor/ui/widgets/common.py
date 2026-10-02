@@ -183,10 +183,12 @@ class Field(QWidget):
             self.setToolTip(hint)
 
     def set_value(self, value: str, hint: str = "") -> None:
+        # Both tooltips are set unconditionally. Setting only when a hint is
+        # supplied leaves the previous value's explanation attached to the new
+        # one, which is how a row ends up quietly describing a different run.
         self._value.setToolTip(hint or "")
         self._value.setText(value)
-        if hint:
-            self.setToolTip(hint)
+        self.setToolTip(hint or "")
 
 
 class StackedField(QWidget):

@@ -40,6 +40,28 @@ class TrackSummary:
     mean_speed_um_per_min: float | None
     median_speed_um_per_min: float | None
     max_speed_um_per_min: float | None
+    #: Net displacement divided by elapsed time, and the *robust* estimator on
+    #: this data.  With a fifth of the detections deleted at random it is
+    #: exactly right in half of trials and within 4.6% at the 90th percentile,
+    #: where the mean of instantaneous speeds is already 7.2% out at the median
+    #: and 19.3% at the 90th (scripts/experiment_velocity_robustness.py).
+    #:
+    #: The reason is structural rather than lucky: this reads only the first and
+    #: last observation, so a missed frame in between costs it nothing, whereas
+    #: every missed frame merges two short intervals into one long one that the
+    #: instantaneous estimate then averages in with equal weight.
+    #:
+    #: It measures net progress, not path speed; the two differ by exactly how
+    #: much the cell reversed, which ``straightness`` reports.
+    net_speed_um_per_min: float | None
+    #: Net progress along the channel only, which is the quantity a confined
+    #: migration assay is usually asking about.
+    along_speed_um_per_min: float | None
+    #: Total path length over elapsed time.  Unlike the mean of instantaneous
+    #: speeds this is not inflated by short noisy intervals, but it still grows
+    #: when detections are dense and jittery, so it is reported beside the net
+    #: figure rather than instead of it.
+    path_speed_um_per_min: float | None
     mean_area_px: float
     flags: str
 
@@ -89,6 +111,8 @@ def frame_rows(
                 "observation_index": k,
                 "n_observations": tr.n_obs,
                 "track_flags": ";".join(sorted(flags)),
+                "detection_source": obs.source,
+                "detection_confidence": obs.confidence,
             }
             if scale.calibrated_space:
                 row["x_um"] = scale.px_to_um(obs.x)
@@ -172,6 +196,17 @@ def summarise(
 
         net_um = scale.px_to_um(net_px) if scale.calibrated_space else None
         path_um = scale.px_to_um(path_px) if scale.calibrated_space else None
+        along_um = scale.px_to_um(float(net @ u)) if scale.calibrated_space else None
+
+        # Divide by the elapsed time of the whole span, not by the number of
+        # observations.  A track seen 8 times over 14 frames covers 14 frames of
+        # elapsed time; dividing by 8 would report a cell moving twice as fast
+        # as it did, and that error grows with exactly the missed detections
+        # these estimators exist to survive.
+        duration = scale.frames_to_min(span) if (scale.calibrated_time and span) else None
+        net_speed = (net_um / duration) if (net_um is not None and duration) else None
+        path_speed = (path_um / duration) if (path_um is not None and duration) else None
+        along_speed = (along_um / duration) if (along_um is not None and duration) else None
 
         out.append(
             TrackSummary(
@@ -195,13 +230,16 @@ def summarise(
                 span_frames=span,
                 duration_min=scale.frames_to_min(span) if scale.calibrated_time else None,
                 net_displacement_um=net_um,
-                net_along_um=scale.px_to_um(float(net @ u)) if scale.calibrated_space else None,
+                net_along_um=along_um,
                 net_across_um=scale.px_to_um(float(net @ n)) if scale.calibrated_space else None,
                 path_length_um=path_um,
                 straightness=(net_px / path_px) if path_px > 1e-9 else None,
                 mean_speed_um_per_min=float(np.mean(speeds)) if speeds else None,
                 median_speed_um_per_min=float(np.median(speeds)) if speeds else None,
                 max_speed_um_per_min=float(np.max(speeds)) if speeds else None,
+                net_speed_um_per_min=net_speed,
+                along_speed_um_per_min=along_speed,
+                path_speed_um_per_min=path_speed,
                 mean_area_px=float(np.mean([o.area_px for o in obs])),
                 flags=";".join(sorted(flags)),
             )

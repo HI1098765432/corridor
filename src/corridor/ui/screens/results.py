@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...core.config import ENSEMBLE_LABELS, NORMALISATION_LABELS
 from ...store.project import SavedAnalysis
 from ..icons import icon, pixmap
 from ..theme import PALETTE, RADIUS, SPACE, TYPE, track_color
@@ -439,6 +440,8 @@ class ResultsScreen(QWidget):
             ("cellpose", "Cellpose"),
             ("thresholds", "Thresholds"),
             ("min_extent", "Smallest object"),
+            ("normalisation", "Normalisation"),
+            ("detection_effort", "Detection effort"),
             ("raw_kept", "Instances raw → kept"),
             ("max_gap", "Allowed disappearance"),
             ("max_speed", "Speed limit"),
@@ -635,6 +638,36 @@ class ResultsScreen(QWidget):
             f"prob {seg.get('cellprob_threshold')}  ·  flow {seg.get('flow_threshold')}",
         )
         put("min_extent", f"{seg.get('min_extent_px')} px")
+
+        mode = seg.get("normalisation_mode")
+        # The tooltip carries the actual numbers, so a reader never has to trust
+        # that a friendly name means what they assume. An older analysis has
+        # none of these keys, and an empty tooltip is the honest answer there.
+        hint = ""
+        if mode:
+            hint = (
+                f"percentiles {seg.get('normalize_percentiles')}, "
+                f"tile {seg.get('normalize_tile_px')} px, "
+                f"sharpen {seg.get('normalize_sharpen_px')} px"
+            )
+        put("normalisation", NORMALISATION_LABELS.get(mode, mode) if mode else None, hint)
+
+        # Written unconditionally, like every other row here. An analysis saved
+        # before this field existed must show "—", not whichever value the
+        # previously inspected analysis left behind: a provenance panel that
+        # reports another run's settings is worse than one that admits it does
+        # not know.
+        rung = seg.get("ensemble")
+        text = None
+        if rung:
+            text = ENSEMBLE_LABELS.get(rung, rung)
+            passes = seg.get("ensemble_passes") or 1
+            if passes > 1:
+                text += f"  ·  {passes} passes"
+            borrowed = seg.get("detections_from_fallback")
+            if borrowed:
+                text += f"  ·  {borrowed} extra detection(s)"
+        put("detection_effort", text)
         raw = seg.get("raw_instances_per_frame") or []
         kept = seg.get("kept_instances_per_frame") or []
         put(

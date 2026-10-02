@@ -105,6 +105,8 @@ class Observation:
     orientation_rad: float = 0.0
     minor_axis_px: float = 1.0
     channel: int = -1
+    source: str = "primary"
+    confidence: float = 1.0
 
     @property
     def xy(self) -> np.ndarray:
@@ -215,6 +217,8 @@ class Track:
                 orientation_rad=float(detection.orientation_rad),
                 minor_axis_px=float(detection.minor_axis_px),
                 channel=int(detection.channel),
+                source=str(getattr(detection, "source", "primary")),
+                confidence=float(getattr(detection, "confidence", 1.0)),
             )
         )
         if self.channel < 0:

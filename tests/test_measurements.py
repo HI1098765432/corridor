@@ -182,3 +182,113 @@ def test_short_track_is_flagged_as_a_fragment(vertical_axis, scale, tracking_con
     (summary,) = summarise(tracks, vertical_axis, scale, min_observations=2)
     assert "fragment" in summary.flags
     assert summary.mean_speed_um_per_min is None
+
+
+# --------------------------------------------------------------------------
+# The robust speed estimators
+# --------------------------------------------------------------------------
+
+
+def test_net_speed_divides_by_elapsed_time_not_by_observation_count(
+    vertical_axis, scale, tracking_config
+):
+    """The arithmetic guard on the estimator the accuracy claim rests on.
+
+    A cell moving 20 px per frame for 10 frames covers 200 px in 10 frame
+    intervals. Dividing by the number of *observations* instead of the elapsed
+    span is the same class of error as the notebook's 10-minute interval, and
+    it would show up here as a value off by a factor of 11/10.
+    """
+    dets = straight_track(11, step=20.0)
+    tracks, _ = track_detections(dets, 11, vertical_axis, scale, tracking_config)
+    summary = summarise(tracks, vertical_axis, scale)[0]
+
+    expected = 200.0 * PIXEL_SIZE_UM / (10 * FRAME_INTERVAL_MIN)
+    assert summary.net_speed_um_per_min == pytest.approx(expected, rel=1e-9)
+    assert summary.span_frames == 10
+    assert summary.n_observations == 11
+
+
+def test_a_missing_interior_detection_does_not_move_the_net_speed(
+    vertical_axis, scale, tracking_config
+):
+    """Why net displacement is quoted at a higher accuracy than mean speed.
+
+    This is the measured result from scripts/experiment_velocity_robustness.py
+    reduced to its cause: the net estimator reads only the first and last
+    observation, so losing one in between is invisible to it, while the mean of
+    instantaneous speeds loses a sample *and* replaces two short intervals with
+    one long one.
+    """
+    complete = straight_track(11, step=20.0)
+    gappy = straight_track(11, step=20.0, skip={4, 7})
+
+    def net_speed(dets):
+        tracks, _ = track_detections(dets, 11, vertical_axis, scale, tracking_config)
+        assert len(tracks) == 1, "the gap must be bridged, not split"
+        return summarise(tracks, vertical_axis, scale)[0].net_speed_um_per_min
+
+    assert net_speed(gappy) == pytest.approx(net_speed(complete), rel=1e-9)
+
+
+def test_net_speed_falls_below_path_speed_when_the_cell_turns_back(
+    vertical_axis, scale, tracking_config
+):
+    """The two numbers must not be interchangeable, or reporting both is a lie.
+
+    A cell that advances and then retreats has travelled the whole path but
+    made less net progress, and straightness is the ratio of the two.
+    """
+    positions = [20.0, 60.0, 100.0, 60.0, 20.0]
+    dets = [
+        make_detection(frame, 45.0, y) for frame, y in enumerate(positions)
+    ]
+    tracks, _ = track_detections(dets, len(positions), vertical_axis, scale, tracking_config)
+    summary = summarise(tracks, vertical_axis, scale)[0]
+
+    # It ends where it started, so net progress is zero and path speed is not.
+    assert summary.net_speed_um_per_min == pytest.approx(0.0, abs=1e-9)
+    assert summary.path_speed_um_per_min > 0.4
+    assert summary.straightness == pytest.approx(0.0, abs=1e-9)
+
+
+def test_along_speed_ignores_sideways_wobble(vertical_axis, scale, tracking_config):
+    """Confined migration asks about progress down the channel, not total motion."""
+    dets = [
+        make_detection(frame, 45.0 + (5.0 if frame % 2 else -5.0), 20.0 + 20.0 * frame)
+        for frame in range(6)
+    ]
+    tracks, _ = track_detections(dets, 6, vertical_axis, scale, tracking_config)
+    summary = summarise(tracks, vertical_axis, scale)[0]
+
+    expected_along = 100.0 * PIXEL_SIZE_UM / (5 * FRAME_INTERVAL_MIN)
+    assert summary.along_speed_um_per_min == pytest.approx(expected_along, rel=1e-9)
+    # The wobble inflates the straight-line and path figures but not this one.
+    assert summary.path_speed_um_per_min > summary.along_speed_um_per_min
+
+
+def test_speeds_are_absent_rather_than_wrong_without_a_calibration(
+    vertical_axis, tracking_config
+):
+    """An uncalibrated dataset must report no micrometres, not fake ones."""
+    uncalibrated = Scale.from_values(None, None)
+    dets = straight_track(5, step=20.0)
+    tracks, _ = track_detections(dets, 5, vertical_axis, uncalibrated, tracking_config)
+    summary = summarise(tracks, vertical_axis, uncalibrated)[0]
+
+    assert summary.net_speed_um_per_min is None
+    assert summary.along_speed_um_per_min is None
+    assert summary.path_speed_um_per_min is None
+
+
+def test_a_track_seen_only_once_has_no_speed_at_all(
+    vertical_axis, scale, tracking_config
+):
+    """Zero elapsed time must not become a division by zero or an infinity."""
+    dets = [make_detection(0, 45.0, 20.0)]
+    tracks, _ = track_detections(dets, 1, vertical_axis, scale, tracking_config)
+    summary = summarise(tracks, vertical_axis, scale)[0]
+
+    assert summary.span_frames == 0
+    assert summary.net_speed_um_per_min is None
+    assert summary.path_speed_um_per_min is None

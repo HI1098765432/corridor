@@ -13,7 +13,7 @@ from __future__ import annotations
 import platform
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Protocol, Sequence
 
@@ -21,9 +21,19 @@ import numpy as np
 
 from .. import app_meta
 from . import export
-from .confinement import ConfinementAxis, assign_channels, resolve_axis
-from .config import CalibrationConfig, RunConfig, Scale
-from .detections import Detection, FrameDiagnostics, detections_to_rows
+from .confinement import (
+    ConfinementAxis,
+    assign_channels,
+    resolve_axis,
+    static_projection,
+)
+from .config import CalibrationConfig, RunConfig, Scale, SegmentationConfig
+from .detections import (
+    SOURCE_ENSEMBLE,
+    Detection,
+    FrameDiagnostics,
+    detections_to_rows,
+)
 from .imaging import (
     SOURCE_USER,
     Calibrated,
@@ -33,10 +43,12 @@ from .imaging import (
 )
 from .measurements import TrackSummary, frame_rows, summarise
 from .qc import QCIssue, collect_issues
+from .recovery import RecoveryResult, recover
 from .segmentation import (
     SegmentationOutput,
     SegmentationService,
     cellpose_version,
+    discover_companion_models,
     gpu_available,
 )
 from .tracking import (
@@ -55,6 +67,7 @@ F_DIAGNOSTICS = "segmentation_diagnostics.csv"
 F_EVENTS = "tracking_events.csv"
 F_QC = "qc_issues.csv"
 F_UNLINKED = "unlinked_starts.csv"
+F_RECOVERY = "recovery_attempts.csv"
 F_MANIFEST = "run.json"
 F_MASKS = "masks.npz"
 F_RAW_MASKS = "masks_raw.npz"
@@ -96,6 +109,7 @@ class AnalysisResult:
     summaries: list[TrackSummary]
     issues: list[QCIssue]
     unlinked: list[UnlinkedStart] = field(default_factory=list)
+    recovery: RecoveryResult | None = None
     manifest: dict[str, Any] = field(default_factory=dict)
     output_dir: Path | None = None
 
@@ -106,6 +120,20 @@ class AnalysisResult:
     @property
     def n_tracks(self) -> int:
         return len(self.tracks)
+
+    @property
+    def all_detections(self) -> list[Detection]:
+        """Every detection the analysis used, primary and recovered together.
+
+        ``segmentation.detections`` is the first pass alone. Writing that as
+        detections.csv while tracks.csv contains recovered positions leaves
+        rows in one file with no counterpart in the other, which breaks the
+        obvious join and gives no hint that it has.
+        """
+        out = list(self.segmentation.detections)
+        if self.recovery is not None:
+            out.extend(self.recovery.detections)
+        return out
 
     @property
     def usable_tracks(self) -> list[Track]:
@@ -158,8 +186,26 @@ def run_analysis(
     _check(progress)
 
     # -- 2. segmentation ----------------------------------------------------
-    progress.stage("Segmenting", f"{metadata.n_frames} frames")
-    service = SegmentationService(config.segmentation)
+    # A model-based fallback rung means "every model on this machine", so the
+    # companions are discovered at run time rather than configured.
+    #
+    # The result is deliberately NOT written back into the caller's config. It
+    # would be saved with the project and reused as the application default, so
+    # a later run against a different model would quietly load the *previous*
+    # model's siblings -- a wrong analysis that nothing in the output would
+    # reveal. Discovery belongs to one run, so it stays in a local copy.
+    seg_config = config.segmentation
+    if not seg_config.ensemble_model_paths and seg_config.uses_companion_models():
+        seg_config = replace(
+            seg_config,
+            ensemble_model_paths=discover_companion_models(seg_config.resolved_model()),
+        )
+    requested = seg_config.ensemble_cost_factor()
+    detail = f"{metadata.n_frames} frames"
+    if requested > 1:
+        detail += f", up to {requested} passes each"
+    progress.stage("Segmenting", detail)
+    service = SegmentationService(seg_config)
 
     def seg_progress(done: int, total: int) -> bool:
         progress.step(done, total)
@@ -210,6 +256,45 @@ def run_analysis(
     )
     _check(progress)
 
+    # -- 4b. recovery -------------------------------------------------------
+    # Segmentation on this data is recall-limited, so a second pass looks
+    # specifically where the first pass's tracks say a cell should be. Anything
+    # found is re-tracked together with the primary detections, so a recovered
+    # position has to survive the same cost model as everything else.
+    recovery_result: RecoveryResult | None = None
+    if config.recovery.enabled and tracks:
+        progress.stage("Recovering", "looking where tracks predict a missing cell")
+
+        def recovery_progress(done: int, total: int) -> None:
+            progress.step(done, total)
+
+        recovery_result = recover(
+            stack, tracks, service, axis, scale, config.tracking, config.recovery,
+            background=static_projection(stack),
+            progress=recovery_progress,
+        )
+        if recovery_result.detections:
+            assign_channels(recovery_result.detections, axis)
+
+            # A recovered detection carries a label from the crop it was found
+            # in, which routinely collides with a primary label in the same
+            # frame. tracks.csv records that label, so a reader joining the two
+            # files on (frame, det_label) would silently pick up a different
+            # cell. Relabel above whatever the frame already uses.
+            next_label: dict[int, int] = {}
+            for det in segmentation.detections:
+                next_label[det.frame] = max(next_label.get(det.frame, 0), det.label)
+            for det in recovery_result.detections:
+                next_label[det.frame] = next_label.get(det.frame, 0) + 1
+                det.label = next_label[det.frame]
+
+            combined = list(segmentation.detections) + list(recovery_result.detections)
+            tracks, events = track_detections(
+                combined, metadata.n_frames, axis, scale, config.tracking
+            )
+
+        _check(progress)
+
     # -- 5. measurement -----------------------------------------------------
     progress.stage("Measuring", "velocities and track statistics")
     rows = frame_rows(
@@ -231,13 +316,14 @@ def run_analysis(
     manifest = build_manifest(
         config, metadata, scale, axis, segmentation, tracks, summaries,
         elapsed_s=time.time() - started, output_dir=out_dir,
+        recovery=recovery_result, seg_config=seg_config,
     )
 
     result = AnalysisResult(
         config=config, metadata=metadata, scale=scale, axis=axis,
         segmentation=segmentation, tracks=tracks, events=events, rows=rows,
         summaries=summaries, issues=issues, unlinked=unlinked,
-        manifest=manifest, output_dir=out_dir,
+        recovery=recovery_result, manifest=manifest, output_dir=out_dir,
     )
 
     if save and out_dir is not None:
@@ -257,7 +343,7 @@ def save_result(result: AnalysisResult, out_dir: Path) -> None:
         out_dir / F_DETECTIONS,
         export.DETECTION_COLUMNS,
         detections_to_rows(
-            result.segmentation.detections,
+            result.all_detections,
             pixel_size_um=scale.pixel_size_um if scale.calibrated_space else None,
             frame_interval_min=scale.frame_interval_min if scale.calibrated_time else None,
             source_frames=metadata.source_frames,
@@ -277,6 +363,11 @@ def save_result(result: AnalysisResult, out_dir: Path) -> None:
     )
     export.write_csv(
         out_dir / F_QC, export.QC_COLUMNS, [i.to_row() for i in result.issues]
+    )
+    export.write_csv(
+        out_dir / F_RECOVERY,
+        export.RECOVERY_COLUMNS,
+        [a.to_row() for a in (result.recovery.attempts if result.recovery else [])],
     )
     export.write_csv(
         out_dir / F_UNLINKED,
@@ -303,6 +394,16 @@ def save_result(result: AnalysisResult, out_dir: Path) -> None:
     export.write_json(out_dir / F_MANIFEST, result.manifest)
 
 
+def _tier_counts(recovery: RecoveryResult | None) -> dict[str, int]:
+    if recovery is None:
+        return {}
+    counts: dict[str, int] = {}
+    for attempt in recovery.attempts:
+        if attempt.found:
+            counts[attempt.source] = counts.get(attempt.source, 0) + 1
+    return counts
+
+
 def build_manifest(
     config: RunConfig,
     metadata: StackMetadata,
@@ -314,8 +415,17 @@ def build_manifest(
     *,
     elapsed_s: float,
     output_dir: Path | None,
+    recovery: RecoveryResult | None = None,
+    seg_config: SegmentationConfig | None = None,
 ) -> dict[str, Any]:
-    """Everything needed to reproduce or audit this run."""
+    """Everything needed to reproduce or audit this run.
+
+    ``seg_config`` is the segmentation configuration that was actually used,
+    which is not always ``config.segmentation``: companion models are
+    discovered per run into a local copy. Defaulting to the caller's config
+    keeps this callable on its own, for a re-save of an older result.
+    """
+    seg_config = seg_config or config.segmentation
     diag = segmentation.diagnostics
     return {
         "application": {
@@ -359,17 +469,40 @@ def build_manifest(
             "flow_threshold": config.segmentation.flow_threshold,
             "channels": list(config.segmentation.channels),
             "normalize": config.segmentation.normalize,
+            # Both of these change what actually ran, so a manifest without
+            # them would describe a different analysis from the one that
+            # produced the numbers beside it.
+            "normalisation_mode": seg_config.normalisation_mode,
+            "normalize_percentiles": list(seg_config.normalize_percentiles),
+            "normalize_tile_px": seg_config.normalize_tile_px,
+            "normalize_sharpen_px": seg_config.normalize_sharpen_px,
+            "ensemble": seg_config.ensemble,
+            # Both numbers, because they differ whenever an optional model is
+            # absent, and the difference is exactly what a reader needs to see.
+            "ensemble_passes_requested": seg_config.ensemble_cost_factor(),
+            "ensemble_passes": segmentation.passes_per_frame,
+            "ensemble_model_paths": list(seg_config.ensemble_model_paths),
+            "ensemble_models_unavailable": list(segmentation.unavailable_models),
             "min_extent_px": config.segmentation.min_extent_px,
             "min_area_px": config.segmentation.min_area_px,
             "drop_border_touching": config.segmentation.drop_border_touching,
             "raw_instances_per_frame": [d.raw_count for d in diag],
             "kept_instances_per_frame": [d.kept_count for d in diag],
             "removed_instances_total": sum(d.removed_count for d in diag),
+            "detections_from_fallback": sum(
+                1 for d in segmentation.detections if d.source == SOURCE_ENSEMBLE
+            ),
         },
         "confinement": axis.to_dict(),
         "tracking": {
             **config.tracking.__dict__,
             "max_delta_frames": config.tracking.max_delta_frames(),
+        },
+        "recovery": {
+            **config.recovery.__dict__,
+            "attempted": recovery.n_attempted if recovery else 0,
+            "recovered": recovery.n_recovered if recovery else 0,
+            "by_tier": _tier_counts(recovery),
         },
         "results": {
             "n_detections": len(segmentation.detections),

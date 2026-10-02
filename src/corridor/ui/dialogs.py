@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from .. import app_meta, resources
 from ..core.segmentation import cellpose_version, gpu_available
+from ..core import updates
 from ..store import db
 from .theme import PALETTE, SPACE, stylesheet
 from .widgets.common import divider, ghost_button, label, primary_button
@@ -132,6 +133,19 @@ class SettingsDialog(QDialog):
             self.use_gpu.setEnabled(False)
             self.use_gpu.setText("Use the GPU  ·  no compatible GPU found")
         form.addRow("Processing", self.use_gpu)
+
+        # Whether to contact the internet at all. Off unless the user turned it
+        # on: this application otherwise makes no network calls, which is worth
+        # keeping true by default on a workstation holding unpublished data.
+        self.check_updates = QCheckBox("Check for a newer version at startup")
+        self.check_updates.setChecked(updates.is_enabled(store))
+        self.check_updates.setToolTip(
+            "Asks GitHub once per session whether a newer version exists. "
+            "Nothing about you, your images or your results is sent, and "
+            "Corridor never downloads or installs anything on its own — "
+            "it shows a link and you decide."
+        )
+        form.addRow("Updates", self.check_updates)
         layout.addLayout(form)
 
         layout.addWidget(divider())
@@ -164,6 +178,10 @@ class SettingsDialog(QDialog):
         self.store.set_setting("export_dir", self.export_dir.text())
         self.store.set_setting("model_path", self.model_path.text())
         self.store.set_setting("use_gpu", self.use_gpu.isChecked())
+        # Recorded through the same path the first-run question uses, so the
+        # "has been asked" flag is set either way and the prompt does not
+        # reappear after somebody has chosen here.
+        updates.record_choice(self.store, self.check_updates.isChecked())
         self.accept()
 
 
