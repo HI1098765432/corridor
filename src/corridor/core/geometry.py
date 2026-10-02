@@ -24,10 +24,11 @@ fitted slope instead of the median of all of them, and its own half-width,
 measured as half the distance to its nearest neighbouring lane.
 
 Why not the lumen width between a lane's two walls: measured on the five
-supplied stacks, the 2-3 ridge traces that v1 grouped into one channel are
-0.4-3 px apart in the wide fields (repeated traces of one bright line, not two
+supplied stacks, the 2-3 ridge traces that v1 grouped into one channel span
+0.15-4.0 px in the wide fields (repeated traces of one bright line, not two
 walls), and in the 052924_t1 crop the cell runs along one grouped line while
-the other lies 38.6 px away, just inside the 38.5 px grouping distance.
+the third lies 38.49 px from the other two -- grouped only because that is
+0.05 px inside the 38.54 px grouping distance.
 Nothing in this data establishes which ridges bound a lumen, so a lumen width
 is not reported; the lane spacing is measured, and that is what a lane's
 territory -- and the lane gate -- needs.
