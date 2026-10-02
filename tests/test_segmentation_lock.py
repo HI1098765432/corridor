@@ -444,19 +444,30 @@ def test_3d_never_runs_on_a_2d_model_already_loaded(registry, cellpose):
 
 
 @pytest.fixture
-def dev_override(tmp_path, monkeypatch):
+def dev_override(tmp_path):
+    """An experimental 3-D checkpoint, reachable only through research_model.
+
+    Production never segments 3-D: no model is validated for it, and the
+    registry refuses 3-D even under the environment override. A 3-D trial is
+    a research act, so it goes through ``research_model``, which marks the
+    result as an override exactly as the environment route does for 2-D.
+    """
     dev = tmp_path / "dev" / "experimental_3d"
     dev.parent.mkdir()
     dev.write_bytes(b"an experimental 3-D checkpoint")
-    monkeypatch.setenv(ENV_DEVELOPER, "1")
-    monkeypatch.setenv(ENV_DEVELOPER_MODEL, str(dev))
     return dev
+
+
+def _research_3d(path):
+    from corridor.core.model_registry import research_model
+
+    return research_model(path, label="3d-trial")
 
 
 def test_3d_under_a_developer_override_uses_cellpose_3d_arguments(registry, cellpose, dev_override):
     registry.install()
     stack = _stack_3d(t=2)
-    out = SegmentationService(SegmentationConfig(), scale=CALIBRATED_3D).run_stack(stack)
+    out = SegmentationService(SegmentationConfig(), scale=CALIBRATED_3D, model=_research_3d(dev_override)).run_stack(stack)
 
     _assert_only_verified(cellpose, dev_override)
     assert len(cellpose.evals) == 2
@@ -476,7 +487,7 @@ def test_3d_under_a_developer_override_uses_cellpose_3d_arguments(registry, cell
 def test_3d_without_a_z_step_is_refused_not_assumed_isotropic(registry, cellpose, dev_override):
     """Cellpose reads anisotropy=None as 1.0; the contract forbids assuming that."""
     registry.install()
-    service = SegmentationService(SegmentationConfig(), scale=Scale.from_values(0.5, 10.0))
+    service = SegmentationService(SegmentationConfig(), scale=Scale.from_values(0.5, 10.0), model=_research_3d(dev_override))
     with pytest.raises(UnsupportedStackError, match="Z step"):
         service.run_stack(_stack_3d())
     assert cellpose.init == []
@@ -498,7 +509,7 @@ def test_every_argument_passed_exists_in_the_installed_cellpose(registry, cellpo
         return {a.arg for a in fn.args.args + fn.args.kwonlyargs}
 
     registry.install()
-    SegmentationService(SegmentationConfig(), scale=CALIBRATED_3D).run_stack(_stack_3d())
+    SegmentationService(SegmentationConfig(), scale=CALIBRATED_3D, model=_research_3d(dev_override)).run_stack(_stack_3d())
     service = SegmentationService(SegmentationConfig())
     service.run_stack(_stack(n=1))
     service.segment_crop(np.ones((16, 16), np.float32))
