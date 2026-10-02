@@ -140,6 +140,30 @@ def test_the_filter_reports_which_label_each_survivor_used_to_be():
     assert result.label_map == {1: 2}
 
 
+def test_a_volume_is_filtered_on_its_xy_footprint():
+    """In 3-D the extent and area thresholds stay XY pixels, never voxels."""
+    vol = np.zeros((6, 60, 60), dtype=np.int32)
+    vol[1:5, 10:40, 10:16] = 1   # 30 px long in XY: kept
+    vol[0:6, 45:50, 45:50] = 2   # 5 px in XY however many slices: dropped
+    vol[2:4, 5:30, 40:44] = 3    # 25 px long, two slices: kept
+    result = filter_instances(vol, SegmentationConfig(min_extent_px=20))
+    assert result.mask.shape == vol.shape
+    assert (result.raw_count, result.kept_count) == (3, 2)
+    assert result.label_map == {1: 1, 2: 3}
+    assert result.removed_extents == [5] and result.removed_areas == [25.0]
+
+    # min_area_px compares the XY footprint (30 x 6 = 180 px), not 720 voxels.
+    strict = filter_instances(vol, SegmentationConfig(min_extent_px=20, min_area_px=181))
+    assert 1 not in strict.label_map.values()
+
+    # A cell cut by the first or last slice touches the border in 3-D.
+    border = filter_instances(vol, SegmentationConfig(min_extent_px=20, drop_border_touching=True))
+    assert set(border.label_map.values()) == {1, 3}
+    vol[0, 12:20, 12:14] = 1
+    border = filter_instances(vol, SegmentationConfig(min_extent_px=20, drop_border_touching=True))
+    assert set(border.label_map.values()) == {3}
+
+
 # --------------------------------------------------------------------------
 # What each rung costs
 # --------------------------------------------------------------------------
@@ -190,11 +214,17 @@ def test_the_default_is_a_single_pass():
 
 
 # --------------------------------------------------------------------------
-# Companion model discovery
+# Companion models are gone (contract §2)
 # --------------------------------------------------------------------------
+# 1.x discovered sibling checkpoints beside the primary model and ran them in
+# the ``models``/``max_recall`` rungs. Nothing is discovered in 2.0, and those
+# rungs run as ``off`` inside the service; both are tested where the service
+# is, in test_segmentation_lock.py. The config-level cost table above still
+# describes what SegmentationConfig *asks for*; what runs is
+# SegmentationOutput.passes_per_frame.
 
 
-def test_discovery_finds_sibling_models(tmp_path):
+def test_discovery_finds_nothing_even_beside_real_looking_siblings(tmp_path):
     from corridor.core.segmentation import discover_companion_models
 
     root = tmp_path / "TrainData"
@@ -204,46 +234,23 @@ def test_discovery_finds_sibling_models(tmp_path):
         target.parent.mkdir(parents=True)
         target.write_bytes(b"\0" * (2 << 20))
 
-    found = discover_companion_models(primary)
-    assert found == (str(other),)
-
-
-def test_discovery_ignores_logs_and_label_files(tmp_path):
-    from corridor.core.segmentation import discover_companion_models
-
-    root = tmp_path / "TrainData"
-    primary = root / "CombiModel" / "models" / "combi"
-    primary.parent.mkdir(parents=True)
-    primary.write_bytes(b"\0" * (2 << 20))
-
-    sibling = root / "KK1Model" / "models"
-    sibling.mkdir(parents=True)
-    (sibling / "training.txt").write_text("log")
-    (sibling / "labels.npy").write_bytes(b"\0" * (2 << 20))
-    (sibling / "tiny").write_bytes(b"\0" * 100)  # right shape, far too small
-
     assert discover_companion_models(primary) == ()
-
-
-def test_discovery_refuses_to_search_a_filesystem_root(tmp_path):
-    """The guard against turning a stray path into a whole-disk scan.
-
-    A model at ``C:/models/thing`` puts the search root at the drive letter.
-    Globbing from there is slow and returns Python source files that merely
-    live in a directory called "models", which would then be handed to
-    Cellpose as checkpoints.
-    """
-    from corridor.core.segmentation import discover_companion_models
-
-    assert discover_companion_models("C:/models/thing") == ()
-    assert discover_companion_models("/models/thing") == ()
-
-
-def test_discovery_of_a_path_that_does_not_exist_is_empty(tmp_path):
-    from corridor.core.segmentation import discover_companion_models
-
-    assert discover_companion_models(tmp_path / "absent" / "models" / "x") == ()
     assert discover_companion_models(None) == ()
+
+
+def test_only_the_threshold_rungs_survive_in_the_service():
+    from corridor.core.segmentation import threshold_passes
+
+    assert threshold_passes(SegmentationConfig(ensemble=ENSEMBLE_OFF)) == ((), [])
+    assert threshold_passes(SegmentationConfig(ensemble=ENSEMBLE_THRESHOLDS))[0] == ((-2.0, 0.4),)
+    assert len(threshold_passes(SegmentationConfig(ensemble=ENSEMBLE_WIDE))[0]) == 3
+    for removed in (ENSEMBLE_MODELS, ENSEMBLE_MAX_RECALL):
+        passes, notes = threshold_passes(
+            SegmentationConfig(ensemble=removed, ensemble_model_paths=("/models/KK1",))
+        )
+        assert passes == () and notes and "removed" in notes[0]
+    passes, notes = threshold_passes(SegmentationConfig(ensemble="nonsense"))
+    assert passes == () and notes
 
 
 # --------------------------------------------------------------------------

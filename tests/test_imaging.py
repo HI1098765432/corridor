@@ -12,13 +12,14 @@ from corridor.core.imaging import (
     SOURCE_ND2_INFO,
     SOURCE_TIFF_TAG,
     SOURCE_USER,
+    AmbiguousAxes,
     UnsupportedStackError,
     load_stack,
     parse_info_block,
     parse_source_frames,
     read_metadata,
 )
-from corridor.core.config import CalibrationConfig
+from corridor.core.config import CalibrationConfig, ImportConfig
 from corridor.core.pipeline import effective_calibration
 
 from conftest import FRAME_INTERVAL_MIN, PIXEL_SIZE_UM, SAMPLE_DIR, requires_samples
@@ -99,13 +100,101 @@ def test_singleton_channel_axis_is_collapsed(tmp_path):
     assert load_stack(path, meta).shape == (4, 6, 8)
 
 
-def test_multichannel_stack_is_refused_clearly(tmp_path):
+def test_a_multichannel_stack_is_reduced_to_the_chosen_channel(tmp_path):
+    """1.x refused every C > 1 file; 2.0 analyses one channel and records which."""
+    data = np.zeros((4, 2, 6, 8), dtype=np.uint16)
+    data[:, 1] = 7  # only the second channel is non-zero
+    path = tmp_path / "tcyx2.tif"
+    tifffile.imwrite(path, data, imagej=True, metadata={"axes": "TCYX"})
+
+    first = read_metadata(path)
+    assert (first.axes, first.shape) == ("TYX", (4, 6, 8))
+    assert (first.channel_index, first.n_channels) == (0, 2)
+    assert first.to_dict()["channel_index"] == 0
+    assert any("2 channels" in note for note in first.notes)
+    assert load_stack(path, first).max() == 0
+
+    second = read_metadata(path, ImportConfig(channel_index=1))
+    assert second.channel_index == 1
+    stack = load_stack(path, second)
+    assert stack.shape == (4, 6, 8) and np.all(stack == 7)
+
+
+def test_a_channel_that_does_not_exist_is_refused(tmp_path):
     data = np.zeros((4, 2, 6, 8), dtype=np.uint16)
     path = tmp_path / "tcyx2.tif"
     tifffile.imwrite(path, data, imagej=True, metadata={"axes": "TCYX"})
-    with pytest.raises(UnsupportedStackError) as excinfo:
-        read_metadata(path)
-    assert "ambiguous" in str(excinfo.value).lower()
+    with pytest.raises(UnsupportedStackError, match="2 channels"):
+        read_metadata(path, ImportConfig(channel_index=2))
+    single = tmp_path / "tyx.tif"
+    tifffile.imwrite(single, data[:, 0], imagej=True, metadata={"axes": "TYX"})
+    with pytest.raises(UnsupportedStackError, match="1 channel"):
+        read_metadata(single, ImportConfig(channel_index=1))
+
+
+def test_the_stack_is_float32_and_holds_every_uint16_value_exactly(tmp_path):
+    data = np.array([[[0, 1], [65534, 65535]]], dtype=np.uint16)
+    path = tmp_path / "range.tif"
+    tifffile.imwrite(path, data, imagej=True, metadata={"axes": "TYX"})
+    stack = load_stack(path, read_metadata(path))
+    assert stack.dtype == np.float32
+    assert np.array_equal(stack, data.astype(np.float64))
+
+
+def test_unequal_pixel_sizes_are_recorded_not_averaged(tmp_path):
+    data = np.zeros((3, 6, 8), dtype=np.uint16)
+    path = tmp_path / "rect.tif"
+    tifffile.imwrite(
+        path, data, imagej=True, metadata={"axes": "TYX", "unit": "micron"},
+        resolution=(2.0, 2.5),
+    )
+    meta = read_metadata(path)
+    assert meta.pixel_size_um.value == pytest.approx(0.5)
+    assert meta.pixel_size_y_um.value == pytest.approx(0.4)
+    assert meta.pixel_size_y_um.source == SOURCE_TIFF_TAG
+    assert meta.anisotropic_pixels
+    assert meta.to_dict()["anisotropic_pixels"] is True
+    assert any("not square" in note for note in meta.notes)
+
+
+def test_square_pixels_are_not_flagged(tmp_path):
+    data = np.zeros((3, 6, 8), dtype=np.uint16)
+    path = tmp_path / "square.tif"
+    tifffile.imwrite(
+        path, data, imagej=True, metadata={"axes": "TYX", "unit": "micron"},
+        resolution=(2.14105, 2.14105),
+    )
+    meta = read_metadata(path)
+    assert meta.pixel_size_y_um.value == pytest.approx(meta.pixel_size_um.value)
+    assert not meta.anisotropic_pixels
+
+
+@pytest.mark.parametrize("unit", ["micron", "microns", "um", "\\u00B5m"])
+def test_every_spelling_of_micrometre_is_a_calibration(tmp_path, unit):
+    """ImageJ writes the micro sign several ways; 1.x lost the escaped one.
+
+    The header is ASCII, so a literal µ never reaches it: ImageJ escapes it
+    as ``\\u00B5m``. (A literal µ arrives through OME-XML, tested in
+    test_imaging_3d.)
+    """
+    data = np.zeros((3, 6, 8), dtype=np.uint16)
+    path = tmp_path / "unit.tif"
+    tifffile.imwrite(
+        path, data, imagej=True, metadata={"axes": "TYX", "unit": unit}, resolution=(2.0, 2.0)
+    )
+    meta = read_metadata(path)
+    assert meta.pixel_size_um.value == pytest.approx(0.5)
+
+
+def test_an_imagej_time_unit_is_honoured(tmp_path):
+    data = np.zeros((3, 6, 8), dtype=np.uint16)
+    path = tmp_path / "tunit.tif"
+    tifffile.imwrite(
+        path, data, imagej=True, metadata={"axes": "TYX", "finterval": 20.0, "tunit": "min"}
+    )
+    meta = read_metadata(path)
+    assert meta.frame_interval_min.value == pytest.approx(20.0)
+    assert meta.frame_interval_min.source == SOURCE_IMAGEJ
 
 
 def test_missing_calibration_is_reported_not_invented(tmp_path):
@@ -196,6 +285,11 @@ def test_supplied_stacks_have_the_shape_they_actually_contain(name, shape):
     assert meta.shape == shape
     assert meta.axes_raw == "TYX"
     assert meta.dtype == "uint16"
+    # Time is established by the ImageJ header's frames=N, not assumed.
+    assert (meta.axes, meta.axes_source, meta.dimensionality) == ("TYX", SOURCE_IMAGEJ, "2D")
+    assert (meta.n_channels, meta.channel_index) == (1, 0)
+    assert not meta.anisotropic_pixels
+    assert not meta.z_step_um.known
 
 
 @requires_samples
@@ -237,31 +331,41 @@ def test_supplied_stacks_load_with_the_declared_shape(name, shape):
 
 
 def test_channel_axis_is_never_read_as_time(tmp_path):
-    """A 3-channel image must not be analysed as a 3-frame time-lapse."""
+    """A 3-channel image is one image of one chosen channel, not 3 frames."""
     data = np.zeros((3, 6, 8), dtype=np.uint16)
     path = tmp_path / "cyx.tif"
     tifffile.imwrite(path, data, imagej=True, metadata={"axes": "CYX"})
-    with pytest.raises(UnsupportedStackError):
-        read_metadata(path)
+    meta = read_metadata(path)
+    assert meta.axes == "YX"
+    assert meta.n_frames == 1 and meta.n_channels == 3
+    assert load_stack(path, meta).shape == (1, 6, 8)
 
 
-def test_unlabelled_multipage_stack_is_read_as_time_with_a_note(tmp_path):
-    """A plain multi-page stack is accepted, but the reading is stated out loud."""
+def test_an_unlabelled_multipage_stack_is_ambiguous_not_time(tmp_path):
+    """1.x read a plain multi-page stack as time with a note; it may be Z."""
     data = np.zeros((4, 6, 8), dtype=np.uint16)
     path = tmp_path / "plainstack.tif"
     tifffile.imwrite(path, data, photometric="minisblack")  # -> axes 'QYX'
-    meta = read_metadata(path)
-    assert meta.n_frames == 4
-    assert any("read as time" in note for note in meta.notes)
+    with pytest.raises(AmbiguousAxes) as info:
+        read_metadata(path)
+    assert info.value.choices[:2] == ("TYX", "ZYX")
+    assert "TYX" in str(info.value) and "ZYX" in str(info.value)
+    # The import settings answer the question, and the answer is recorded.
+    meta = read_metadata(path, ImportConfig(axes="TYX"))
+    assert (meta.axes, meta.n_frames, meta.axes_source) == ("TYX", 4, SOURCE_USER)
+    assert load_stack(path, meta).shape == (4, 6, 8)
 
 
-def test_z_slices_are_read_as_time_with_a_note(tmp_path):
+def test_z_slices_are_never_read_as_time(tmp_path):
+    """The T-vs-Z trap: 1.x analysed a one-time-point Z stack as a time-lapse."""
     data = np.zeros((4, 6, 8), dtype=np.uint16)
     path = tmp_path / "zyx.tif"
     tifffile.imwrite(path, data, imagej=True, metadata={"axes": "ZYX"})
     meta = read_metadata(path)
-    assert meta.n_frames == 4
-    assert any("'Z'" in note for note in meta.notes)
+    assert meta.axes == "ZYX" and meta.dimensionality == "3D"
+    assert meta.n_frames == 1 and meta.n_slices == 4
+    assert meta.shape == (1, 4, 6, 8)
+    assert load_stack(path, meta).shape == (1, 4, 6, 8)
 
 
 def test_rgb_samples_are_never_read_as_time(tmp_path):
@@ -269,5 +373,6 @@ def test_rgb_samples_are_never_read_as_time(tmp_path):
     data = np.zeros((3, 6, 8), dtype=np.uint16)
     path = tmp_path / "syx.tif"
     tifffile.imwrite(path, data)  # -> axes 'SYX', one page
-    with pytest.raises(UnsupportedStackError):
-        read_metadata(path)
+    meta = read_metadata(path)
+    assert meta.axes == "YX" and meta.n_frames == 1
+    assert meta.n_channels == 3 and meta.channel_index == 0

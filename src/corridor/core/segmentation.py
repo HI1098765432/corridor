@@ -1,9 +1,32 @@
-"""Cellpose v3 segmentation and the measurable post-filter.
+"""Cellpose v3 segmentation, the measurable post-filter, and imported labels.
 
 This module deliberately keeps two numbers apart for every frame: how many
 instances Cellpose produced, and how many survived post-processing.  Without
 that separation "the cell disappeared" is unattributable, and the temptation
 is to fix the tracker for a problem that lives in segmentation.
+
+The model is not a setting (contract §2).  :class:`SegmentationService`
+resolves exactly one file through :mod:`corridor.core.model_registry`, hashes
+it again immediately before Cellpose reads it, and hands Cellpose only that
+verified absolute path.  The 1.x routes to any other model are gone:
+
+*   ``CellposeModel(model_type=...)`` and bare names.  Cellpose 3.1 also
+    falls back to ``cyto3`` *silently* when ``pretrained_model`` names a path
+    that does not exist (``models.get_model_params``: a warning, then the
+    default), so the file is checked to exist right before the call and the
+    path Cellpose reports having loaded is compared with it afterwards.
+*   ``SegmentationConfig.model_path`` / ``builtin_model`` /
+    ``use_custom_model`` are never read to choose a model; a legacy value
+    that names something else is recorded as ignored, never obeyed.
+*   Companion-model discovery and the two ladder rungs that ran other models
+    (``models``, ``max_recall``).  A legacy config naming one runs as ``off``
+    and says so.  ``thresholds`` and ``wide`` re-run the same validated
+    model at other thresholds and stay.
+
+Imported label images (:func:`load_label_stack`) are the other source of a
+segmentation, and the only route for 3-D data while no 3-D model is
+validated.  Their provenance and checksum travel with the result so an
+imported segmentation can never pass for one the validated model produced.
 """
 
 from __future__ import annotations
@@ -14,31 +37,89 @@ import re
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 import numpy as np
 
-from .config import SegmentationConfig
+from . import model_registry
+from .config import (
+    ENSEMBLE_MAX_RECALL,
+    ENSEMBLE_MODELS,
+    ENSEMBLE_OFF,
+    ENSEMBLE_THRESHOLDS,
+    ENSEMBLE_WIDE,
+    SegmentationConfig,
+)
 from .detections import (
     SOURCE_ENSEMBLE,
     SOURCE_PRIMARY,
     Detection,
     FrameDiagnostics,
     extract_detections,
+    extract_detections_3d,
 )
+from .imaging import CANONICAL_AXES, UnsupportedStackError, read_label_array
+from .model_registry import MODEL_UNAVAILABLE_MESSAGE, ModelUnavailable, ResolvedModel
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .config import Scale
+
+__all__ = [
+    "SOURCE_ENSEMBLE",
+    "SOURCE_PRIMARY",
+    "PROVENANCE_MODEL",
+    "PROVENANCE_IMPORTED",
+    "CellposeUnavailableError",
+    "FilterResult",
+    "SegmentationOutput",
+    "SegmentationService",
+    "cellpose_version",
+    "check_cellpose_for",
+    "discover_companion_models",
+    "file_sha256",
+    "filter_instances",
+    "gpu_available",
+    "load_label_stack",
+    "merge_labelled",
+    "threshold_passes",
+]
 
 _LOG = logging.getLogger(__name__)
 
 #: Cellpose emits this when the flow field contains no basins at all.
 _NO_MASKS_RE = re.compile(r"no (seeds|masks) found", re.IGNORECASE)
 
+#: Where a segmentation came from (``SegmentationOutput.provenance``).
+PROVENANCE_MODEL = "model"
+PROVENANCE_IMPORTED = "imported_labels"
+
+#: The ladder rungs that re-run the validated model at other thresholds.
+_THRESHOLD_RUNGS = (ENSEMBLE_OFF, ENSEMBLE_THRESHOLDS, ENSEMBLE_WIDE)
+#: The rungs that ran other models; removed in 2.0, loaded as ``off``.
+_REMOVED_RUNGS = (ENSEMBLE_MODELS, ENSEMBLE_MAX_RECALL)
+
 
 class CellposeUnavailableError(RuntimeError):
-    """Raised when the Cellpose runtime or the model file cannot be used."""
+    """Raised when the Cellpose runtime cannot run the resolved model."""
 
 
 def cellpose_version() -> str:
+    """The installed Cellpose version, without importing Cellpose.
+
+    ``import cellpose`` imports torch (``cellpose/version.py`` does), which
+    costs seconds and hundreds of megabytes; the version is in the package
+    metadata, which is where ``cellpose.version`` itself reads it from.
+    """
     try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            return str(version("cellpose"))
+        except PackageNotFoundError:
+            pass
+    except Exception:  # pragma: no cover - importlib.metadata is stdlib
+        pass
+    try:  # pragma: no cover - a frozen build without the dist-info
         import cellpose
 
         return str(getattr(cellpose, "version", "unknown"))
@@ -46,17 +127,24 @@ def cellpose_version() -> str:
         return "unavailable"
 
 
-def require_cellpose_v3() -> str:
-    """Confirm a Cellpose 3.x runtime, which the custom model requires."""
-    version = cellpose_version()
-    major = version.split(".")[0]
-    if not major.isdigit() or int(major) != 3:
+def check_cellpose_for(resolved: ResolvedModel) -> str:
+    """Confirm the installed Cellpose meets the model's requirement, before loading.
+
+    Cellpose 4 refuses a Cellpose 3 checkpoint only through an ``assert``
+    (on the absent ``W2`` key), which ``python -O`` and an optimised freeze
+    remove, and CP4 releases before 4.0.8 load it and segment garbage.  The
+    requirement is therefore checked explicitly against the registry entry
+    (``>=3,<4`` for the lab model) rather than left to Cellpose.
+    """
+    installed = cellpose_version()
+    if not resolved.spec.accepts_cellpose(installed):
         raise CellposeUnavailableError(
-            f"This analysis needs Cellpose version 3, but version {version} is installed. "
-            "The supplied custom model was trained with Cellpose 3 and will not behave "
-            "the same way under version 4."
+            f"The segmentation model {resolved.spec.model_id} needs Cellpose "
+            f"{resolved.spec.cellpose_version}, but version {installed} is installed. "
+            "The validated model was trained with Cellpose 3 and does not behave the same "
+            "way under version 4."
         )
-    return version
+    return installed
 
 
 def gpu_available() -> bool:
@@ -128,106 +216,74 @@ def filter_instances(mask: np.ndarray, cfg: SegmentationConfig) -> FilterResult:
     of its bounding box is at least ``min_extent`` pixels -- is preserved
     exactly, so results stay comparable.  What changes is that everything it
     removes is now counted.
+
+    A ``(Z, Y, X)`` volume is filtered on the same XY terms: the extent is
+    the larger XY bounding-box side, and ``min_area_px`` and the reported
+    removed areas are the object's XY footprint (``Detection.area_px`` in
+    3-D), so a pixel threshold is never compared with a voxel count.  A
+    border-touching object in 3-D also includes one cut by the first or last
+    slice.
     """
     mask = np.asarray(mask)
     if mask.size == 0:
         return FilterResult(mask.astype(np.int32), [], [], 0, 0, {})
+    if mask.ndim not in (2, 3):
+        raise ValueError(f"filter_instances needs a (Y, X) or (Z, Y, X) mask, got {mask.shape}")
     mask = mask.astype(np.int32, copy=False)
     labels = np.unique(mask)
     labels = labels[labels != 0]
     if labels.size == 0:
         return FilterResult(np.zeros_like(mask, dtype=np.int32), [], [], 0, 0, {})
 
-    h, w = mask.shape[:2]
+    from scipy import ndimage
+
+    h, w = mask.shape[-2:]
+    boxes = ndimage.find_objects(mask)
     keep: list[int] = []
     removed_extents: list[int] = []
     removed_areas: list[float] = []
 
     for lab in labels:
-        ys, xs = np.where(mask == lab)
-        if ys.size == 0:
+        box = boxes[int(lab) - 1]
+        if box is None:
             continue
-        bh = int(ys.max() - ys.min() + 1)
-        bw = int(xs.max() - xs.min() + 1)
-        extent = max(bh, bw)
-        area = float(ys.size)
+        region = mask[box] == lab
+        footprint = region.any(axis=0) if mask.ndim == 3 else region
+        rows, cols = box[-2], box[-1]
+        extent = max(int(rows.stop - rows.start), int(cols.stop - cols.start))
+        area = float(footprint.sum())
         drop = extent < cfg.min_extent_px or (cfg.min_area_px and area < cfg.min_area_px)
         if not drop and cfg.drop_border_touching:
-            if ys.min() == 0 or xs.min() == 0 or ys.max() >= h - 1 or xs.max() >= w - 1:
-                drop = True
+            touches = rows.start == 0 or cols.start == 0 or rows.stop >= h or cols.stop >= w
+            if mask.ndim == 3:
+                touches = touches or box[0].start == 0 or box[0].stop >= mask.shape[0]
+            drop = bool(touches)
         if drop:
             removed_extents.append(extent)
             removed_areas.append(area)
         else:
             keep.append(int(lab))
 
-    out = np.zeros_like(mask, dtype=np.int32)
+    lut = np.zeros(int(labels.max()) + 1, dtype=np.int32)
     label_map: dict[int, int] = {}
     for new_id, lab in enumerate(keep, start=1):
-        out[mask == lab] = new_id
+        lut[lab] = new_id
         label_map[new_id] = lab
     return FilterResult(
-        out, removed_extents, removed_areas, int(labels.size), len(keep), label_map
+        lut[mask], removed_extents, removed_areas, int(labels.size), len(keep), label_map
     )
 
 
-#: Cellpose checkpoints for this architecture are tens of megabytes; anything
-#: far smaller sharing the folder is not one.
-MIN_MODEL_BYTES = 1 << 20
-#: A sanity bound on how much of a directory tree discovery will walk.
-MAX_COMPANION_DIRS = 64
-
-
 def discover_companion_models(primary: str | Path | None) -> tuple[str, ...]:
-    """Find sibling Cellpose models beside the one being used.
+    """Deprecated: companion models are never discovered or run in 2.0.
 
-    The supplied training folder holds three models: one trained on both halves
-    of the data and one on each half alone.  A rung that runs "every available
-    model" should mean the ones actually present on this machine, not a list
-    baked in at build time -- the installed application ships only the combined
-    model, so that list would be wrong for most users and right for none.
-
-    Returns paths only; whether any of them loads is decided later, because a
-    file that exists and a model that works are different questions.
+    1.x looked for sibling checkpoints beside the primary model and ran them
+    in the ``models``/``max_recall`` rungs, so a result could depend on which
+    unvalidated files happened to sit in a folder.  Always returns ``()``;
+    it exists only so legacy importers (``pipeline.py``, the advanced panel)
+    still load until they are rewritten.
     """
-    if not primary:
-        return ()
-    path = Path(primary)
-    if not path.is_file():
-        return ()
-
-    # .../<SomeModel>/models/<file> -> look in the sibling <*>/models/ folders.
-    models_dir = path.parent
-    if models_dir.name != "models":
-        return ()
-    root = models_dir.parent.parent
-    # Refuse to search a filesystem root. Without this guard a model path that
-    # happens to be two levels down from a drive letter turns this into a scan
-    # of the entire disk, which is slow, and which returns files that are not
-    # models but merely live in a directory called "models".
-    if root == root.parent or not root.is_dir():
-        return ()
-
-    found: list[str] = []
-    for sibling in sorted(root.iterdir())[:MAX_COMPANION_DIRS]:
-        candidate_dir = sibling / "models"
-        if not candidate_dir.is_dir():
-            continue
-        for candidate in sorted(candidate_dir.iterdir()):
-            if not candidate.is_file() or candidate.suffix:
-                # Cellpose writes its checkpoints with no extension; anything
-                # with one beside them is a training log or a label file.
-                continue
-            try:
-                if candidate.stat().st_size < MIN_MODEL_BYTES:
-                    continue
-                if candidate.samefile(path):
-                    continue
-            except OSError:
-                continue
-            found.append(str(candidate))
-    return tuple(found)
-
+    return ()
 
 
 def _largest_component(region: np.ndarray) -> np.ndarray:
@@ -294,6 +350,72 @@ def merge_labelled(
     return out, sources
 
 
+def threshold_passes(cfg: SegmentationConfig) -> tuple[tuple[tuple[float, float], ...], list[str]]:
+    """The extra ``(cellprob, flow)`` passes of the validated model, and notes.
+
+    Only the rungs that re-run the same model survive.  A legacy ``models``
+    or ``max_recall`` value runs as ``off`` -- not as its threshold part,
+    because what was measured for those rungs was the combination with other
+    models, and half of it is a configuration nobody measured.
+    """
+    mode = cfg.ensemble
+    if mode in _REMOVED_RUNGS:
+        return (), [
+            f"The fallback rung '{mode}' ran other, unvalidated models and was removed in "
+            "Corridor 2.0; this run used a single pass ('off')."
+        ]
+    if mode not in _THRESHOLD_RUNGS:
+        return (), [f"Unknown fallback rung {mode!r}; a single pass ('off') was used."]
+    passes = tuple(
+        (float(cellprob), float(flow))
+        for path, cellprob, flow in cfg.ensemble_passes()
+        if path is None
+    )
+    return passes, []
+
+
+def _legacy_model_notes(cfg: SegmentationConfig, resolved: ResolvedModel) -> list[str]:
+    """Record, never obey, a v1 configuration's own idea of the model."""
+    notes: list[str] = []
+    if cfg.model_path:
+        try:
+            same = Path(cfg.model_path).resolve() == Path(resolved.path).resolve()
+        except OSError:
+            same = False
+        if not same:
+            notes.append(
+                f"The configuration names the model file {cfg.model_path}; it was ignored. "
+                "Corridor runs only the model resolved and verified by checksum."
+            )
+    if not cfg.use_custom_model:
+        notes.append(
+            f"The configuration asks for the built-in Cellpose model "
+            f"'{cfg.builtin_model}'; it was ignored. Corridor never falls back to a "
+            "built-in model."
+        )
+    if cfg.ensemble_model_paths:
+        notes.append(
+            f"{len(cfg.ensemble_model_paths)} companion model path(s) in the configuration "
+            "were ignored; only the validated model runs."
+        )
+    return notes
+
+
+def _not_validated_for(resolved: ResolvedModel, dimensionality: str) -> str:
+    dims = ", ".join(resolved.spec.dimensions) or "no dimensionality"
+    if dimensionality == "3D":
+        return (
+            f"The segmentation model {resolved.spec.model_id} is validated for {dims} only, "
+            "so a 3-D stack cannot be segmented with it. No 3D-validated segmentation "
+            "model is registered, and there is no 3-D ground truth to validate one "
+            "against. 3-D measurement and tracking still work on an imported label image."
+        )
+    return (
+        f"The segmentation model {resolved.spec.model_id} is validated for {dims} only, "
+        f"not {dimensionality}."
+    )
+
+
 # --------------------------------------------------------------------------
 # Service
 # --------------------------------------------------------------------------
@@ -301,97 +423,151 @@ def merge_labelled(
 
 @dataclass
 class SegmentationOutput:
-    masks: np.ndarray  # (T, Y, X) int32, post-filter
-    raw_masks: np.ndarray  # (T, Y, X) int32, straight from Cellpose
+    masks: np.ndarray  # (T, [Z,] Y, X) int32, post-filter
+    raw_masks: np.ndarray  # (T, [Z,] Y, X) int32, straight from Cellpose or the file
     detections: list[Detection]
     diagnostics: list[FrameDiagnostics]
+    #: The verified absolute path Cellpose loaded ("" for imported labels).
     model_path: str
     model_sha256: str | None
     cellpose_version: str
     used_gpu: bool
-    #: Segmentation passes that actually ran per frame. This is not always the
-    #: configured cost: a companion model that cannot be loaded is skipped, so
-    #: a rung asking for three passes may have run one. Reporting the request
-    #: as though it were the work is how a run gets described as something it
-    #: was not.
+    #: Segmentation passes that actually ran per frame: 1 plus the threshold
+    #: rungs; 0 for imported labels, where nothing ran.
     passes_per_frame: int = 1
-    #: Companion models the configuration asked for and that could not be used.
+    #: Always empty since 2.0 (no companion models); kept for v1 readers.
     unavailable_models: list[str] = field(default_factory=list)
+    #: The model that produced the masks, with its registry entry; None for
+    #: imported labels. ``model.to_manifest()`` is run.json's "model" block.
+    model: ResolvedModel | None = None
+    #: PROVENANCE_MODEL or PROVENANCE_IMPORTED.
+    provenance: str = PROVENANCE_MODEL
+    #: SHA-256 and path of an imported label file.
+    labels_sha256: str | None = None
+    labels_path: str | None = None
+    dimensionality: str = "2D"
+    #: What the run did differently from what was asked (ignored legacy
+    #: settings, removed rungs, label-file reading), for run.json and QC.
+    notes: list[str] = field(default_factory=list)
+
+    @property
+    def developer_override(self) -> bool:
+        return bool(self.model is not None and self.model.developer_override)
+
+    def model_manifest(self) -> dict[str, Any] | None:
+        """``run.json["model"]`` (contract §2), or None when no model ran."""
+        return self.model.to_manifest() if self.model is not None else None
 
 
 class SegmentationService:
-    """Loads the model once and segments frames on demand."""
+    """Resolves the validated model once, loads it once, segments on demand.
 
-    def __init__(self, cfg: SegmentationConfig) -> None:
+    ``model`` is for tests and research scripts that pass an explicit
+    :class:`~corridor.core.model_registry.ResolvedModel` (for example from
+    ``model_registry.research_model``, which is always marked as a developer
+    override); production passes nothing and the registry decides.
+    ``scale`` supplies the Z anisotropy and voxel spacing for 3-D stacks.
+    """
+
+    def __init__(
+        self,
+        cfg: SegmentationConfig,
+        *,
+        model: ResolvedModel | None = None,
+        scale: "Scale | None" = None,
+    ) -> None:
         self.cfg = cfg
+        self.scale = scale
+        self._requested = model
+        self._resolved: ResolvedModel | None = None
         self._model = None
-        self._model_path: str | None = None
         self._used_gpu = False
-        #: Companion models for the fallback rungs, loaded lazily and only if a
-        #: rung actually asks for one, keyed by path so a model shared by
-        #: several passes is loaded once.
-        self._extra_models: dict[str, Any] = {}
-        #: Paths a rung asked for and could not load.  Recorded rather than
-        #: raised: an optional extra model that is absent should cost some
-        #: recall, not the whole analysis.
+        self._passes, notes = threshold_passes(cfg)
+        self.notes: list[str] = list(notes)
+        #: Always empty: no optional model exists to be unavailable.
         self.unavailable_models: list[str] = []
+
+    # -- model resolution and loading ------------------------------------------
+
+    @property
+    def resolved_model(self) -> ResolvedModel | None:
+        """The verified model, once a segmentation call has resolved it."""
+        return self._resolved
 
     @property
     def model(self):
+        """The loaded Cellpose network for 2-D frames (recovery, self-test)."""
+        return self._network("2D")
+
+    def _resolve(self, dimensionality: str) -> ResolvedModel:
+        if self._resolved is None:
+            resolved = (
+                self._requested
+                if self._requested is not None
+                else model_registry.resolve_model(dimensionality)
+            )
+            if dimensionality not in resolved.spec.dimensions and not resolved.developer_override:
+                raise ModelUnavailable(_not_validated_for(resolved, dimensionality))
+            self._resolved = resolved
+            self.notes.extend(_legacy_model_notes(self.cfg, resolved))
+        elif (
+            dimensionality not in self._resolved.spec.dimensions
+            and not self._resolved.developer_override
+        ):
+            raise ModelUnavailable(_not_validated_for(self._resolved, dimensionality))
+        return self._resolved
+
+    def _network(self, dimensionality: str):
+        resolved = self._resolve(dimensionality)
         if self._model is None:
-            self._load()
+            self._model = self._load(resolved)
         return self._model
 
-    def _load(self) -> None:
-        require_cellpose_v3()
+    def _load(self, resolved: ResolvedModel):
+        """Hand Cellpose the verified absolute path, and nothing else.
+
+        The file is re-hashed here, immediately before Cellpose reads it:
+        the registry verified it at resolution time, but an explicit
+        ``model`` may have been resolved long before, and a file replaced in
+        between would otherwise be loaded unchecked.
+        """
+        check_cellpose_for(resolved)
+        path = Path(resolved.path)
+        if not path.is_absolute():
+            raise ModelUnavailable(
+                f"{MODEL_UNAVAILABLE_MESSAGE}\n\nThe model path is not absolute.", [(path, "relative")]
+            )
+        if not path.is_file():
+            raise ModelUnavailable(MODEL_UNAVAILABLE_MESSAGE, [(path, "missing")])
+        digest = model_registry.sha256_file(path)
+        if digest != resolved.sha256:
+            raise ModelUnavailable(
+                MODEL_UNAVAILABLE_MESSAGE, [(path, f"checksum mismatch: sha256 {digest}")]
+            )
+
+        want_gpu = bool(self.cfg.use_gpu and gpu_available())
         from cellpose import models
 
-        target = self.cfg.resolved_model()
-        want_gpu = bool(self.cfg.use_gpu and gpu_available())
         try:
-            if self.cfg.use_custom_model and self.cfg.model_path:
-                path = Path(self.cfg.model_path)
-                if not path.exists():
-                    raise CellposeUnavailableError(
-                        f"The Cellpose model file was not found:\n{path}"
-                    )
-                self._model = models.CellposeModel(
-                    pretrained_model=str(path), gpu=want_gpu
-                )
-            else:
-                self._model = models.CellposeModel(model_type=target, gpu=want_gpu)
-        except CellposeUnavailableError:
-            raise
+            network = models.CellposeModel(pretrained_model=str(path), gpu=want_gpu)
         except Exception as exc:  # noqa: BLE001 - surfaced to the user verbatim
             raise CellposeUnavailableError(
                 f"The Cellpose model could not be loaded.\n\n{exc}"
             ) from exc
-        self._model_path = target
+
+        loaded = getattr(network, "pretrained_model", None)
+        if isinstance(loaded, (list, tuple)):
+            loaded = loaded[0] if loaded else None
+        if loaded and Path(str(loaded)).resolve() != path.resolve():
+            raise ModelUnavailable(
+                f"{MODEL_UNAVAILABLE_MESSAGE}\n\nCellpose loaded {loaded} instead of the "
+                "verified file; the result would not come from the validated model.",
+                [(path, "not the file Cellpose loaded")],
+            )
         self._used_gpu = want_gpu
+        return network
 
-    def _extra_model(self, path: str):
-        """Load a companion model, or return None if it cannot be used."""
-        if path in self._extra_models:
-            return self._extra_models[path]
-        if path in self.unavailable_models:
-            return None
-        try:
-            from cellpose import models
-
-            if not Path(path).exists():
-                raise FileNotFoundError(path)
-            model = models.CellposeModel(
-                pretrained_model=str(path),
-                gpu=bool(self.cfg.use_gpu and gpu_available()),
-            )
-        except Exception as exc:  # noqa: BLE001 - degrade, do not abort
-            _LOG.warning(
-                "fallback model unavailable, continuing without it: %s (%s)", path, exc
-            )
-            self.unavailable_models.append(path)
-            return None
-        self._extra_models[path] = model
-        return model
+    # -- 2-D -------------------------------------------------------------------
 
     def _eval(
         self,
@@ -419,14 +595,17 @@ class SegmentationService:
 
         Returns ``(raw label image, message, label -> provenance)``.  With the
         fallback ladder off this is a single Cellpose call and every label is
-        ``primary``.  With it on, the extra passes are merged in afterwards and
-        anything only they found is tagged, so a reader can always separate an
-        ordinary detection from one that needed a more permissive setting to
-        appear at all.
+        ``primary``.  With a threshold rung on, the extra passes of the same
+        model are merged in afterwards and anything only they found is
+        tagged, so a reader can always separate an ordinary detection from
+        one that needed a more permissive setting to appear at all.
         """
+        if np.ndim(image) != 2:
+            raise ValueError(f"segment_frame takes one 2-D frame, got shape {np.shape(image)}")
+        network = self._network("2D")
         messages: list[str] = []
         primary = self._eval(
-            self.model,
+            network,
             image,
             self.cfg.cellprob_threshold,
             self.cfg.flow_threshold,
@@ -434,20 +613,16 @@ class SegmentationService:
         )
         note = next((m for m in messages if _NO_MASKS_RE.search(m)), "")
 
-        extra_passes = self.cfg.ensemble_passes()
-        if not extra_passes:
+        if not self._passes:
             return primary, note, {
                 int(v): SOURCE_PRIMARY for v in np.unique(primary) if v
             }
 
         stack: list[tuple[np.ndarray, str]] = [(primary, SOURCE_PRIMARY)]
-        for path, cellprob, flow in extra_passes:
-            model = self.model if path is None else self._extra_model(path)
-            if model is None:
-                continue
+        for cellprob, flow in self._passes:
             try:
                 stack.append(
-                    (self._eval(model, image, cellprob, flow, messages), SOURCE_ENSEMBLE)
+                    (self._eval(network, image, cellprob, flow, messages), SOURCE_ENSEMBLE)
                 )
             except Exception as exc:  # noqa: BLE001 - one failed pass is not fatal
                 _LOG.warning("fallback pass failed, continuing: %s", exc)
@@ -477,9 +652,10 @@ class SegmentationService:
         flow = self.cfg.flow_threshold
         if override is not None:
             cellprob, flow = override
+        network = self._network("2D")
         messages: list[str] = []
         with _capture_cellpose_messages(messages):
-            result = self.model.eval(
+            result = network.eval(
                 np.ascontiguousarray(crop),
                 channels=list(self.cfg.channels),
                 diameter=self.cfg.diameter,
@@ -489,13 +665,93 @@ class SegmentationService:
             )
         return np.asarray(result[0]).astype(np.int32)
 
+    # -- 3-D -------------------------------------------------------------------
+
+    def _anisotropy(self) -> float:
+        anisotropy = self.scale.anisotropy if self.scale is not None else None
+        if anisotropy is None:
+            # Cellpose 3 reads anisotropy=None as 1.0, i.e. as Z sampled like
+            # XY, which the contract forbids assuming.
+            raise UnsupportedStackError(
+                "3-D segmentation needs the Z step and the pixel size, because the model "
+                "must know how far apart the slices are; neither may be assumed equal to "
+                "the other. Enter the Z step (and pixel size) in the calibration settings."
+            )
+        return float(anisotropy)
+
+    def segment_volume(self, volume: np.ndarray) -> tuple[np.ndarray, str]:
+        """Run Cellpose in 3-D on one ``(Z, Y, X)`` volume.
+
+        Only a model validated for 3-D, or a developer override, gets here;
+        the production registry has none, so production raises
+        ModelUnavailable before anything loads.  Arguments are those of
+        Cellpose 3.1.1.3's ``CellposeModel.eval``: ``do_3D=True`` with
+        ``z_axis=0`` and the anisotropy from the calibrated scale.  The
+        channel was chosen at import, so the volume is one grayscale channel
+        and ``channels=[0, 0]``.
+        """
+        volume = np.asarray(volume)
+        if volume.ndim != 3:
+            raise ValueError(f"segment_volume takes one (Z, Y, X) volume, got {volume.shape}")
+        self._resolve("3D")
+        anisotropy = self._anisotropy()
+        network = self._network("3D")
+        messages: list[str] = []
+        with _capture_cellpose_messages(messages):
+            result = network.eval(
+                volume,
+                channels=[0, 0],
+                z_axis=0,
+                do_3D=True,
+                anisotropy=anisotropy,
+                diameter=self.cfg.diameter,
+                cellprob_threshold=self.cfg.cellprob_threshold,
+                flow_threshold=self.cfg.flow_threshold,
+                normalize=self.cfg.normalize_argument(),
+            )
+        masks = np.asarray(result[0]).astype(np.int32)
+        # Cellpose squeezes its output, which drops a length-1 Z or Y.
+        if masks.shape != volume.shape and masks.size == volume.size:
+            masks = masks.reshape(volume.shape)
+        if masks.shape != volume.shape:
+            raise CellposeUnavailableError(
+                f"Cellpose returned 3-D masks of shape {masks.shape} for a volume of {volume.shape}."
+            )
+        note = next((m for m in messages if _NO_MASKS_RE.search(m)), "")
+        return masks, note
+
+    # -- whole stacks ------------------------------------------------------------
+
+    def segment(
+        self,
+        stack: np.ndarray,
+        *,
+        progress: Callable[[int, int], bool] | None = None,
+    ) -> SegmentationOutput:
+        """The ``interfaces.Segmenter`` entry point; see :meth:`run_stack`."""
+        return self.run_stack(stack, progress=progress)
+
     def run_stack(
         self,
         stack: np.ndarray,
         *,
         progress: Callable[[int, int], bool] | None = None,
     ) -> SegmentationOutput:
-        """Segment every frame. ``progress`` may return False to cancel."""
+        """Segment a ``(T, Y, X)`` or ``(T, Z, Y, X)`` stack. ``progress`` may return False to cancel.
+
+        The dimensionality is the array's: :func:`imaging.load_stack` always
+        returns ``T[Z]YX``, so a 4-D array is a 3-D time-lapse, never a 2-D
+        one with a channel.  The model is resolved before any pixel is read,
+        so a missing or mismatching model (or a 3-D stack and the 2-D-only
+        production model) fails at once.
+        """
+        stack = np.asarray(stack)
+        if stack.ndim == 4:
+            return self._run_3d(stack, progress)
+        if stack.ndim != 3:
+            raise ValueError(f"run_stack takes a (T, Y, X) or (T, Z, Y, X) stack, got {stack.shape}")
+        resolved = self._resolve("2D")
+
         n = int(stack.shape[0])
         raw_frames: list[np.ndarray] = []
         kept_frames: list[np.ndarray] = []
@@ -507,17 +763,7 @@ class SegmentationService:
             filtered = filter_instances(raw, self.cfg)
             raw_frames.append(raw)
             kept_frames.append(filtered.mask)
-            diagnostics.append(
-                FrameDiagnostics(
-                    frame=t,
-                    raw_count=filtered.raw_count,
-                    kept_count=filtered.kept_count,
-                    removed_count=filtered.raw_count - filtered.kept_count,
-                    removed_extents=filtered.removed_extents,
-                    removed_areas=filtered.removed_areas,
-                    cellpose_message=note,
-                )
-            )
+            diagnostics.append(_diagnostics(t, filtered, note))
             frame_detections = extract_detections(filtered.mask, t, intensity=stack[t])
             for det in frame_detections:
                 if raw_sources.get(filtered.label_map.get(det.label, -1)) == SOURCE_ENSEMBLE:
@@ -531,31 +777,202 @@ class SegmentationService:
             if progress is not None and progress(t + 1, n) is False:
                 raise KeyboardInterrupt("Segmentation cancelled.")
 
-        model_path = self._model_path or self.cfg.resolved_model()
-        sha = None
-        if self.cfg.use_custom_model and self.cfg.model_path:
-            try:
-                sha = file_sha256(self.cfg.model_path)
-            except OSError:
-                sha = None
-
-        # A companion pass that never loaded did not run, however it was
-        # configured. Counting the successful ones is the only honest answer.
-        ran = 1 + sum(
-            1
-            for path, _, _ in self.cfg.ensemble_passes()
-            if path is None or path not in self.unavailable_models
+        return self._output(
+            resolved, raw_frames, kept_frames, detections, diagnostics,
+            spatial=stack.shape[1:], passes=1 + len(self._passes), dimensionality="2D",
         )
 
+    def _run_3d(
+        self, stack: np.ndarray, progress: Callable[[int, int], bool] | None
+    ) -> SegmentationOutput:
+        resolved = self._resolve("3D")
+        self._anisotropy()
+        spacing = self.scale.spacing_zyx_um if self.scale is not None else None
+        single = (
+            "The fallback rungs were measured on 2-D frames only; the 3-D stack was "
+            "segmented in a single pass."
+        )
+        if self._passes and single not in self.notes:
+            self.notes.append(single)
+        n = int(stack.shape[0])
+        raw_frames: list[np.ndarray] = []
+        kept_frames: list[np.ndarray] = []
+        diagnostics: list[FrameDiagnostics] = []
+        detections: list[Detection] = []
+        for t in range(n):
+            raw, note = self.segment_volume(stack[t])
+            filtered = filter_instances(raw, self.cfg)
+            raw_frames.append(raw)
+            kept_frames.append(filtered.mask)
+            diagnostics.append(_diagnostics(t, filtered, note))
+            detections.extend(
+                extract_detections_3d(filtered.mask, t, intensity=stack[t], spacing_zyx_um=spacing)
+            )
+            if progress is not None and progress(t + 1, n) is False:
+                raise KeyboardInterrupt("Segmentation cancelled.")
+        return self._output(
+            resolved, raw_frames, kept_frames, detections, diagnostics,
+            spatial=stack.shape[1:], passes=1, dimensionality="3D",
+        )
+
+    def _output(
+        self,
+        resolved: ResolvedModel,
+        raw_frames: list[np.ndarray],
+        kept_frames: list[np.ndarray],
+        detections: list[Detection],
+        diagnostics: list[FrameDiagnostics],
+        *,
+        spatial: tuple[int, ...],
+        passes: int,
+        dimensionality: str,
+    ) -> SegmentationOutput:
+        empty = np.zeros((0, *spatial), np.int32)
         return SegmentationOutput(
-            masks=np.stack(kept_frames).astype(np.int32) if kept_frames else np.zeros((0, 0, 0), np.int32),
-            raw_masks=np.stack(raw_frames).astype(np.int32) if raw_frames else np.zeros((0, 0, 0), np.int32),
+            masks=np.stack(kept_frames).astype(np.int32) if kept_frames else empty,
+            raw_masks=np.stack(raw_frames).astype(np.int32) if raw_frames else empty.copy(),
             detections=detections,
             diagnostics=diagnostics,
-            model_path=model_path,
-            model_sha256=sha,
+            model_path=str(resolved.path),
+            model_sha256=resolved.sha256,
             cellpose_version=cellpose_version(),
             used_gpu=self._used_gpu,
-            passes_per_frame=ran,
-            unavailable_models=list(self.unavailable_models),
+            passes_per_frame=passes,
+            unavailable_models=[],
+            model=resolved,
+            provenance=PROVENANCE_MODEL,
+            dimensionality=dimensionality,
+            notes=list(self.notes),
         )
+
+
+def _diagnostics(frame: int, filtered: FilterResult, note: str) -> FrameDiagnostics:
+    return FrameDiagnostics(
+        frame=frame,
+        raw_count=filtered.raw_count,
+        kept_count=filtered.kept_count,
+        removed_count=filtered.raw_count - filtered.kept_count,
+        removed_extents=filtered.removed_extents,
+        removed_areas=filtered.removed_areas,
+        cellpose_message=note,
+    )
+
+
+# --------------------------------------------------------------------------
+# Imported label images
+# --------------------------------------------------------------------------
+
+_INT32_MAX = int(np.iinfo(np.int32).max)
+
+
+def _as_labels(arr: np.ndarray, name: str) -> np.ndarray:
+    """An int32 instance-label array, or a refusal that says what is wrong."""
+    if arr.dtype == bool:
+        raise UnsupportedStackError(
+            f"{name} is a binary mask, not a label image: touching cells would be one "
+            "object. Export instance labels (one integer per cell) instead."
+        )
+    if np.issubdtype(arr.dtype, np.integer):
+        values = arr
+    elif np.issubdtype(arr.dtype, np.floating):
+        # Fiji saves labels as 32-bit float; accept them only if every value
+        # is a whole number, because a fractional "label" is not one.
+        if not np.all(np.isfinite(arr)) or not np.array_equal(arr, np.round(arr)):
+            raise UnsupportedStackError(
+                f"{name} holds non-integer values, so it is not a label image."
+            )
+        values = arr
+    else:
+        raise UnsupportedStackError(f"{name} has pixel type {arr.dtype}; labels must be integers.")
+    if values.size and float(values.min()) < 0:
+        raise UnsupportedStackError(f"{name} holds negative values, so it is not a label image.")
+    if values.size and float(values.max()) > _INT32_MAX:
+        raise UnsupportedStackError(f"{name} holds labels above {_INT32_MAX}.")
+    return np.ascontiguousarray(values, dtype=np.int32)
+
+
+def load_label_stack(
+    path: str | Path,
+    axes: str,
+    *,
+    image: np.ndarray | None = None,
+    expected_shape: tuple[int, ...] | None = None,
+    scale: "Scale | None" = None,
+    label_axes: str | None = None,
+    progress: Callable[[int, int], bool] | None = None,
+) -> SegmentationOutput:
+    """Use an integer label TIFF as the segmentation, instead of running a model.
+
+    ``axes`` is the canonical order of the image the labels belong to
+    (``metadata.axes``: ``YX``, ``TYX``, ``ZYX`` or ``TZYX``).  The labels
+    must match the image's ``T[Z]YX`` shape exactly -- pass ``image`` (the
+    loaded stack, which also supplies intensities) or ``expected_shape`` --
+    and a mismatch is refused rather than cropped or padded.  A label file
+    whose own metadata establishes its axes is read by them; one that does
+    not (the usual case) is read in ``label_axes``, or else in ``axes``.
+
+    Labels are measured as they are: no post-filter, because these are the
+    user's objects, not a model's candidates.  3-D detections get µm values
+    only when ``scale`` has a calibrated Z step and pixel size.
+    """
+    path = Path(path)
+    if image is not None:
+        expected = tuple(int(n) for n in np.shape(image))
+    elif expected_shape is not None:
+        expected = tuple(int(n) for n in expected_shape)
+    else:
+        raise ValueError("load_label_stack needs the image or its T[Z]YX shape to check against")
+    if str(axes).upper() not in CANONICAL_AXES:
+        raise ValueError(f"axes must be one of {CANONICAL_AXES}, got {axes!r}")
+
+    arr, label_canonical, notes = read_label_array(path, axes, label_axes=label_axes)
+    if arr.shape != expected:
+        raise UnsupportedStackError(
+            f"The label image {path.name} is {arr.shape} (read as '{label_canonical}') but "
+            f"the image is {expected} ('{str(axes).upper()}'). Labels must match the image "
+            "frame for frame and plane for plane."
+        )
+    labels = _as_labels(arr, path.name)
+    dimensionality = "3D" if labels.ndim == 4 else "2D"
+    spacing = scale.spacing_zyx_um if (scale is not None and dimensionality == "3D") else None
+    if dimensionality == "3D" and spacing is None:
+        notes.append(
+            "The Z step or the pixel size is not calibrated, so imported 3-D objects are "
+            "measured in voxels only."
+        )
+    notes.append(f"The segmentation was imported from {path.name}; no model ran.")
+
+    n = int(labels.shape[0])
+    detections: list[Detection] = []
+    diagnostics: list[FrameDiagnostics] = []
+    for t in range(n):
+        frame = labels[t]
+        intensity = None if image is None else np.asarray(image[t])
+        if dimensionality == "3D":
+            found = extract_detections_3d(frame, t, intensity=intensity, spacing_zyx_um=spacing)
+        else:
+            found = extract_detections(frame, t, intensity=intensity)
+        count = int(np.count_nonzero(np.unique(frame)))
+        diagnostics.append(FrameDiagnostics(frame=t, raw_count=count, kept_count=count))
+        detections.extend(found)
+        if progress is not None and progress(t + 1, n) is False:
+            raise KeyboardInterrupt("Label import cancelled.")
+
+    return SegmentationOutput(
+        masks=labels,
+        raw_masks=labels,
+        detections=detections,
+        diagnostics=diagnostics,
+        model_path="",
+        model_sha256=None,
+        cellpose_version="",
+        used_gpu=False,
+        passes_per_frame=0,
+        unavailable_models=[],
+        model=None,
+        provenance=PROVENANCE_IMPORTED,
+        labels_sha256=model_registry.sha256_file(path),
+        labels_path=str(path.resolve()),
+        dimensionality=dimensionality,
+        notes=notes,
+    )
