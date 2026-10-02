@@ -24,6 +24,7 @@ them all without recording an attempt.
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -330,6 +331,63 @@ def test_a_candidate_in_another_lane_is_refused_when_lanes_are_applied(scale, tr
     unconstrained = recover(stack, tracks, _ThresholdService(), scale, tracking_config, cfg)
     assert unconstrained.attempts[0].found, "without lanes the same cell is accepted"
 
+    off = TrackingConfig(channel_constraint="off")
+    assert recover(stack, tracks, _ThresholdService(), scale, off, cfg,
+                   geometry=geometry).attempts[0].found, "constraint off: the tracker would link it"
+
+
+def _two_narrow_lanes(y0: float = 40.0, y1: float = 80.0, half_width: float = 8.0):
+    lanes = [
+        Lane(index=0, origin=(0.0, y0), direction=(1.0, 0.0), half_width_px=half_width),
+        Lane(index=1, origin=(0.0, y1), direction=(1.0, 0.0), half_width_px=half_width),
+    ]
+    return ChannelGeometry(lanes=lanes, source=GEOMETRY_FROM_RIDGES, confidence=1.0, applied=True)
+
+
+def test_a_candidate_just_outside_every_lane_is_not_refused(scale, tracking_config):
+    """Lane -1 is never gated -- by the tracker (``_hard_gates``) or here.
+
+    The review's case: a track in lane 0 (centre y = 40, half-width 8 px) and
+    a candidate at y = 49.5, 1.5 px past the measured half-width. The tracker
+    would link it; recovery used to refuse it as "in lane -1".
+    """
+    geometry = _two_narrow_lanes()
+    shape = (7, 120, 400)
+    cells = horizontal_cells(range(7), y=40.0)
+    stray = make_detection(3, 160.0, 49.5, major=140.0, minor=11.0,
+                           orientation_rad=HORIZONTAL, with_mask=True)
+    primaries = [d for d in cells if d.frame != 3]
+    stack = paint(primaries + [stray], shape)
+    tracks, _ = track_detections(primaries, 7, scale, tracking_config, geometry=geometry)
+    assert len(tracks) == 1 and tracks[0].channel == 0
+    assert geometry.lane_of(160.0, 49.5) == -1
+
+    result = recover(stack, tracks, _ThresholdService(), scale, tracking_config,
+                     RecoveryConfig(intensity=False), geometry=geometry)
+    [attempt] = result.attempts
+    assert attempt.found, attempt.detail
+    assert result.detections[0].channel == -1
+
+
+def test_a_track_with_no_lane_is_not_held_to_one(scale, tracking_config):
+    """A track never seen inside a lane has no lane to refuse a candidate from."""
+    geometry = _two_narrow_lanes(y0=20.0, y1=100.0)
+    shape = (7, 120, 400)
+    cells = horizontal_cells(range(7), y=60.0)  # between the two lanes
+    stray = make_detection(3, 160.0, 96.0, major=140.0, minor=11.0,
+                           orientation_rad=HORIZONTAL, with_mask=True)
+    primaries = [d for d in cells if d.frame != 3]
+    stack = paint(primaries + [stray], shape)
+    tracks, _ = track_detections(primaries, 7, scale, tracking_config, geometry=geometry)
+    assert len(tracks) == 1 and tracks[0].channel == -1
+    assert geometry.lane_of(160.0, 96.0) == 1
+
+    result = recover(stack, tracks, _ThresholdService(), scale, tracking_config,
+                     RecoveryConfig(intensity=False), geometry=geometry)
+    [attempt] = result.attempts
+    assert attempt.found, attempt.detail
+    assert result.detections[0].channel == 1
+
 
 # --------------------------------------------------------------------------
 # A cell already detected is not recovered again
@@ -373,6 +431,7 @@ def test_recovery_drops_a_duplicate_of_a_primary_cell(scale, tracking_config):
     assert attempt.frame == 3 and attempt.track_id == 1
     assert not attempt.found and result.detections == []
     assert attempt.duplicate_of_label == cells[3].label
+    assert attempt.duplicate_of is cells[3]
     assert "dropped as a duplicate" in attempt.detail
     assert result.n_duplicates_dropped == 1
 
@@ -393,8 +452,59 @@ def test_two_tracks_cannot_recover_the_same_cell_twice(scale, tracking_config):
     result = recover(stack, first_pass, _ThresholdService(), scale, tracking_config,
                      RecoveryConfig())
     assert [a.found for a in result.attempts] == [True, False]
-    assert "recovered detection" in result.attempts[1].detail
+    assert "already recovered" in result.attempts[1].detail
     assert len(result.detections) == 1
+    [kept] = result.detections
+    assert result.attempts[1].duplicate_of is kept
+
+
+def test_a_duplicate_of_a_recovered_cell_names_that_cell(scale, tracking_config):
+    """The review's case: two tracks miss frame 3, and an unrelated primary owns label 1 there.
+
+    The cell recovered first used to keep its crop-local label 1 until the
+    pipeline relabelled it, so the second attempt's duplicate_of_label named
+    the unrelated primary cell. A recovered cell now gets the frame's next
+    free label at once, and the row reads the label from the object, so a
+    later relabelling is followed too.
+    """
+    cells = horizontal_cells(range(7), major=100.0)
+    stack = paint(cells, (7, 120, 400))
+    without = [d for d in cells if d.frame != 3]
+    twin = [make_detection(d.frame, d.x, d.y, major=100.0, minor=11.0,
+                           orientation_rad=HORIZONTAL, with_mask=True, label=2)
+            for d in without]
+    bystander = make_detection(3, 330.0, 100.0, major=40.0, minor=11.0, label=1)
+    first_pass = [hand_track(1, without), hand_track(2, twin), hand_track(3, [bystander])]
+
+    result = recover(stack, first_pass, _ThresholdService(), scale, tracking_config,
+                     RecoveryConfig())
+    [kept] = result.detections
+    dropped = next(a for a in result.attempts if a.duplicate_of is not None)
+    assert dropped.duplicate_of is kept
+    assert kept.label == 2, "the next label free in frame 3, not the crop's 1"
+    assert dropped.duplicate_of_label == 2 and dropped.to_row()["duplicate_of_label"] == 2
+    assert "labelled 1" not in dropped.detail
+    assert result.n_duplicates_dropped == 1
+
+    kept.label = 7  # any later relabelling is what the row reports
+    assert dropped.to_row()["duplicate_of_label"] == 7
+
+
+def test_recovered_labels_never_collide_with_the_frames_primaries(scale, tracking_config):
+    """The pipeline's relabelling rule, applied where the cell is found."""
+    shape = (7, 120, 400)
+    cells = horizontal_cells(range(7))
+    stack = paint(cells, shape)
+    bystanders = [make_detection(3, 330.0, 100.0, major=40.0, minor=11.0, label=lab)
+                  for lab in (1, 4)]
+    primaries = [d for d in cells if d.frame != 3]
+    first_pass = [hand_track(1, primaries)] + [
+        hand_track(k + 2, [b]) for k, b in enumerate(bystanders)
+    ]
+    result = recover(stack, first_pass, _ThresholdService(), scale, tracking_config,
+                     RecoveryConfig(intensity=False))
+    [det] = result.detections
+    assert det.frame == 3 and det.label == 5
 
 
 @pytest.mark.parametrize(
@@ -517,6 +627,31 @@ def test_recovery_disabled_examines_nothing(straight_track_with_a_hole, scale, t
                      RecoveryConfig(enabled=False))
     assert result.attempts == []
     assert result.detections == []
+
+
+def test_the_v1_argument_order_still_runs(scale, tracking_config):
+    """Transition, like ``track_detections``: a v1 pipeline passes an axis fourth.
+
+    Without it the v1 pipeline on this branch raised TypeError on every run
+    with recovery on (review of E2). The axis only supplies lanes.
+    """
+    shape = (7, 120, 400)
+    stack = paint(horizontal_cells(range(7)), shape)
+    primaries = [d for d in horizontal_cells(range(7)) if d.frame != 3]
+    tracks, _ = track_detections(primaries, 7, scale, tracking_config)
+    axis = SimpleNamespace(ux=1.0, uy=0.0, channels=[], source="none", confidence=0.0,
+                           pitch_px=None, notes=[])
+
+    v1 = recover(stack, tracks, _ThresholdService(), axis, scale, tracking_config,
+                 RecoveryConfig())
+    v2 = recover(stack, tracks, _ThresholdService(), scale, tracking_config, RecoveryConfig())
+    assert [a.to_row() for a in v1.attempts] == [a.to_row() for a in v2.attempts]
+    assert v1.attempts[0].found
+    with pytest.raises(TypeError, match="recovery_cfg"):
+        recover(stack, tracks, _ThresholdService(), axis, scale, tracking_config)
+    with pytest.raises(TypeError, match="keyword-only"):
+        recover(stack, tracks, _ThresholdService(), scale, tracking_config, RecoveryConfig(),
+                RecoveryConfig())
 
 
 def test_a_3d_stack_is_not_searched_in_silence(straight_track_with_a_hole, scale, tracking_config):

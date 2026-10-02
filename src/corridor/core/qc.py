@@ -35,6 +35,7 @@ from .tracking import (
     Track,
     UnlinkedStart,
     _aspect,
+    _is_legacy_axis,
 )
 
 SEVERITY_INFO = "info"
@@ -83,7 +84,9 @@ LINK_AMBIGUOUS_MARGIN_CHI2 = 2.0
 #: The shape change between two consecutive observations, in the tracker's own
 #: units, ``(dln aspect / 0.35)^2 + (dsolidity / 0.10)^2`` (before ``w_shape``),
 #: above which it is a discontinuity: the 0.99 quantile of a 2-dof
-#: chi-square, ``-2 ln 0.01``.
+#: chi-square, ``-2 ln 0.01``.  A percentile of the *assumed* shape noise:
+#: the two sigmas are contract values (tracking.SHAPE_SIGMA_*), not measured
+#: on this data, and the issue text says so.
 MORPHOLOGY_JUMP_CHI2 = -2.0 * math.log(0.01)
 
 #: A size ratio between consecutive observations beyond ``exp(3 sigma)``,
@@ -180,7 +183,7 @@ def collect_issues(
     tracks: Sequence[Track],
     summaries: Sequence[TrackSummary],
     cfg: TrackingConfig,
-    *,
+    *legacy: Any,
     geometry: ChannelGeometry | None = None,
     unlinked: Sequence[UnlinkedStart] = (),
     model: Any = None,
@@ -197,7 +200,35 @@ def collect_issues(
     objects per frame (index = frame) for the count-jump check; when None it
     comes from the diagnostics, or from the tracking events when there are no
     diagnostics (imported labels).
+
+    Transition: ``collect_issues(metadata, axis, scale, diagnostics, events,
+    tracks, summaries, cfg, unlinked)`` (v1 order) still works, as the
+    tracker's and measurements' entry points do: the axis only supplies lanes
+    (:meth:`ChannelGeometry.from_legacy_axis`).  Without it a v1 pipeline
+    raised TypeError on every analysis.  It goes when the pipeline passes the
+    2.0 arguments (E1).
     """
+    if _is_legacy_axis(scale):
+        if len(legacy) not in (1, 2):
+            raise TypeError(
+                "collect_issues(metadata, axis, scale, diagnostics, events, tracks, "
+                f"summaries, cfg[, unlinked]) (v1 order) got {7 + len(legacy)} positional "
+                "arguments"
+            )
+        axis = scale
+        scale, diagnostics, events, tracks, summaries, cfg = (  # type: ignore[assignment]
+            diagnostics, events, tracks, summaries, cfg, legacy[0],
+        )
+        if len(legacy) == 2:
+            unlinked = legacy[1]
+        if geometry is None:
+            geometry = ChannelGeometry.from_legacy_axis(axis)
+    elif legacy:
+        raise TypeError(
+            f"collect_issues() takes 7 positional arguments but {7 + len(legacy)} were "
+            "given; geometry, unlinked, model, dimensionality, provenance and "
+            "count_series are keyword-only"
+        )
     issues: list[Issue] = []
     three_d = str(dimensionality).upper() == "3D"
 
@@ -464,9 +495,10 @@ def collect_issues(
                         f"Track {tr.id} changes shape abruptly at frame {obs.frame}",
                         f"Frames {prev.frame} to {obs.frame}: the change of aspect ratio and "
                         f"solidity scores {jump:.1f} in the tracker's shape units, above "
-                        f"{MORPHOLOGY_JUMP_CHI2:.1f} (the 99th percentile of the change "
-                        "expected for one cell). A different cell, or a segmentation error, "
-                        "is likelier than a real change of shape.",
+                        f"{MORPHOLOGY_JUMP_CHI2:.1f}, the 99th percentile under the "
+                        "tracker's assumed shape noise (set by the contract, not measured). "
+                        "A different cell, or a segmentation error, is likelier than a real "
+                        "change of shape.",
                         frame=obs.frame, track_id=tr.id,
                     )
                 )
@@ -477,17 +509,16 @@ def collect_issues(
                     # Observation.size is the voxel count only when the
                     # detection carries one (Detection.size).
                     det = obs.detection
-                    what = (
-                        "volume"
-                        if det is not None and det.ndim == 3 and det.volume_vox is not None
-                        else "area"
-                    )
+                    volume = det is not None and det.ndim == 3 and det.volume_vox is not None
+                    what = "volume" if volume else "area"
+                    # Detection.size is a pixel or voxel count, never µm.
+                    unit = "voxels" if volume else "pixels"
                     issues.append(
                         Issue(
                             "size_jump", SEVERITY_WARN,
                             f"Track {tr.id}'s {what} changes {ratio:.2f}x at frame {obs.frame}",
                             f"Frames {prev.frame} to {obs.frame}: the {what} goes from "
-                            f"{s0:.0f} to {s1:.0f} (outside {1.0 / size_bound:.2f}-"
+                            f"{s0:.0f} to {s1:.0f} {unit} (outside {1.0 / size_bound:.2f}-"
                             f"{size_bound:.2f}x, three of the tracker's own size sigmas). "
                             "Two cells in one mask, part of a cell, or a different cell.",
                             frame=obs.frame, track_id=tr.id,
