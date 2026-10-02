@@ -15,3 +15,7 @@ Thumbs.db
 
 # The bundled model is staged here at build time from data/.
 src/corridor/assets/models/
+
+# Cellpose writes stray checkpoints to ./models when a training run is given
+# no explicit save path. They are model weights, so the rule above applies.
+/models/
