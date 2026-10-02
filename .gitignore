@@ -19,3 +19,6 @@ src/corridor/assets/models/
 # Cellpose writes stray checkpoints to ./models when a training run is given
 # no explicit save path. They are model weights, so the rule above applies.
 /models/
+
+# Isolated worktrees created by Claude Code agents.
+/.claude/
