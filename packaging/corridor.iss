@@ -6,9 +6,12 @@
 ;   * Nothing under {localappdata}\Corridor is ever removed. That is where
 ;     projects and results live, so an upgrade - and even an uninstall - must
 ;     leave a user's analyses intact.
+;
+; The AppVersion line is written by scripts/sync_version.py from
+; src/corridor/_version.py. Edit that file, never the define below.
 
 #define AppName        "Corridor"
-#define AppVersion     "1.3.0"
+#define AppVersion     "2.0.0"
 #define AppPublisher   "Corridor"
 #define AppExeName     "Corridor.exe"
 #define AppId          "{6F4B1D0E-2C7A-4F63-9E11-0A5C8B3D7A21}"

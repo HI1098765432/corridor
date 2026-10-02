@@ -4,8 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "corridor"
-version = "1.1.0"
-description = "Confined cell migration analysis: Cellpose segmentation and confinement-aware tracking"
+# Read from src/corridor/_version.py, the one place the version is written
+# ([tool.setuptools.dynamic] below; tests/test_version.py checks it resolves).
+dynamic = ["version"]
+description = "Confined cell migration analysis: validated Cellpose segmentation, axis-free tracking and MTrackJ-style measurement"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = { text = "MIT" }
@@ -19,7 +21,9 @@ dependencies = [
   "numpy>=1.24,<2",
   "scipy>=1.10",
   "scikit-image>=0.22,<0.26",
-  "pandas>=2.0",
+  # No pandas: nothing in src/corridor imports it and Cellpose's inference
+  # path does not load it (measured: packaging/runtime_imports.json). Napari
+  # requires it, so the napari extra still brings it when Napari is wanted.
   "tifffile>=2024.1",
   "imagecodecs",
   "Pillow>=10",
@@ -38,6 +42,10 @@ corridor-gui = "corridor.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
+
+[tool.setuptools.dynamic]
+# setuptools reads the literal statically; nothing is imported to build.
+version = { attr = "corridor._version.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

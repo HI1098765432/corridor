@@ -1,10 +1,18 @@
-"""Single source of truth for application identity and version."""
+"""Application identity. The version itself lives in ``_version.py``.
+
+``APP_VERSION`` stays importable from here because the code that reads it
+binds it early: ``core.updates.is_newer`` takes it as a default argument at
+import time, and the AppUserModelID in ``ui.app`` embeds it. Re-exporting the
+one source keeps every one of those readers on the same value; a second literal
+here is exactly the drift ``tests/test_version.py`` exists to catch.
+"""
 
 from __future__ import annotations
 
+from ._version import __version__ as APP_VERSION
+
 APP_NAME = "Corridor"
 APP_TAGLINE = "Confined cell migration analysis"
-APP_VERSION = "1.3.0"
 APP_PUBLISHER = "Corridor"
 APP_ID = "Corridor"
 

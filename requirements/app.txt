@@ -1,0 +1,58 @@
+# Runtime dependencies of the Corridor application, pinned exactly.
+#
+# The transitive closure of pyproject.toml's dependencies, read from the
+# installed metadata of the project's .venv on 2026-10-02 (the venv local
+# release builds use), with environment markers evaluated for Windows and
+# Python 3.12. Nothing here is a guess at a compatible version.
+#
+#   pip install -r requirements/app.txt
+#   pip install -e . --no-deps
+#
+# packaging/requirements-locked.txt is this list plus the build and test
+# tools; tests/test_packaging.py fails if the two disagree on any pin.
+#
+# Deliberately absent:
+#   pandas       nothing in src/corridor imports it and Cellpose's inference
+#                path does not load it (packaging/runtime_imports.json). Napari
+#                requires it, so requirements/napari.txt brings it.
+#   torchvision  nothing here requires it and the runtime path never loads it.
+#   napari       opt-in: requirements/napari.txt and CORRIDOR_BUNDLE_NAPARI=1.
+#   cellpose 4   requirements/cp4.txt, for .venv-cp4 only, never this venv.
+
+# The +cpu torch wheels exist only on PyTorch's index. The shipped build runs
+# on the CPU, and the CUDA wheels are several times larger.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+cellpose==3.1.1.3
+colorama==0.4.6
+fastremap==1.20.0
+filelock==3.32.6
+fill_voids==2.1.2
+fsspec==2026.7.0
+imagecodecs==2026.1.14
+ImageIO==2.37.4
+Jinja2==3.1.6
+lazy-loader==0.5
+llvmlite==0.49.0
+MarkupSafe==3.0.3
+mpmath==1.3.0
+natsort==8.4.0
+networkx==3.6.1
+numba==0.67.0
+numpy==1.26.4
+opencv-python-headless==4.11.0.86
+packaging==26.3
+pillow==12.3.0
+PySide6==6.8.1
+PySide6_Addons==6.8.1
+PySide6_Essentials==6.8.1
+roifile==2026.2.10
+scikit-image==0.25.2
+scipy==1.17.1
+setuptools==84.0.0
+shiboken6==6.8.1
+sympy==1.13.1
+tifffile==2026.3.3
+torch==2.6.0+cpu
+tqdm==4.70.1
+typing_extensions==4.16.0

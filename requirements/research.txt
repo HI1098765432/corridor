@@ -1,0 +1,21 @@
+# Research environment: the application plus what training/ needs that the
+# application must never ship (design §9; nothing in src/corridor imports
+# training/, and the installer never contains it).
+#
+#   pip install -r requirements/research.txt
+#   pip install -e . --no-deps
+
+-r app.txt
+
+# Morphology -> migration prediction (training/predict/): baselines, splits,
+# calibrated intervals. Not yet installed in any venv here, so this pin is the
+# current PyPI release on 2026-10-02, whose declared requirements
+# (Python >= 3.11, numpy >= 1.24.1, scipy >= 1.10.0) app.txt satisfies. Its own
+# dependencies (joblib, threadpoolctl, narwhals) resolve at install time:
+# freeze them into this file the first time it is installed, as app.txt is.
+scikit-learn==1.9.1
+
+# Optional, for figures only. Never imported by src/corridor or by anything the
+# installer ships; the spec excludes it outright. Install it when wanted:
+#   pip install matplotlib==3.11.2
+# (current release on 2026-10-02; declares numpy >= 1.25, which app.txt meets).

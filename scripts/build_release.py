@@ -1,7 +1,21 @@
 """Build the Windows application and its installer, then checksum both.
 
 One command so that a release is reproducible and nobody has to remember the
-order of the steps.
+order of the steps:
+
+1. ``sync_version.py`` writes the version from ``src/corridor/_version.py``
+   into the Windows version resource and the Inno Setup define. If it had to
+   change either, the build goes ahead but says so: those files are committed,
+   and a release must be built from what is committed (CI runs ``--check``).
+2. The production model named by ``src/corridor/assets/model_registry.json``
+   is staged into the assets and its SHA-256 checked.
+3. PyInstaller (``packaging/corridor.spec``, which checks all of that again,
+   because it can be run on its own), then Inno Setup.
+4. ``build/build_manifest.json`` records what was built, including whether
+   Napari is in it.
+
+``--napari`` bundles Napari (it sets ``CORRIDOR_BUNDLE_NAPARI=1`` for the
+spec); the default bundle has none.
 """
 
 from __future__ import annotations
@@ -24,11 +38,20 @@ WORK = BUILD / "work"
 INSTALLER_DIR = BUILD / "installer"
 ASSETS = SRC / "corridor" / "assets"
 
-MODEL_NAME = "cyto2_phase_microfluidic_KK1KK2_combi"
-MODEL_SHA256 = "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6"
-MODEL_SOURCE = (
+for helper_dir in (ROOT / "scripts", ROOT / "packaging"):
+    if str(helper_dir) not in sys.path:
+        sys.path.insert(0, str(helper_dir))
+
+import bundle_plan  # noqa: E402
+import sync_version  # noqa: E402
+
+#: Where a source checkout keeps the researchers' copies of the weights. Both
+#: are checked against the registry's SHA-256 after staging, so the order only
+#: decides which copy is read, never which model ships.
+MODEL_SOURCE_DIRS = (
     ROOT / "data" / "confinedmig_cellTrack" / "CellPose_TrainData"
-    / "KK1KK2_combiModel" / "models" / MODEL_NAME
+    / "KK1KK2_combiModel" / "models",
+    ROOT / "data" / "confinedmig_cellTrack" / "cp_custom_model",
 )
 
 ISCC_CANDIDATES = [
@@ -39,11 +62,7 @@ ISCC_CANDIDATES = [
 
 
 def sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    return bundle_plan.sha256_file(path)
 
 
 def run(command: list[str], **kwargs) -> None:
@@ -52,31 +71,52 @@ def run(command: list[str], **kwargs) -> None:
 
 
 def app_version() -> str:
-    sys.path.insert(0, str(SRC))
-    from corridor.app_meta import APP_VERSION
-
-    return APP_VERSION
+    """The one source, read without importing the package."""
+    return sync_version.read_version(ROOT)
 
 
-def stage_model() -> Path:
-    """Copy the trained model into the assets the bundle will include."""
-    target_dir = ASSETS / "models"
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / MODEL_NAME
-    if not target.exists():
-        if not MODEL_SOURCE.exists():
-            raise SystemExit(
-                f"The Cellpose model is missing.\nExpected it at: {MODEL_SOURCE}"
-            )
-        shutil.copy2(MODEL_SOURCE, target)
-    digest = sha256(target)
-    if digest != MODEL_SHA256:
-        raise SystemExit(
-            f"The staged model has checksum {digest}, expected {MODEL_SHA256}. "
-            "Refusing to ship a model that is not the one this was validated against."
+def sync_generated_files() -> str:
+    version = app_version()
+    written = sync_version.sync(ROOT, version)
+    for rel in written:
+        print(f"version {version}: rewrote {rel.as_posix()} -- commit it; "
+              "CI builds only from committed files")
+    notes = ROOT / sync_version.RELEASE_NOTES
+    if notes.exists():
+        problems = sync_version.release_notes_problems(
+            version, notes.read_text(encoding="utf-8-sig")
         )
-    print(f"model staged and verified: {target.name}  {digest[:16]}...")
-    return target
+        for problem in problems:
+            # Not fatal here: a local build is often a test build. The release
+            # workflow runs the same check with --release and refuses.
+            print(f"note: release notes are not ready for {version}: {problem}")
+    return version
+
+
+def stage_model() -> tuple[bundle_plan.ProductionModel, Path]:
+    """Copy the production model into the assets the bundle will include."""
+    try:
+        model = bundle_plan.production_model()
+    except bundle_plan.RegistryError as exc:
+        raise SystemExit(str(exc)) from exc
+    target = bundle_plan.staged_model_path(model)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.exists():
+        sources = [d / model.filename for d in MODEL_SOURCE_DIRS]
+        source = next((s for s in sources if s.is_file()), None)
+        if source is None:
+            raise SystemExit(
+                f"The Cellpose model {model.filename} is missing. Looked in:\n  "
+                + "\n  ".join(str(s) for s in sources)
+            )
+        shutil.copy2(source, target)
+    try:
+        bundle_plan.verify_staged_model(model)
+    except bundle_plan.BundleError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"model staged and verified: {model.model_id} {target.name}  "
+          f"{model.sha256[:16]}...")
+    return model, target
 
 
 def find_iscc() -> Path | None:
@@ -90,14 +130,27 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-app", action="store_true", help="reuse an existing build")
     parser.add_argument("--skip-installer", action="store_true")
+    parser.add_argument("--napari", action="store_true",
+                        help=f"bundle Napari (sets {bundle_plan.NAPARI_ENV}=1)")
     args = parser.parse_args()
 
-    version = app_version()
-    print(f"Corridor {version}")
+    env = dict(os.environ)
+    if args.napari:
+        env[bundle_plan.NAPARI_ENV] = "1"
+    try:
+        napari_bundled = bundle_plan.napari_requested(env)
+    except bundle_plan.BundleError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    try:
+        version = sync_generated_files()
+    except sync_version.VersionError as exc:
+        raise SystemExit(f"version: {exc}") from exc
+    print(f"Corridor {version}" + (" (with Napari)" if napari_bundled else ""))
 
     python = sys.executable
     run([python, str(ROOT / "scripts" / "make_icon.py")])
-    stage_model()
+    model, _ = stage_model()
 
     if not args.skip_app:
         if DIST.exists():
@@ -106,7 +159,7 @@ def main() -> int:
             python, "-m", "PyInstaller", "--noconfirm", "--clean",
             "--distpath", str(DIST), "--workpath", str(WORK),
             str(ROOT / "packaging" / "corridor.spec"),
-        ], cwd=str(ROOT))
+        ], cwd=str(ROOT), env=env)
 
     exe = DIST / "Corridor" / "Corridor.exe"
     if not exe.exists():
@@ -131,7 +184,12 @@ def main() -> int:
         "built_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "python": sys.version.split()[0],
         "unpacked_bytes": total,
-        "model": {"name": MODEL_NAME, "sha256": MODEL_SHA256},
+        "model": {
+            "model_id": model.model_id,
+            "name": model.filename,
+            "sha256": model.sha256,
+        },
+        "napari_bundled": napari_bundled,
     }
     if installer and installer.exists():
         digest = sha256(installer)
