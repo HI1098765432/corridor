@@ -195,10 +195,14 @@ def open_saved_in_napari(analysis, block: bool = False, stack: np.ndarray | None
             raise FileNotFoundError(
                 f"The original image is no longer at {source}; Napari needs it to show the overlays."
             )
-        from ..core.imaging import load_stack  # noqa: PLC0415
+        from ..core.imaging import load_stack, saved_import_config  # noqa: PLC0415
         from ..ui.workers import import_config_for, read_metadata_for  # noqa: PLC0415
 
-        metadata = read_metadata_for(source, import_config_for(analysis.manifest))
+        import_config = import_config_for(analysis.manifest)
+        if import_config is None or not import_config.axes:
+            # Re-read the image as the saved run read it (a v1 run read Z/Q/I as time).
+            import_config = saved_import_config(source, analysis.manifest.get("input")) or import_config
+        metadata = read_metadata_for(source, import_config)
         stack = load_stack(source, metadata)
     name = Path(source).name if source else Path(analysis.directory).name
     viewer = build_viewer(

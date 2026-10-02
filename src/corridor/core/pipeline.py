@@ -178,7 +178,9 @@ def run_analysis(
 
     # -- 1. metadata --------------------------------------------------------
     progress.stage("Reading", "interpreting the image and its metadata")
-    metadata = read_metadata(config.input_path)
+    # The import settings name the axis order (and channel) of a file whose
+    # metadata cannot: without them an ambiguous file is refused, not guessed.
+    metadata = read_metadata(config.input_path, config.import_)
     pixel, interval, scale = effective_calibration(metadata, config.calibration)
     metadata.pixel_size_um = pixel
     metadata.frame_interval_min = interval

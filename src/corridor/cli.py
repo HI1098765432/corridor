@@ -11,12 +11,13 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import app_meta, resources
+from . import app_meta
 from .core import pipeline
 from .core.config import (
     AXIS_MODES,
     CalibrationConfig,
     ConfinementConfig,
+    ImportConfig,
     RunConfig,
     SegmentationConfig,
     TrackingConfig,
@@ -51,8 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("input", nargs="?", help="time-lapse TIFF to analyse")
     p.add_argument("-o", "--output", help="directory for the results")
-    p.add_argument("--model", help="custom Cellpose v3 model file")
-    p.add_argument("--builtin-model", default=None, help="use a built-in model instead")
+    # Kept only so that 1.x command lines fail loudly instead of running a
+    # different model from the one they name: Corridor 2.0 runs only the
+    # registered, checksum-verified model (contract section 2).
+    p.add_argument("--model", help=argparse.SUPPRESS)
+    p.add_argument("--builtin-model", default=None, help=argparse.SUPPRESS)
     p.add_argument("--gpu", action="store_true", help="use the GPU if one is available")
 
     seg = p.add_argument_group("segmentation")
@@ -67,6 +71,16 @@ def build_parser() -> argparse.ArgumentParser:
     trk.add_argument("--sigma-along", type=float, default=None, help="um")
     trk.add_argument("--sigma-across", type=float, default=None, help="um")
     trk.add_argument("--unmatched", type=float, default=None, help="chi-square units")
+
+    imp = p.add_argument_group("import")
+    imp.add_argument(
+        "--axes",
+        default=None,
+        help="axis order for a file whose metadata does not establish it, e.g. TYX or ZYX",
+    )
+    imp.add_argument(
+        "--channel", type=int, default=None, help="channel to analyse, numbered from 0"
+    )
 
     geo = p.add_argument_group("geometry and calibration")
     geo.add_argument("--axis", choices=AXIS_MODES, default=None)
@@ -91,14 +105,31 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+#: Why ``--model`` / ``--builtin-model`` are refused rather than ignored: the
+#: service would run the validated model regardless, and a run that silently
+#: ignored the model its command line named would be a different analysis
+#: from the one the user believes they ran.
+REMOVED_MODEL_OPTIONS = (
+    "--model and --builtin-model were removed in Corridor 2.0: it runs only the "
+    "validated segmentation model, verified by checksum. For research with another "
+    "model, set CORRIDOR_DEVELOPER=1 and CORRIDOR_DEVELOPER_MODEL=<file>; the run is "
+    "then recorded as a developer override."
+)
+
+
+def removed_options(args: argparse.Namespace) -> str | None:
+    """The refusal for 1.x options that would otherwise be silently ignored."""
+    if getattr(args, "model", None) or getattr(args, "builtin_model", None):
+        return REMOVED_MODEL_OPTIONS
+    return None
+
+
 def config_from_args(args: argparse.Namespace) -> RunConfig:
-    model = args.model or (str(resources.bundled_model_path() or "") or None)
-    seg = SegmentationConfig(
-        model_path=model,
-        use_custom_model=bool(model) and not args.builtin_model,
-        builtin_model=args.builtin_model or "cyto3",
-        use_gpu=bool(args.gpu),
-    )
+    refusal = removed_options(args)
+    if refusal:
+        raise ValueError(refusal)
+    # No model fields: the registry resolves the one validated model.
+    seg = SegmentationConfig(use_gpu=bool(args.gpu))
     if args.cellprob is not None:
         seg.cellprob_threshold = args.cellprob
     if args.flow is not None:
@@ -130,11 +161,18 @@ def config_from_args(args: argparse.Namespace) -> RunConfig:
         pixel_size_um=args.pixel_size, frame_interval_min=args.frame_interval
     )
 
+    imp = ImportConfig()
+    if getattr(args, "axes", None):
+        imp.axes = args.axes
+    if getattr(args, "channel", None) is not None:
+        imp.channel_index = args.channel
+
     src = Path(args.input)
     out = Path(args.output) if args.output else src.parent / f"{src.stem}_corridor"
     return RunConfig(
         input_path=str(src), output_dir=str(out),
         segmentation=seg, tracking=trk, confinement=conf, calibration=cal,
+        import_=imp,
     )
 
 
@@ -156,7 +194,11 @@ def wants_interface(args: argparse.Namespace) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    refusal = removed_options(args)
+    if refusal:
+        parser.error(refusal)
 
     if args.self_test:
         from .selftest import run as run_self_test

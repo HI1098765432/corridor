@@ -44,10 +44,11 @@ DATA = ROOT / "data" / "confinedmig_cellTrack"
 SAMPLES = DATA / "sample_data"
 TRAIN = DATA / "CellPose_TrainData"
 MODEL = TRAIN / "KK1KK2_combiModel" / "models" / "cyto2_phase_microfluidic_KK1KK2_combi"
-COMPANIONS = (
-    str(TRAIN / "KK1Model" / "models" / "cyto2_phase_microfluidic_d10"),
-    str(TRAIN / "KK2Model" / "models" / "cyto2_phase_microfluidic_d10"),
-)
+#: The 'models' and 'max_recall' rungs ran companion models (KK1Model and
+#: KK2Model) beside this one. Corridor 2.0 removed them -- only the validated
+#: model may segment -- so they can no longer be re-measured here; their 1.x
+#: numbers stay in the report this script wrote before.
+REMOVED_RUNGS = ("models", "max_recall")
 
 PIXEL_UM = 0.467060342995564
 INTERVAL_MIN = 20.006894938151042
@@ -76,13 +77,10 @@ def analyse(stack: np.ndarray, rung: str):
     from corridor.core.segmentation import SOURCE_ENSEMBLE, SegmentationService
     from corridor.core.tracking import track_detections
 
-    cfg = SegmentationConfig(
-        model_path=str(MODEL),
-        use_custom_model=True,
-        ensemble=rung,
-        ensemble_model_paths=COMPANIONS,
-    )
-    service = SegmentationService(cfg)
+    from corridor.core.model_registry import research_model
+
+    cfg = SegmentationConfig(ensemble=rung)
+    service = SegmentationService(cfg, model=research_model(MODEL, label="KK1KK2_combi"))
     started = time.time()
     output = service.run_stack(stack)
     seconds = time.time() - started
@@ -153,12 +151,18 @@ def judge(name: str, result: dict) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--rungs", default="off,thresholds,wide,models,max_recall")
+    ap.add_argument("--rungs", default="off,thresholds,wide")
     ap.add_argument("--stacks", default=",".join(STACKS))
     ap.add_argument("--out", default=str(ROOT / "docs" / "fallback_experiment.json"))
     args = ap.parse_args()
 
     rungs = [r.strip() for r in args.rungs.split(",") if r.strip()]
+    removed = [r for r in rungs if r in REMOVED_RUNGS]
+    if removed:
+        # The service would run them as 'off', and the report would show
+        # identical rungs that look like a measured result.
+        ap.error(f"rung(s) {', '.join(removed)} were removed in Corridor 2.0 (they ran "
+                 "other models); only off, thresholds and wide can be measured.")
     stacks = [s.strip() for s in args.stacks.split(",") if s.strip()]
 
     report: dict = {"rungs": {}}

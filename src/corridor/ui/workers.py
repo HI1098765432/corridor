@@ -216,6 +216,13 @@ class ResultsWorker(QObject):
                     f"{source}\n\nThe result files are still available."
                 )
             import_config = import_config_for(analysis.manifest, self.import_config)
+            if import_config is None or not import_config.axes:
+                # Re-read the image exactly as the saved run read it: a v1 run
+                # read Z/Q/I planes as time, and 2.0 would otherwise refuse the
+                # file or return a Z stack its saved (T, Y, X) masks do not fit.
+                saved = imaging.saved_import_config(source, analysis.manifest.get("input"))
+                if saved is not None:
+                    import_config = saved
             metadata = read_metadata_for(source, import_config)
             stack = imaging.load_stack(source, metadata)
         except Exception as exc:  # noqa: BLE001
