@@ -89,6 +89,7 @@ class DatasetWorker(QObject):
             from ..core.imaging import load_stack
 
             metadata = read_metadata(self.path)
+            refuse_z_stack_for_display(metadata)
             stack = load_stack(self.path, metadata)
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(friendly_error(exc), traceback.format_exc())
@@ -125,7 +126,15 @@ class ResultsWorker(QObject):
                     "The original image could not be found:\n"
                     f"{source}\n\nThe result files are still available."
                 )
-            metadata = read_metadata(source)
+            from ..core.imaging import saved_import_config
+
+            # Re-read the image exactly as the saved run read it: a v1 run read
+            # Z/Q/I planes as time, and 2.0 would otherwise refuse the file or
+            # return a Z stack its saved (T, Y, X) masks do not fit.
+            metadata = read_metadata(
+                source, saved_import_config(source, analysis.manifest.get("input"))
+            )
+            refuse_z_stack_for_display(metadata)
             stack = load_stack(source, metadata)
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(friendly_error(exc), traceback.format_exc())
@@ -189,6 +198,24 @@ class Job:
     @property
     def running(self) -> bool:
         return self.thread.isRunning()
+
+
+def refuse_z_stack_for_display(metadata: StackMetadata) -> None:
+    """Refuse a Z stack before its pixels reach a (T, Y, X)-only canvas.
+
+    Transitional (work package D): ``load_stack`` returns ``(T, Z, Y, X)``
+    for a Z stack, and ``ImageCanvas._frame_pixmap`` unpacks ``h, w`` from one
+    frame, so a Z stack raised inside the paint path. Remove this once the
+    canvas has a Z slider; until then the refusal names the route that works.
+    """
+    from ..core.imaging import UnsupportedStackError
+
+    if metadata.dimensionality == "3D":
+        raise UnsupportedStackError(
+            f"{metadata.path.name} is a {metadata.axes_interpretation}. The image view "
+            "cannot show Z stacks yet. If its planes are really time points, analyse it "
+            "from the command line with --axes TYX."
+        )
 
 
 def friendly_error(exc: BaseException) -> str:

@@ -182,10 +182,13 @@ def test_whole_number_float_labels_are_accepted(tmp_path):
     assert out.masks.dtype == np.int32 and {d.label for d in out.detections} == {4}
 
 
-def test_the_image_or_its_shape_is_required(tmp_path):
+def test_without_the_image_a_label_of_the_wrong_dimensionality_is_refused(tmp_path):
+    """The label file's own metadata says Z stack; the image is a 2-D movie."""
     path = tmp_path / "labels.tif"
-    tifffile.imwrite(path, np.zeros((2, 6, 8), np.uint16), imagej=True, metadata={"axes": "TYX"})
-    with pytest.raises(ValueError, match="shape"):
+    tifffile.imwrite(
+        path, np.zeros((2, 3, 6, 8), np.uint16), imagej=True, metadata={"axes": "TZYX"}
+    )
+    with pytest.raises(UnsupportedStackError, match="dimensions"):
         load_label_stack(path, "TYX")
 
 
@@ -202,3 +205,32 @@ def test_label_import_can_be_cancelled(volume_pair):
     with pytest.raises(KeyboardInterrupt):
         load_label_stack(label_path, meta.axes, image=stack, progress=progress)
     assert seen == [(1, 2)]
+
+
+def test_the_two_argument_interface_call_works_and_checks_dimensionality(volume_pair):
+    """``load_label_stack(path, axes)`` as the interface names it.
+
+    Without the image there are no sizes to compare, so the dimensionality is
+    checked and the missing comparison is recorded rather than skipped quietly.
+    """
+    _, label_path, labels = volume_pair
+    out = load_label_stack(label_path, "TZYX")
+    assert out.masks.shape == labels.shape and out.dimensionality == "3D"
+    assert any("not compared with the image's size" in note for note in out.notes)
+    with pytest.raises(UnsupportedStackError):
+        load_label_stack(label_path, "TYX")  # a 4-D label file for a 2-D movie
+
+
+def test_a_label_movie_saved_by_fiji_as_a_plain_stack_is_not_a_z_stack(tmp_path):
+    """Fiji writes slices=N for a plain stack; the labels follow the image's T."""
+    labels = np.zeros((4, 32, 32), np.uint16)
+    for t in range(4):
+        labels[t, 10:22, 4 + 2 * t:16 + 2 * t] = 3
+    path = tmp_path / "fiji_labels.tif"
+    tifffile.imwrite(
+        path, labels, description="ImageJ=1.54f\nimages=4\nslices=4\nloop=false\n",
+        metadata=None, photometric="minisblack",
+    )
+    out = load_label_stack(path, "TYX", expected_shape=(4, 32, 32))
+    assert out.dimensionality == "2D" and len(out.detections) == 4
+    assert [d.frame for d in out.detections] == [0, 1, 2, 3]

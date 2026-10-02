@@ -368,11 +368,80 @@ def test_z_slices_are_never_read_as_time(tmp_path):
     assert load_stack(path, meta).shape == (1, 4, 6, 8)
 
 
-def test_rgb_samples_are_never_read_as_time(tmp_path):
-    """A single colour image has 3 samples, not 3 time points."""
-    data = np.zeros((3, 6, 8), dtype=np.uint16)
-    path = tmp_path / "syx.tif"
-    tifffile.imwrite(path, data)  # -> axes 'SYX', one page
+def test_8_bit_colour_is_one_image_not_three_time_points(tmp_path):
+    """An interleaved 8-bit RGB image has 3 samples, not 3 time points."""
+    data = np.zeros((6, 8, 3), dtype=np.uint8)
+    path = tmp_path / "yxs.tif"
+    tifffile.imwrite(path, data)  # -> axes 'YXS'
     meta = read_metadata(path)
     assert meta.axes == "YX" and meta.n_frames == 1
     assert meta.n_channels == 3 and meta.channel_index == 0
+
+
+@pytest.mark.parametrize("planes", [3, 4])
+def test_planar_16_bit_samples_are_ambiguous_not_colour(tmp_path, planes):
+    """tifffile writes any (3|4, Y, X) 16-bit array as planar RGB by default.
+
+    A 3- or 4-frame time-lapse saved with a bare ``imwrite`` therefore reads
+    as one colour image; 1.x refused it, and reading it as channel 0 would
+    silently drop all but one frame. It is a question for the user.
+    """
+    data = _ramp_u16((planes, 6, 8))
+    path = tmp_path / "syx.tif"
+    tifffile.imwrite(path, data)
+    with tifffile.TiffFile(path) as tf:
+        assert tf.series[0].axes == "SYX"
+    with pytest.raises(AmbiguousAxes) as info:
+        read_metadata(path)
+    assert info.value.choices[:2] == ("TYX", "ZYX") and "CYX" in info.value.choices
+    assert "planar colour samples" in str(info.value)
+    meta = read_metadata(path, ImportConfig(axes="TYX"))
+    assert (meta.axes, meta.n_frames, meta.axes_source) == ("TYX", planes, SOURCE_USER)
+    assert np.array_equal(load_stack(path, meta), data)
+
+
+def _ramp_u16(shape) -> np.ndarray:
+    return np.arange(int(np.prod(shape)), dtype=np.uint16).reshape(shape)
+
+
+def test_an_entered_pixel_size_does_not_make_square_pixels_anisotropic(tmp_path):
+    """pipeline.run_analysis overwrites metadata.pixel_size_um with the entry.
+
+    The flag compared that with the file's Y size, so entering any pixel size
+    raised a false critical "anisotropic pixels" issue on square pixels.
+    """
+    path = tmp_path / "square.tif"
+    tifffile.imwrite(
+        path, np.zeros((3, 6, 8), np.uint16), imagej=True,
+        metadata={"axes": "TYX", "unit": "micron"}, resolution=(2.0, 2.0),
+    )
+    meta = read_metadata(path)
+    assert not meta.anisotropic_pixels
+    pixel, _, _ = effective_calibration(meta, CalibrationConfig(pixel_size_um=0.467))
+    meta.pixel_size_um = pixel  # exactly what pipeline.run_analysis does
+    assert not meta.anisotropic_pixels
+    assert meta.to_dict()["anisotropic_pixels"] is False
+
+
+def test_a_tiff_resolution_in_centimetres_is_a_calibration(tmp_path):
+    path = tmp_path / "cm.tif"
+    tifffile.imwrite(
+        path, np.zeros((3, 6, 8), np.uint16), metadata={"axes": "TYX"},
+        resolution=(10000, 8000), resolutionunit="CENTIMETER",
+    )
+    meta = read_metadata(path)
+    assert meta.pixel_size_um.value == pytest.approx(1.0)
+    assert meta.pixel_size_um.source == SOURCE_TIFF_TAG
+    assert meta.pixel_size_y_um.value == pytest.approx(1.25)
+    assert meta.anisotropic_pixels
+
+
+def test_dots_per_inch_are_not_a_calibration(tmp_path):
+    """tifffile writes INCH for a bare resolution=; 72 dpi would be 352.8 um/px."""
+    path = tmp_path / "dpi.tif"
+    tifffile.imwrite(
+        path, np.zeros((3, 6, 8), np.uint16), metadata={"axes": "TYX"}, resolution=(72, 72)
+    )
+    meta = read_metadata(path)
+    assert not meta.pixel_size_um.known and meta.pixel_size_um.source == SOURCE_MISSING
+    assert any("dots per inch" in note for note in meta.notes)

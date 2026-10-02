@@ -272,12 +272,69 @@ def test_the_cellpose_version_is_checked_before_loading(registry, cellpose, monk
     assert cellpose.init == []
 
 
-def test_the_version_check_does_not_import_cellpose(registry):
-    """Reading the version must not cost a torch import (seconds, hundreds of MB)."""
-    before = set(sys.modules)
-    version = seg.cellpose_version()
-    assert version and version != "unavailable"
-    assert "torch" in before or "torch" not in sys.modules
+def test_the_version_check_does_not_import_cellpose():
+    """Reading the version must not cost a torch import (seconds, hundreds of MB).
+
+    Run in a fresh interpreter: in this one torch or the fake cellpose may
+    already be imported, and the check would pass without testing anything.
+    """
+    import os
+    import subprocess
+
+    src = str(Path(seg.__file__).resolve().parents[2])
+    code = (
+        "import sys; from corridor.core import segmentation as s; v = s.cellpose_version(); "
+        "assert v and v != 'unavailable', v; "
+        "assert 'torch' not in sys.modules, 'torch imported'; "
+        "assert 'cellpose' not in sys.modules, 'cellpose imported'; print(v)"
+    )
+    env = dict(os.environ, PYTHONPATH=src, OMP_NUM_THREADS="1")
+    done = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=120
+    )
+    assert done.returncode == 0, done.stderr
+
+
+def test_a_hand_built_model_claiming_to_be_production_is_refused(registry, cellpose, tmp_path):
+    """``ResolvedModel`` is public; its sha256 is the caller's claim, not the registry's.
+
+    The adversarial review loaded an impostor this way, recorded as the
+    production model with developer_override False and no note.
+    """
+    registry.install()
+    spec = mr.load_registry()[0]
+    impostor = tmp_path / "impostor"
+    impostor.write_bytes(b"an unvalidated checkpoint")
+    forged = mr.ResolvedModel(
+        spec=spec, path=impostor.resolve(), sha256=mr.sha256_file(impostor)
+    )
+    with pytest.raises(ModelUnavailable, match="checksum mismatch") as info:
+        SegmentationService(SegmentationConfig(), model=forged).run_stack(_stack())
+    assert str(info.value).startswith(CONTRACT_TEXT)
+    assert cellpose.init == [] and cellpose.evals == []
+
+
+def test_a_hand_built_spec_that_matches_the_impostor_is_refused(registry, cellpose, tmp_path):
+    """A forged spec carrying the impostor's own checksum is not a registry entry."""
+    import dataclasses
+
+    registry.install()
+    impostor = tmp_path / "impostor"
+    impostor.write_bytes(b"an unvalidated checkpoint")
+    digest = mr.sha256_file(impostor)
+    spec = dataclasses.replace(mr.load_registry()[0], sha256=digest)
+    forged = mr.ResolvedModel(spec=spec, path=impostor.resolve(), sha256=digest)
+    with pytest.raises(ModelUnavailable, match="not an entry of the model registry"):
+        SegmentationService(SegmentationConfig(), model=forged).run_stack(_stack())
+    assert cellpose.init == []
+
+
+def test_an_explicit_registry_resolution_still_loads(registry, cellpose):
+    weights = registry.install()
+    resolved = mr.resolve_model("2D")
+    out = SegmentationService(SegmentationConfig(), model=resolved).run_stack(_stack(n=1))
+    _assert_only_verified(cellpose, weights)
+    assert not out.developer_override and out.model_sha256 == registry.digest
 
 
 def test_a_silent_cellpose_fallback_to_another_model_is_caught(registry, cellpose, tmp_path):
@@ -362,8 +419,10 @@ CALIBRATED_3D = Scale.from_values(0.5, 10.0, z_step_um=1.5)
 
 def test_3d_with_the_2d_only_production_model_is_refused(registry, cellpose):
     registry.install()
-    with pytest.raises(ModelUnavailable, match="No 3D-validated segmentation model"):
+    with pytest.raises(ModelUnavailable, match="No 3D-validated segmentation model") as info:
         SegmentationService(SegmentationConfig(), scale=CALIBRATED_3D).run_stack(_stack_3d())
+    # The likeliest way here by mistake is a time-lapse labelled as slices.
+    assert "--axes TYX" in str(info.value)
     assert cellpose.init == []
 
 
@@ -482,3 +541,35 @@ def test_bundled_model_path_is_the_production_model_even_under_an_override(
 
 def test_the_unavailable_message_is_the_contract_text():
     assert MODEL_UNAVAILABLE_MESSAGE == CONTRACT_TEXT
+
+
+# --------------------------------------------------------------------------
+# The 1.x command line cannot silently lose its model choice
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "flag", [["--model", "x.pt"], ["--builtin-model", "cyto3"]], ids=["model", "builtin"]
+)
+def test_the_removed_model_options_are_refused_not_ignored(flag, capsys):
+    from corridor import cli
+
+    argv = ["in.tif", "-o", "out", *flag]
+    with pytest.raises(SystemExit) as info:
+        cli.main(argv)
+    assert info.value.code == 2
+    assert "removed in Corridor 2.0" in capsys.readouterr().err
+    with pytest.raises(ValueError, match="removed in Corridor 2.0"):
+        cli.config_from_args(cli.build_parser().parse_args(argv))
+
+
+def test_the_command_line_names_the_axes_and_channel():
+    from corridor import cli
+
+    args = cli.build_parser().parse_args(
+        ["in.tif", "-o", "out", "--axes", "TYX", "--channel", "1"]
+    )
+    config = cli.config_from_args(args)
+    assert (config.import_.axes, config.import_.channel_index) == ("TYX", 1)
+    # Nothing in the segmentation settings for the service to record as ignored.
+    assert config.segmentation.model_path is None and config.segmentation.use_custom_model

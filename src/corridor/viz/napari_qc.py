@@ -115,7 +115,10 @@ def open_saved_in_napari(analysis, block: bool = False):
         raise FileNotFoundError(
             f"The original image is no longer at {source}; Napari needs it to show the overlays."
         )
-    metadata = read_metadata(source)
+    from ..core.imaging import saved_import_config
+
+    # Re-read the image as the saved run read it (a v1 run read Z/Q/I as time).
+    metadata = read_metadata(source, saved_import_config(source, analysis.manifest.get("input")))
     stack = load_stack(source, metadata)
     confinement = analysis.manifest.get("confinement", {})
     viewer = build_viewer(

@@ -52,8 +52,12 @@ def setup(name: str):
     from corridor.core.segmentation import SegmentationService
 
     stack = tifffile.imread(SAMPLES / name)
+    from corridor.core.model_registry import research_model
+
+    # 2.0 ignores SegmentationConfig.model_path; an explicitly chosen file is
+    # passed as a research model, which every output records as an override.
     service = SegmentationService(
-        SegmentationConfig(model_path=str(MODEL), use_custom_model=True)
+        SegmentationConfig(), model=research_model(MODEL, label="KK1KK2_combi")
     )
     output = service.run_stack(stack)
     axis = resolve_axis(stack, ConfinementConfig(), output.detections,

@@ -401,6 +401,58 @@ def _legacy_model_notes(cfg: SegmentationConfig, resolved: ResolvedModel) -> lis
     return notes
 
 
+def _require_registered(resolved: ResolvedModel, path: Path, digest: str) -> None:
+    """Refuse a model that claims to be validated without being the registered file.
+
+    ``ResolvedModel`` is a plain public dataclass, so its ``sha256`` and its
+    ``spec`` are the caller's claims.  Comparing the file only with
+    ``resolved.sha256`` let a hand-built ``ResolvedModel(spec=<production
+    spec>, path=<any file>, sha256=<that file's hash>)`` load an unvalidated
+    file and be recorded as the production model with ``developer_override``
+    False (adversarial review, reproduced).  So a model that is not marked as
+    an override must carry a spec that is, field for field, an entry of the
+    registry on disk, and the file must hash to *that entry's* checksum.  A
+    developer override or research model is exempt by design: it is loaded
+    for what it is and recorded as such.
+    """
+    if resolved.developer_override:
+        return
+    try:
+        registered = model_registry.load_registry()
+    except (OSError, ValueError) as exc:
+        raise ModelUnavailable(
+            f"{MODEL_UNAVAILABLE_MESSAGE}\n\nThe model registry could not be read: {exc}",
+            [(path, "registry unreadable")],
+        ) from exc
+    if resolved.spec not in registered:
+        raise ModelUnavailable(
+            f"{MODEL_UNAVAILABLE_MESSAGE}\n\nThe model claims to be "
+            f"{resolved.spec.model_id} {resolved.spec.model_version}, which is not an entry "
+            "of the model registry. An unregistered model runs only as a developer override.",
+            [(path, "not a registered model")],
+        )
+    if digest != resolved.spec.sha256:
+        raise ModelUnavailable(
+            MODEL_UNAVAILABLE_MESSAGE,
+            [
+                (
+                    path,
+                    f"checksum mismatch: sha256 {digest}, but {resolved.spec.model_id} "
+                    f"is registered as {resolved.spec.sha256}",
+                )
+            ],
+        )
+
+
+#: Appended to every 3-D refusal. The likeliest way to meet it by mistake is
+#: a 2-D time-lapse whose planes the file labels as Z slices (ImageJ calls
+#: every plain stack "slices"), and the way out of that is the axis order.
+_AXES_HINT_3D = (
+    "If this file is really a 2-D time-lapse whose planes are labelled as Z slices, "
+    "set the axis order to TYX in the import settings (or with --axes TYX)."
+)
+
+
 def _not_validated_for(resolved: ResolvedModel, dimensionality: str) -> str:
     dims = ", ".join(resolved.spec.dimensions) or "no dimensionality"
     if dimensionality == "3D":
@@ -408,7 +460,8 @@ def _not_validated_for(resolved: ResolvedModel, dimensionality: str) -> str:
             f"The segmentation model {resolved.spec.model_id} is validated for {dims} only, "
             "so a 3-D stack cannot be segmented with it. No 3D-validated segmentation "
             "model is registered, and there is no 3-D ground truth to validate one "
-            "against. 3-D measurement and tracking still work on an imported label image."
+            "against. 3-D measurement and tracking still work on an imported label image. "
+            + _AXES_HINT_3D
         )
     return (
         f"The segmentation model {resolved.spec.model_id} is validated for {dims} only, "
@@ -501,11 +554,17 @@ class SegmentationService:
 
     def _resolve(self, dimensionality: str) -> ResolvedModel:
         if self._resolved is None:
-            resolved = (
-                self._requested
-                if self._requested is not None
-                else model_registry.resolve_model(dimensionality)
-            )
+            if self._requested is not None:
+                resolved = self._requested
+            else:
+                try:
+                    resolved = model_registry.resolve_model(dimensionality)
+                except ModelUnavailable as exc:
+                    if dimensionality != "3D" or "3D-validated" not in exc.reason:
+                        raise
+                    # The registry's "no 3D-validated model" refusal (it has
+                    # no paths to list); add the way out for a mislabelled file.
+                    raise ModelUnavailable(f"{exc.reason} {_AXES_HINT_3D}") from exc
             if dimensionality not in resolved.spec.dimensions and not resolved.developer_override:
                 raise ModelUnavailable(_not_validated_for(resolved, dimensionality))
             self._resolved = resolved
@@ -544,6 +603,7 @@ class SegmentationService:
             raise ModelUnavailable(
                 MODEL_UNAVAILABLE_MESSAGE, [(path, f"checksum mismatch: sha256 {digest}")]
             )
+        _require_registered(resolved, path, digest)
 
         want_gpu = bool(self.cfg.use_gpu and gpu_available())
         from cellpose import models
@@ -907,7 +967,10 @@ def load_label_stack(
     (``metadata.axes``: ``YX``, ``TYX``, ``ZYX`` or ``TZYX``).  The labels
     must match the image's ``T[Z]YX`` shape exactly -- pass ``image`` (the
     loaded stack, which also supplies intensities) or ``expected_shape`` --
-    and a mismatch is refused rather than cropped or padded.  A label file
+    and a mismatch is refused rather than cropped or padded.  The bare
+    two-argument call ``load_label_stack(path, axes)`` works but can check
+    only the dimensionality, and says so in ``notes``; production should
+    always pass ``image``.  A label file
     whose own metadata establishes its axes is read by them; one that does
     not (the usual case) is read in ``label_axes``, or else in ``axes``.
 
@@ -917,16 +980,30 @@ def load_label_stack(
     """
     path = Path(path)
     if image is not None:
-        expected = tuple(int(n) for n in np.shape(image))
+        expected: tuple[int, ...] | None = tuple(int(n) for n in np.shape(image))
     elif expected_shape is not None:
         expected = tuple(int(n) for n in expected_shape)
     else:
-        raise ValueError("load_label_stack needs the image or its T[Z]YX shape to check against")
+        expected = None
     if str(axes).upper() not in CANONICAL_AXES:
         raise ValueError(f"axes must be one of {CANONICAL_AXES}, got {axes!r}")
 
     arr, label_canonical, notes = read_label_array(path, axes, label_axes=label_axes)
-    if arr.shape != expected:
+    if expected is None:
+        # The two-argument form of the interface: nothing to compare sizes
+        # with, so at least the dimensionality must be the image's -- a 2-D
+        # label movie for a Z stack is the T/Z confusion in another form.
+        rank = 4 if "Z" in str(axes).upper() else 3
+        if arr.ndim != rank:
+            raise UnsupportedStackError(
+                f"The label image {path.name} reads as '{label_canonical}' {arr.shape}, but "
+                f"the image is '{str(axes).upper()}'. Labels must have the image's dimensions."
+            )
+        notes.append(
+            "The label image was not compared with the image's size (no image was given); "
+            "only its dimensionality was checked."
+        )
+    elif arr.shape != expected:
         raise UnsupportedStackError(
             f"The label image {path.name} is {arr.shape} (read as '{label_canonical}') but "
             f"the image is {expected} ('{str(axes).upper()}'). Labels must match the image "

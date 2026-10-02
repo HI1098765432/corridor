@@ -178,6 +178,15 @@ class StackMetadata:
     #: The analysed channel, and how many the file holds.
     channel_index: int = 0
     n_channels: int = 1
+    #: True when the *file's own* X and Y pixel sizes are both known and
+    #: differ. Stored by :func:`read_metadata`, not derived on access:
+    #: ``pipeline.run_analysis`` overwrites ``pixel_size_um`` with the user's
+    #: calibration, and a property comparing that with the file's Y size
+    #: flagged every square, tag-calibrated file as anisotropic the moment a
+    #: pixel size was entered (adversarial review, reproduced). An entered
+    #: pixel size is one number; it cannot make non-square pixels square, so
+    #: a file that is anisotropic stays flagged.
+    anisotropic_pixels: bool = False
 
     @property
     def dimensionality(self) -> str:
@@ -200,14 +209,6 @@ class StackMetadata:
         """Sizes in the order of ``axes`` (no invented length-1 T)."""
         sizes = {"T": self.n_frames, "Z": self.n_slices, "Y": self.height, "X": self.width}
         return tuple(sizes[a] for a in self.axes)
-
-    @property
-    def anisotropic_pixels(self) -> bool:
-        """True when X and Y pixel sizes are both known and differ."""
-        x, y = self.pixel_size_um, self.pixel_size_y_um
-        if not (x.known and y.known):
-            return False
-        return abs(float(x.value) - float(y.value)) > ANISOTROPIC_PIXEL_TOLERANCE * float(x.value)
 
     @property
     def duration_min(self) -> float | None:
@@ -236,6 +237,10 @@ class StackMetadata:
             "dtype": self.dtype,
             "axes": self.axes,
             "axes_shape": list(self.axes_shape),
+            # ``shape`` is load_stack's T[Z]YX shape, *not* the shape of
+            # ``axes`` (a ZYX file is axes_shape [Z,Y,X], shape [1,Z,Y,X]);
+            # ``stack_axes`` names its letters so the two cannot be mis-zipped.
+            "stack_axes": self.stack_axes,
             "shape": list(self.shape),
             "dimensionality": self.dimensionality,
             "axes_source": self.axes_source,
@@ -502,13 +507,82 @@ def _layout_notes(layout: _Layout) -> list[str]:
     return notes
 
 
+def _ij_int(ij: dict, key: str) -> int:
+    try:
+        return int(ij.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _trusted_axes(tf: tifffile.TiffFile, series: Any) -> tuple[str, str]:
+    """The series axes with every letter the file does not really establish as ``Q``.
+
+    Returns ``(axes, why)``; ``why`` is empty when tifffile's axes stand.
+    Two of tifffile's letters are defaults rather than statements:
+
+    *   ImageJ's ``slices``.  An ImagePlus starts as ``c=1, z=n, t=1``, so
+        ImageJ writes ``slices=N`` for *every* plain (non-hyperstack) stack,
+        time-lapses included -- a movie opened from an image sequence and
+        saved is "slices".  Z is trusted only when the header also carries a
+        Z ``spacing`` (ImageJ writes it only when the voxel depth was set)
+        and no frame interval; a ``hyperstack=true`` header, or one that
+        also names ``frames`` or ``channels``, was laid out deliberately and
+        stands as written.
+    *   RGB samples stored planar.  tifffile stores any ``(3|4, Y, X)``
+        array that is not uint8 as planar RGB unless told otherwise (it
+        warns, then writes ``SYX``), so a 3- or 4-frame 16-bit time-lapse
+        written with a bare ``imwrite`` reads as one colour image.  Planar
+        samples deeper than 8 bits are therefore treated as unlabelled.
+        Interleaved samples (``YXS``) and 8-bit colour stay colour.
+    """
+    axes = str(series.axes).upper()
+    shape = tuple(int(n) for n in series.shape)
+    letters = list(axes)
+    reasons: list[str] = []
+
+    if tf.is_imagej and not tf.is_ome and "Z" in axes:
+        ij = dict(tf.imagej_metadata or {})
+        hyper = ij.get("hyperstack")
+        deliberate = (
+            hyper is True
+            or str(hyper).strip().lower() == "true"
+            or _ij_int(ij, "frames") > 1
+            or _ij_int(ij, "channels") > 1
+        )
+        spacing = _as_float(ij.get("spacing"))
+        interval = _as_float(ij.get("finterval"))
+        if not deliberate and (not spacing or spacing <= 0 or (interval and interval > 0)):
+            letters = ["Q" if a == "Z" else a for a in letters]
+            reasons.append(
+                "ImageJ labels every plain stack 'slices', time-lapses included, and this "
+                "header has "
+                + (
+                    "a frame interval as well"
+                    if interval and interval > 0
+                    else "no Z spacing"
+                )
+                + ", so it does not establish that the planes are Z"
+            )
+
+    if "S" in axes and np.dtype(series.dtype) != np.uint8:
+        s = axes.index("S")
+        if shape[s] > 1 and "Y" in axes and s < axes.index("Y"):
+            letters[s] = "Q"
+            reasons.append(
+                f"the file stores {shape[s]} planar colour samples of {series.dtype} data, "
+                "which is how tifffile writes any 3- or 4-plane array it is not told about"
+            )
+    return "".join(letters), "; ".join(reasons)
+
+
 def _resolve_layout(
     tf: tifffile.TiffFile,
     series: Any,
     import_config: "ImportConfig | None",
 ) -> tuple[_Layout, str, list[str]]:
     """(layout, axes source, notes) for a file, honouring ``ImportConfig``."""
-    series_axes = str(series.axes).upper()
+    raw_axes = str(series.axes).upper()
+    series_axes, untrusted_why = _trusted_axes(tf, series)
     shape = tuple(int(n) for n in series.shape)
     channel_index = int(getattr(import_config, "channel_index", 0) or 0)
     override = getattr(import_config, "axes", None)
@@ -534,24 +608,28 @@ def _resolve_layout(
                 )
         else:
             notes.append(
-                f"The file does not say what its axes are ('{series_axes}'); "
-                f"'{layout.canonical}' was taken from the import settings."
+                f"The file does not establish what its axes are ('{raw_axes}'"
+                + (f": {untrusted_why}" if untrusted_why else "")
+                + f"); '{layout.canonical}' was taken from the import settings."
             )
         return layout, SOURCE_USER, notes
 
     if not established:
         choices = _choices(series_axes, shape)
-        unknown = [series_axes[i] for i in _unknown_axes(series_axes, shape)]
+        unknown_at = _unknown_axes(series_axes, shape)
+        unknown = [raw_axes[i] for i in unknown_at]
         sizes = "x".join(str(n) for n in shape)
         raise AmbiguousAxes(
             choices,
             f"This file's metadata does not say whether its "
-            f"{', '.join(str(shape[i]) for i in _unknown_axes(series_axes, shape))} "
+            f"{', '.join(str(shape[i]) for i in unknown_at)} "
             f"planes (axis '{''.join(unknown)}', shape {sizes}) are time points, Z slices "
-            f"or channels, and guessing would turn depth into motion. Choose the axis "
+            "or channels"
+            + (f" ({untrusted_why})" if untrusted_why else "")
+            + ", and guessing would turn depth into motion. Choose the axis "
             f"order: {', '.join(choices) or 'none fits'} (T = time, Z = depth, "
             "C = channel) in the import settings, or with --axes on the command line.",
-            axes_raw=series_axes,
+            axes_raw=raw_axes,
             shape=shape,
         )
 
@@ -676,7 +754,7 @@ def read_metadata(path: str | Path, import_config: "ImportConfig | None" = None)
         info = parse_info_block(ij.get("Info", "") or "")
         ome = _ome_pixels(tf)
 
-        pixel_x, pixel_y = _resolve_pixel_size(tf, ij, info, ome)
+        pixel_x, pixel_y = _resolve_pixel_size(tf, ij, info, ome, notes)
         interval = _resolve_frame_interval(ij, info, ome, notes)
         z_step = (
             _resolve_z_step(ij, ome) if "Z" in layout.canonical else Calibrated(None, SOURCE_MISSING)
@@ -753,6 +831,7 @@ def read_metadata(path: str | Path, import_config: "ImportConfig | None" = None)
             pixel_size_y_um=pixel_y,
             channel_index=layout.channel_index,
             n_channels=layout.n_channels,
+            anisotropic_pixels=_pixels_differ(pixel_x, pixel_y),
         )
         if metadata.anisotropic_pixels:
             notes.append(
@@ -760,6 +839,31 @@ def read_metadata(path: str | Path, import_config: "ImportConfig | None" = None)
                 f"{pixel_y.value:.6g} µm in Y. Distances use the X size."
             )
         return metadata
+
+
+def _pixels_differ(x: Calibrated, y: Calibrated) -> bool:
+    """True when both sizes are known and differ beyond float rounding."""
+    if not (x.known and y.known):
+        return False
+    return abs(float(x.value) - float(y.value)) > ANISOTROPIC_PIXEL_TOLERANCE * float(x.value)
+
+
+#: Micrometres per TIFF ``ResolutionUnit`` (3 = centimetre; 4 and 5 are the
+#: millimetre and micrometre extensions tifffile reads). Inch (2) is absent on
+#: purpose: it is the unit of the dots-per-inch that writers put in by
+#: default -- tifffile itself writes INCH for a bare ``resolution=`` -- and
+#: 72 dpi read as a calibration is 352.8 µm per pixel.
+_RESOLUTION_UNIT_UM = {3: 1e4, 4: 1e3, 5: 1.0}
+
+
+def _resolution_unit(page: Any) -> int | None:
+    tag = page.tags.get("ResolutionUnit")
+    if tag is None:
+        return None
+    try:
+        return int(tag.value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _resolution_um(tag: Any, factor: float | None) -> float | None:
@@ -776,13 +880,18 @@ def _resolution_um(tag: Any, factor: float | None) -> float | None:
 
 
 def _resolve_pixel_size(
-    tf: tifffile.TiffFile, ij: dict, info: dict, ome: dict[str, str]
+    tf: tifffile.TiffFile,
+    ij: dict,
+    info: dict,
+    ome: dict[str, str],
+    notes: list[str] | None = None,
 ) -> tuple[Calibrated, Calibrated]:
     """(X, Y) pixel size in micrometres, best source first.
 
     Both come from the same source, so a difference between them is a fact
     about the pixels rather than about two metadata blocks disagreeing.
     """
+    notes = notes if notes is not None else []
     # 1. The ND2 calibration carries full double precision, and ND2 pixels
     #    are square by definition of that one number.
     value = _as_float(info.get("dCalibration"))
@@ -806,6 +915,25 @@ def _resolve_pixel_size(
         return Calibrated(x, SOURCE_TIFF_TAG), (
             Calibrated(y, SOURCE_TIFF_TAG) if y else Calibrated(None, SOURCE_MISSING)
         )
+
+    # 4. No ImageJ unit at all: the TIFF's own ResolutionUnit, when it is a
+    #    physical length. (An ImageJ header without a unit means ImageJ held
+    #    the image uncalibrated, so its tags are not consulted.)
+    if "unit" not in ij:
+        code = _resolution_unit(page)
+        factor = _RESOLUTION_UNIT_UM.get(code) if code is not None else None
+        if factor:
+            x = _resolution_um(page.tags.get("XResolution"), factor)
+            if x:
+                y = _resolution_um(page.tags.get("YResolution"), factor)
+                return Calibrated(x, SOURCE_TIFF_TAG), (
+                    Calibrated(y, SOURCE_TIFF_TAG) if y else Calibrated(None, SOURCE_MISSING)
+                )
+        elif code == 2 and _resolution_um(page.tags.get("XResolution"), 1.0):
+            notes.append(
+                "The TIFF resolution is given in dots per inch, a print or screen setting "
+                "that writers fill in by default, so it was not used as a pixel size."
+            )
 
     return Calibrated(None, SOURCE_MISSING), Calibrated(None, SOURCE_MISSING)
 
@@ -882,6 +1010,51 @@ def effective_z_step(
     if metadata.dimensionality == "3D" and override and math.isfinite(override) and override > 0:
         return Calibrated(float(override), SOURCE_USER)
     return metadata.z_step_um
+
+
+#: Letters 1.x read as time when they were a file's one non-spatial axis.
+_V1_TIME_LETTERS = ("T", "Z", "I", "Q")
+
+
+def saved_import_config(
+    source: str | Path, input_block: dict[str, Any] | None
+) -> "ImportConfig | None":
+    """The ``ImportConfig`` that re-reads a saved analysis's source as it was read.
+
+    Reopening a project re-reads its image to show the masks on it, and the
+    masks fit only the reading that produced them.  2.0 refuses or re-reads
+    files 1.x read as time (``Z``, ``Q``, ImageJ ``I``), so a v1 project would
+    otherwise fail to reopen (AmbiguousAxes) or come back as a Z stack its
+    ``(T, Y, X)`` masks no longer match.
+
+    *   A 2.0 run.json ``input`` block that records ``axes_used`` (and
+        ``channel_index``) is replayed exactly.
+    *   A 1.x block has no axes of its own; 1.x read the file's one
+        non-singleton non-spatial axis as time, so that axis is named ``T``.
+
+    None means the file's own metadata already gives the saved reading.
+    """
+    from .config import ImportConfig
+
+    block = dict(input_block or {})
+    channel = int(block.get("channel_index") or 0)
+    used = str(block.get("axes_used") or "").strip().upper()
+    if used:
+        return ImportConfig(axes=used, channel_index=channel)
+
+    with tifffile.TiffFile(Path(source)) as tf:
+        if not tf.series:
+            return None
+        series = tf.series[0]
+        axes = str(series.axes).upper()
+        shape = tuple(int(n) for n in series.shape)
+    open_axes = [i for i, (a, n) in enumerate(zip(axes, shape)) if n > 1 and a not in _SPATIAL]
+    if len(open_axes) != 1 or axes[open_axes[0]] not in _V1_TIME_LETTERS:
+        return None
+    i = open_axes[0]
+    if axes[i] == "T":
+        return None
+    return ImportConfig(axes=axes[:i] + "T" + axes[i + 1:], channel_index=channel)
 
 
 def _to_canonical(arr: np.ndarray, layout: _Layout) -> np.ndarray:
@@ -961,7 +1134,9 @@ def read_label_array(
         if not tf.series:
             raise UnsupportedStackError(f"{path.name} contains no readable image series.")
         series = tf.series[0]
-        series_axes = str(series.axes).upper()
+        # The same distrust as for images: a label movie saved from Fiji as a
+        # plain stack says "slices" and must not become a Z stack by default.
+        series_axes, _ = _trusted_axes(tf, series)
         shape = tuple(int(n) for n in series.shape)
         notes: list[str] = []
         if label_axes:
@@ -971,7 +1146,7 @@ def read_label_array(
         else:
             layout = _layout(_apply_override(target, series_axes, shape), shape)
             notes.append(
-                f"The label image does not say what its axes are ('{series_axes}'); "
+                f"The label image does not say what its axes are ('{series.axes}'); "
                 f"they were read as '{layout.canonical}', the image's order."
             )
         if layout.channel_axis is not None:
