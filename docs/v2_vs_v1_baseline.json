@@ -1,0 +1,2100 @@
+{
+  "what_this_is": "Corridor 2.0 (build/v2_runs, CLI defaults) against the frozen v1.3.0 baseline (build/baseline_v1.3.0, CLI defaults), movie by movie. The baseline is v1's answer, not ground truth: agreement measures consistency, not accuracy. Every difference is attributed to segmentation, recovery (the re-segmentation of windows a track predicts), tracking or measurement.",
+  "how": "1.  **Segmentation.** ``masks.npz`` and ``masks_raw.npz`` are compared\n    array for array (dtype, shape, every pixel), the model checksum and every\n    segmentation setting in the two ``run.json`` files are compared, and the\n    primary rows of ``detections.csv`` are compared on every column both\n    schemas have.  Same model, same settings and identical masks is the\n    proof that segmentation did not change.\n2.  **Recovery.** Recovered detections (``source != primary``) are matched\n    across versions by frame and centroid (within ``--match-px``).  One that\n    exists in only one version is a recovery difference.\n3.  **Tracking.** Every observation gets a version-independent key: a primary\n    detection is ``(frame, label)`` -- identical in both versions, because the\n    masks are -- and a recovered one is its cross-version match.  Each v1\n    track is paired with the v2 track holding most of its observations\n    (identity agreement, observation-weighted), and every link (consecutive\n    observations of one track) present in only one version is listed.  A link\n    difference touching a detection only one version recovered is attributed\n    to recovery; any other is the tracker's.\n4.  **Measurement.** For every paired track, net speed and median step speed\n    (\u00b5m/min) from both ``track_summary.csv`` files.  A speed difference\n    between tracks made of the *same* observations is a measurement\n    difference; otherwise it is attributed to whatever changed the\n    observations.",
+  "match_px": 5.0,
+  "same_prediction_px": 20.0,
+  "summary": {
+    "segmentation_bit_identical_all_movies": true,
+    "primary_detections_v1": 139,
+    "primary_detections_v2": 139,
+    "recovered_detections_v1": 16,
+    "recovered_detections_v2": 8,
+    "recovered_in_both": 4,
+    "tracks_v1": 27,
+    "tracks_v2": 30,
+    "identity_agreement_obs_weighted": 0.8452,
+    "links_only_in_v1": 21,
+    "links_only_in_v2": 10,
+    "attribution_counts": {
+      "none (identical)": 15,
+      "tracking": 8,
+      "recovery + tracking": 3,
+      "link:recovery": 11,
+      "link:tracking": 20,
+      "recovery": 1
+    },
+    "per_movie_tracks": {
+      "052924_1": [
+        15,
+        16
+      ],
+      "052924_2": [
+        7,
+        9
+      ],
+      "052924_t1": [
+        1,
+        1
+      ],
+      "052924_t2_empty": [
+        1,
+        1
+      ],
+      "052924_t3_dual": [
+        3,
+        3
+      ]
+    }
+  },
+  "movies": {
+    "052924_1": {
+      "segmentation_bit_identical": true,
+      "segmentation": {
+        "masks.npz": {
+          "shape_v1": [
+            20,
+            327,
+            525
+          ],
+          "shape_v2": [
+            20,
+            327,
+            525
+          ],
+          "dtype_v1": "int32",
+          "dtype_v2": "int32",
+          "identical": true,
+          "pixels_differing": 0,
+          "labelled_pixels": 53364
+        },
+        "masks_raw.npz": {
+          "shape_v1": [
+            20,
+            327,
+            525
+          ],
+          "shape_v2": [
+            20,
+            327,
+            525
+          ],
+          "dtype_v1": "int32",
+          "dtype_v2": "int32",
+          "identical": true,
+          "pixels_differing": 0,
+          "labelled_pixels": 53364
+        },
+        "model_sha256_v1": "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+        "model_sha256_v2": "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+        "same_model": true,
+        "settings_differing": {},
+        "kept_per_frame_identical": true,
+        "raw_per_frame_identical": true
+      },
+      "primary_detections": {
+        "n_primary_v1": 73,
+        "n_primary_v2": 73,
+        "same_keys": true,
+        "columns_compared": [
+          "area_px",
+          "area_um2",
+          "bbox_max_x",
+          "bbox_max_y",
+          "bbox_min_x",
+          "bbox_min_y",
+          "eccentricity",
+          "elapsed_min",
+          "extent_px",
+          "frame",
+          "label",
+          "major_axis_px",
+          "minor_axis_px",
+          "orientation_rad",
+          "solidity",
+          "source_frame",
+          "touches_border",
+          "x",
+          "x_um",
+          "y",
+          "y_um"
+        ],
+        "values_differing_by_column": {},
+        "identical": true,
+        "lane_id_changes": 0
+      },
+      "recovery": {
+        "n_recovered_v1": 7,
+        "n_recovered_v2": 4,
+        "matched": [],
+        "only_v1": [
+          {
+            "frame": 9,
+            "label_v1": 5,
+            "x": 298.4,
+            "y": 196.7,
+            "tier": "intensity",
+            "nearest_primary_px": 147.2,
+            "attributed_to": "tracking",
+            "why": "v2's first pass made no link across this gap, so its recovery never searched here"
+          },
+          {
+            "frame": 10,
+            "label_v1": 6,
+            "x": 301.1,
+            "y": 149.4,
+            "tier": "intensity",
+            "nearest_primary_px": 110.2,
+            "attributed_to": "tracking",
+            "why": "v2's first pass made no link across this gap, so its recovery never searched here"
+          },
+          {
+            "frame": 11,
+            "label_v1": 5,
+            "x": 306.0,
+            "y": 95.9,
+            "tier": "intensity",
+            "nearest_primary_px": 84.5,
+            "attributed_to": "tracking",
+            "why": "v2's first pass made no link across this gap, so its recovery never searched here"
+          },
+          {
+            "frame": 7,
+            "label_v1": 6,
+            "x": 146.5,
+            "y": 83.5,
+            "tier": "intensity",
+            "nearest_primary_px": 119.7,
+            "attributed_to": "recovery",
+            "why": "v2 searched here and found a different object (permissive, 4.9 px from the prediction)"
+          },
+          {
+            "frame": 8,
+            "label_v1": 5,
+            "x": 148.7,
+            "y": 86.1,
+            "tier": "intensity",
+            "nearest_primary_px": 150.4,
+            "attributed_to": "recovery",
+            "why": "v2 searched here and found a different object (permissive, 25.0 px from the prediction)"
+          },
+          {
+            "frame": 9,
+            "label_v1": 6,
+            "x": 142.2,
+            "y": 43.6,
+            "tier": "windowed",
+            "nearest_primary_px": 4.5,
+            "attributed_to": "recovery",
+            "why": "v2 searched here and dropped the candidate as a duplicate of primary label 1"
+          },
+          {
+            "frame": 8,
+            "label_v1": 6,
+            "x": 145.8,
+            "y": 132.9,
+            "tier": "intensity",
+            "nearest_primary_px": 114.0,
+            "attributed_to": "recovery",
+            "why": "v2 searched here and found a different object (intensity, 14.9 px from the prediction)"
+          }
+        ],
+        "only_v2": [
+          {
+            "frame": 7,
+            "label_v2": 6,
+            "x": 144.9,
+            "y": 67.6,
+            "tier": "permissive",
+            "nearest_primary_px": 129.9,
+            "attributed_to": "recovery",
+            "why": "v1 searched here and found a different object (intensity, 11.1 px from the prediction)"
+          },
+          {
+            "frame": 8,
+            "label_v2": 5,
+            "x": 148.4,
+            "y": 43.8,
+            "tier": "permissive",
+            "nearest_primary_px": 186.0,
+            "attributed_to": "recovery",
+            "why": "v1 searched here and found a different object (intensity, 18.2 px from the prediction)"
+          },
+          {
+            "frame": 8,
+            "label_v2": 6,
+            "x": 145.4,
+            "y": 145.7,
+            "tier": "intensity",
+            "nearest_primary_px": 105.8,
+            "attributed_to": "recovery",
+            "why": "v1 searched here and found a different object (intensity, 6.1 px from the prediction)"
+          },
+          {
+            "frame": 17,
+            "label_v2": 3,
+            "x": 55.0,
+            "y": 117.1,
+            "tier": "intensity",
+            "nearest_primary_px": 250.2,
+            "attributed_to": "tracking",
+            "why": "v1's first pass made no link across this gap, so its recovery never searched here"
+          }
+        ],
+        "attempts_v1": 7,
+        "attempts_v2": 8,
+        "duplicates_dropped_v2": [
+          {
+            "frame": 9,
+            "first_pass_track_id": 3,
+            "final_track_id": 3,
+            "duplicate_of_label": 1
+          },
+          {
+            "frame": 16,
+            "first_pass_track_id": 10,
+            "final_track_id": 10,
+            "duplicate_of_label": 2
+          },
+          {
+            "frame": 17,
+            "first_pass_track_id": 10,
+            "final_track_id": 10,
+            "duplicate_of_label": 2
+          },
+          {
+            "frame": 18,
+            "first_pass_track_id": 14,
+            "final_track_id": 14,
+            "duplicate_of_label": 3
+          }
+        ]
+      },
+      "tracking": {
+        "n_tracks_v1": 15,
+        "n_tracks_v2": 16,
+        "n_observations_v1": 80,
+        "n_observations_v2": 77,
+        "identity_agreement_obs_weighted": 0.825,
+        "identity_agreement_primary_obs_only": 0.9041,
+        "v1_to_v2_track": {
+          "1": 1,
+          "2": 2,
+          "3": 3,
+          "4": 4,
+          "5": 5,
+          "6": 6,
+          "7": 7,
+          "8": 8,
+          "9": 3,
+          "10": 9,
+          "11": 10,
+          "12": 11,
+          "13": 12,
+          "14": 14,
+          "15": 16
+        },
+        "v2_tracks_with_no_v1_majority": [
+          13,
+          15
+        ],
+        "links_v1": 65,
+        "links_v2": 61,
+        "links_only_in_v1": [
+          {
+            "from": [
+              "p",
+              6,
+              1
+            ],
+            "to": [
+              "r_v1_only",
+              7,
+              6
+            ],
+            "attributed_to": "recovery"
+          },
+          {
+            "from": [
+              "p",
+              7,
+              5
+            ],
+            "to": [
+              "r_v1_only",
+              8,
+              6
+            ],
+            "attributed_to": "recovery"
+          },
+          {
+            "from": [
+              "p",
+              8,
+              4
+            ],
+            "to": [
+              "r_v1_only",
+              9,
+              5
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "p",
+              15,
+              2
+            ],
+            "to": [
+              "p",
+              16,
+              1
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "p",
+              15,
+              5
+            ],
+            "to": [
+              "p",
+              16,
+              3
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "p",
+              17,
+              2
+            ],
+            "to": [
+              "p",
+              18,
+              3
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "p",
+              18,
+              3
+            ],
+            "to": [
+              "p",
+              19,
+              3
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "r_v1_only",
+              7,
+              6
+            ],
+            "to": [
+              "r_v1_only",
+              8,
+              5
+            ],
+            "attributed_to": "recovery"
+          },
+          {
+            "from": [
+              "r_v1_only",
+              8,
+              6
+            ],
+            "to": [
+              "p",
+              9,
+              1
+            ],
+            "attributed_to": "recovery"
+          },
+          {
+            "from": [
+              "r_v1_only",
+              9,
+              6
+            ],
+            "to": [
+              "p",
+              10,
+              1
+            ],
+            "attributed_to": "recovery"
+          },
+          {
+            "from": [
+              "r_v1_only",
+              10,
+              6
+            ],
+            "to": [
+              "r_v1_only",
+              11,
+              5
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "r_v1_only",
+              11,
+              5
+            ],
+            "to": [
+              "p",
+              12,
+              2
+            ],
+            "attributed_to": "tracking"
+          }
+        ],
+        "links_only_in_v2": [
+          {
+            "from": [
+              "p",
+              6,
+              1
+            ],
+            "to": [
+              "r_v2_only",
+              7,
+              6
+            ],
+            "attributed_to": "recovery"
+          },
+          {
+            "from": [
+              "p",
+              7,
+              5
+            ],
+            "to": [
+              "r_v2_only",
+              8,
+              6
+            ],
+            "attributed_to": "recovery"
+          },
+          {
+            "from": [
+              "p",
+              9,
+              1
+            ],
+            "to": [
+              "p",
+              10,
+              1
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "p",
+              15,
+              3
+            ],
+            "to": [
+              "p",
+              18,
+              3
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "p",
+              16,
+              3
+            ],
+            "to": [
+              "r_v2_only",
+              17,
+              3
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "p",
+              17,
+              2
+            ],
+            "to": [
+              "p",
+              19,
+              3
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "r_v2_only",
+              7,
+              6
+            ],
+            "to": [
+              "r_v2_only",
+              8,
+              5
+            ],
+            "attributed_to": "recovery"
+          },
+          {
+            "from": [
+              "r_v2_only",
+              8,
+              5
+            ],
+            "to": [
+              "p",
+              9,
+              1
+            ],
+            "attributed_to": "recovery"
+          }
+        ]
+      },
+      "speeds_per_track": [
+        {
+          "v1_track": 1,
+          "v2_track": 1,
+          "n_obs_v1": 9,
+          "n_obs_v2": 9,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": 0.370385545,
+          "net_speed_um_per_min_v2": 0.370385545,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 0.345992973,
+          "median_speed_um_per_min_v2": 0.345992973,
+          "median_speed_um_per_min_diff": 0.0,
+          "mean_speed_um_per_min_v1": 0.390855603,
+          "mean_speed_um_per_min_v2": 0.390855603,
+          "mean_speed_um_per_min_diff": 0.0,
+          "attributed_to": "none (identical)"
+        },
+        {
+          "v1_track": 2,
+          "v2_track": 2,
+          "n_obs_v1": 7,
+          "n_obs_v2": 6,
+          "same_observations": false,
+          "net_speed_um_per_min_v1": 0.531924072,
+          "net_speed_um_per_min_v2": 0.872653897,
+          "net_speed_um_per_min_diff": 0.34073,
+          "median_speed_um_per_min_v1": 0.996908636,
+          "median_speed_um_per_min_v2": 0.929005481,
+          "median_speed_um_per_min_diff": -0.067903,
+          "mean_speed_um_per_min_v1": 0.925207192,
+          "mean_speed_um_per_min_v2": 0.873766863,
+          "mean_speed_um_per_min_diff": -0.05144,
+          "attributed_to": "tracking",
+          "observations_only_v1": [
+            [
+              "r_v1_only",
+              9,
+              5
+            ]
+          ],
+          "observations_only_v2": []
+        },
+        {
+          "v1_track": 3,
+          "v2_track": 3,
+          "n_obs_v1": 6,
+          "n_obs_v2": 12,
+          "same_observations": false,
+          "net_speed_um_per_min_v1": 0.195816549,
+          "net_speed_um_per_min_v2": 0.038803997,
+          "net_speed_um_per_min_diff": -0.157013,
+          "median_speed_um_per_min_v1": 0.155549352,
+          "median_speed_um_per_min_v2": 0.194893447,
+          "median_speed_um_per_min_diff": 0.039344,
+          "mean_speed_um_per_min_v1": 0.216660095,
+          "mean_speed_um_per_min_v2": 0.254578103,
+          "mean_speed_um_per_min_diff": 0.037918,
+          "attributed_to": "recovery + tracking",
+          "observations_only_v1": [
+            [
+              "r_v1_only",
+              7,
+              6
+            ],
+            [
+              "r_v1_only",
+              8,
+              5
+            ]
+          ],
+          "observations_only_v2": [
+            [
+              "p",
+              9,
+              1
+            ],
+            [
+              "p",
+              10,
+              1
+            ],
+            [
+              "p",
+              11,
+              1
+            ],
+            [
+              "p",
+              12,
+              1
+            ],
+            [
+              "p",
+              13,
+              1
+            ],
+            [
+              "p",
+              14,
+              1
+            ],
+            [
+              "r_v2_only",
+              7,
+              6
+            ],
+            [
+              "r_v2_only",
+              8,
+              5
+            ]
+          ]
+        },
+        {
+          "v1_track": 4,
+          "v2_track": 4,
+          "n_obs_v1": 13,
+          "n_obs_v2": 12,
+          "same_observations": false,
+          "net_speed_um_per_min_v1": 0.47626605,
+          "net_speed_um_per_min_v2": 0.485008988,
+          "net_speed_um_per_min_diff": 0.008743,
+          "median_speed_um_per_min_v1": 0.345188121,
+          "median_speed_um_per_min_v2": 0.255170108,
+          "median_speed_um_per_min_diff": -0.090018,
+          "mean_speed_um_per_min_v1": 0.497632852,
+          "mean_speed_um_per_min_v2": 0.503308008,
+          "mean_speed_um_per_min_diff": 0.005675,
+          "attributed_to": "tracking",
+          "observations_only_v1": [
+            [
+              "p",
+              16,
+              3
+            ]
+          ],
+          "observations_only_v2": []
+        },
+        {
+          "v1_track": 5,
+          "v2_track": 5,
+          "n_obs_v1": 1,
+          "n_obs_v2": 1,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": null,
+          "net_speed_um_per_min_v2": null,
+          "net_speed_um_per_min_diff": null,
+          "median_speed_um_per_min_v1": null,
+          "median_speed_um_per_min_v2": null,
+          "median_speed_um_per_min_diff": null,
+          "mean_speed_um_per_min_v1": null,
+          "mean_speed_um_per_min_v2": null,
+          "mean_speed_um_per_min_diff": null,
+          "attributed_to": "none (identical)"
+        },
+        {
+          "v1_track": 6,
+          "v2_track": 6,
+          "n_obs_v1": 14,
+          "n_obs_v2": 10,
+          "same_observations": false,
+          "net_speed_um_per_min_v1": 0.050459473,
+          "net_speed_um_per_min_v2": 0.042326404,
+          "net_speed_um_per_min_diff": -0.008133,
+          "median_speed_um_per_min_v1": 0.106215032,
+          "median_speed_um_per_min_v2": 0.082344566,
+          "median_speed_um_per_min_diff": -0.02387,
+          "mean_speed_um_per_min_v1": 0.172414055,
+          "mean_speed_um_per_min_v2": 0.127218035,
+          "mean_speed_um_per_min_diff": -0.045196,
+          "attributed_to": "tracking",
+          "observations_only_v1": [
+            [
+              "p",
+              16,
+              1
+            ],
+            [
+              "p",
+              17,
+              1
+            ],
+            [
+              "p",
+              18,
+              2
+            ],
+            [
+              "p",
+              19,
+              2
+            ]
+          ],
+          "observations_only_v2": []
+        },
+        {
+          "v1_track": 7,
+          "v2_track": 7,
+          "n_obs_v1": 3,
+          "n_obs_v2": 2,
+          "same_observations": false,
+          "net_speed_um_per_min_v1": 1.956297889,
+          "net_speed_um_per_min_v2": 1.644331748,
+          "net_speed_um_per_min_diff": -0.311966,
+          "median_speed_um_per_min_v1": 1.961327671,
+          "median_speed_um_per_min_v2": 1.644331748,
+          "median_speed_um_per_min_diff": -0.316996,
+          "mean_speed_um_per_min_v1": 1.961327671,
+          "mean_speed_um_per_min_v2": 1.644331748,
+          "mean_speed_um_per_min_diff": -0.316996,
+          "attributed_to": "recovery + tracking",
+          "observations_only_v1": [
+            [
+              "p",
+              9,
+              1
+            ],
+            [
+              "r_v1_only",
+              8,
+              6
+            ]
+          ],
+          "observations_only_v2": [
+            [
+              "r_v2_only",
+              8,
+              6
+            ]
+          ]
+        },
+        {
+          "v1_track": 8,
+          "v2_track": 8,
+          "n_obs_v1": 2,
+          "n_obs_v2": 2,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": 0.488871059,
+          "net_speed_um_per_min_v2": 0.488871059,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 0.488871059,
+          "median_speed_um_per_min_v2": 0.488871059,
+          "median_speed_um_per_min_diff": 0.0,
+          "mean_speed_um_per_min_v1": 0.488871059,
+          "mean_speed_um_per_min_v2": 0.488871059,
+          "mean_speed_um_per_min_diff": 0.0,
+          "attributed_to": "none (identical)"
+        },
+        {
+          "v1_track": 9,
+          "v2_track": 3,
+          "n_obs_v1": 6,
+          "n_obs_v2": 12,
+          "same_observations": false,
+          "net_speed_um_per_min_v1": 0.081454126,
+          "net_speed_um_per_min_v2": 0.038803997,
+          "net_speed_um_per_min_diff": -0.04265,
+          "median_speed_um_per_min_v1": 0.194893447,
+          "median_speed_um_per_min_v2": 0.194893447,
+          "median_speed_um_per_min_diff": 0.0,
+          "mean_speed_um_per_min_v1": 0.224217379,
+          "mean_speed_um_per_min_v2": 0.254578103,
+          "mean_speed_um_per_min_diff": 0.030361,
+          "attributed_to": "recovery + tracking",
+          "observations_only_v1": [
+            [
+              "r_v1_only",
+              9,
+              6
+            ]
+          ],
+          "observations_only_v2": [
+            [
+              "p",
+              3,
+              2
+            ],
+            [
+              "p",
+              4,
+              2
+            ],
+            [
+              "p",
+              5,
+              2
+            ],
+            [
+              "p",
+              6,
+              1
+            ],
+            [
+              "p",
+              9,
+              1
+            ],
+            [
+              "r_v2_only",
+              7,
+              6
+            ],
+            [
+              "r_v2_only",
+              8,
+              5
+            ]
+          ]
+        },
+        {
+          "v1_track": 10,
+          "v2_track": 9,
+          "n_obs_v1": 5,
+          "n_obs_v2": 5,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": 1.320824903,
+          "net_speed_um_per_min_v2": 1.320824903,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 1.445287062,
+          "median_speed_um_per_min_v2": 1.445287062,
+          "median_speed_um_per_min_diff": 0.0,
+          "mean_speed_um_per_min_v1": 1.32104137,
+          "mean_speed_um_per_min_v2": 1.32104137,
+          "mean_speed_um_per_min_diff": 0.0,
+          "attributed_to": "none (identical)"
+        },
+        {
+          "v1_track": 11,
+          "v2_track": 10,
+          "n_obs_v1": 6,
+          "n_obs_v2": 5,
+          "same_observations": false,
+          "net_speed_um_per_min_v1": 0.104821374,
+          "net_speed_um_per_min_v2": 0.544077341,
+          "net_speed_um_per_min_diff": 0.439256,
+          "median_speed_um_per_min_v1": 0.883580451,
+          "median_speed_um_per_min_v2": 0.503813673,
+          "median_speed_um_per_min_diff": -0.379767,
+          "mean_speed_um_per_min_v1": 0.860842881,
+          "mean_speed_um_per_min_v2": 0.588017598,
+          "mean_speed_um_per_min_diff": -0.272825,
+          "attributed_to": "tracking",
+          "observations_only_v1": [
+            [
+              "r_v1_only",
+              10,
+              6
+            ],
+            [
+              "r_v1_only",
+              11,
+              5
+            ]
+          ],
+          "observations_only_v2": [
+            [
+              "p",
+              18,
+              3
+            ]
+          ]
+        },
+        {
+          "v1_track": 12,
+          "v2_track": 11,
+          "n_obs_v1": 1,
+          "n_obs_v2": 1,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": null,
+          "net_speed_um_per_min_v2": null,
+          "net_speed_um_per_min_diff": null,
+          "median_speed_um_per_min_v1": null,
+          "median_speed_um_per_min_v2": null,
+          "median_speed_um_per_min_diff": null,
+          "mean_speed_um_per_min_v1": null,
+          "mean_speed_um_per_min_v2": null,
+          "mean_speed_um_per_min_diff": null,
+          "attributed_to": "none (identical)"
+        },
+        {
+          "v1_track": 13,
+          "v2_track": 12,
+          "n_obs_v1": 1,
+          "n_obs_v2": 1,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": null,
+          "net_speed_um_per_min_v2": null,
+          "net_speed_um_per_min_diff": null,
+          "median_speed_um_per_min_v1": null,
+          "median_speed_um_per_min_v2": null,
+          "median_speed_um_per_min_diff": null,
+          "mean_speed_um_per_min_v1": null,
+          "mean_speed_um_per_min_v2": null,
+          "mean_speed_um_per_min_diff": null,
+          "attributed_to": "none (identical)"
+        },
+        {
+          "v1_track": 14,
+          "v2_track": 14,
+          "n_obs_v1": 4,
+          "n_obs_v2": 3,
+          "same_observations": false,
+          "net_speed_um_per_min_v1": 0.025376945,
+          "net_speed_um_per_min_v2": 0.025376945,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 0.369310854,
+          "median_speed_um_per_min_v2": 0.471428144,
+          "median_speed_um_per_min_diff": 0.102117,
+          "mean_speed_um_per_min_v1": 0.419303031,
+          "mean_speed_um_per_min_v2": 0.471428144,
+          "mean_speed_um_per_min_diff": 0.052125,
+          "attributed_to": "tracking",
+          "observations_only_v1": [
+            [
+              "p",
+              18,
+              3
+            ]
+          ],
+          "observations_only_v2": []
+        },
+        {
+          "v1_track": 15,
+          "v2_track": 16,
+          "n_obs_v1": 2,
+          "n_obs_v2": 2,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": 0.224330068,
+          "net_speed_um_per_min_v2": 0.224330068,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 0.224330068,
+          "median_speed_um_per_min_v2": 0.224330068,
+          "median_speed_um_per_min_diff": 0.0,
+          "mean_speed_um_per_min_v1": 0.224330068,
+          "mean_speed_um_per_min_v2": 0.224330068,
+          "mean_speed_um_per_min_diff": 0.0,
+          "attributed_to": "none (identical)"
+        }
+      ],
+      "attribution_counts": {
+        "none (identical)": 7,
+        "tracking": 5,
+        "recovery + tracking": 3,
+        "link:recovery": 9,
+        "link:tracking": 11
+      },
+      "results_v1": {
+        "n_detections": 73,
+        "n_tracks": 15,
+        "mean_speed_um_per_min": 0.6418919379789846
+      },
+      "results_v2": {
+        "n_detections": 77,
+        "n_detections_primary": 73,
+        "n_detections_recovered": 4,
+        "n_tracks": 16,
+        "mean_speed_um_per_min": 0.8412697661030332,
+        "mean_net_speed_um_per_min": 0.7773479111222692
+      },
+      "channel_geometry_v2": {
+        "source": "channel_ridges",
+        "n_lanes": 6,
+        "pitch_px": 81.7468436849118,
+        "applied": true,
+        "lane_gate_applied": true
+      }
+    },
+    "052924_2": {
+      "segmentation_bit_identical": true,
+      "segmentation": {
+        "masks.npz": {
+          "shape_v1": [
+            20,
+            327,
+            525
+          ],
+          "shape_v2": [
+            20,
+            327,
+            525
+          ],
+          "dtype_v1": "int32",
+          "dtype_v2": "int32",
+          "identical": true,
+          "pixels_differing": 0,
+          "labelled_pixels": 37451
+        },
+        "masks_raw.npz": {
+          "shape_v1": [
+            20,
+            327,
+            525
+          ],
+          "shape_v2": [
+            20,
+            327,
+            525
+          ],
+          "dtype_v1": "int32",
+          "dtype_v2": "int32",
+          "identical": true,
+          "pixels_differing": 0,
+          "labelled_pixels": 37451
+        },
+        "model_sha256_v1": "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+        "model_sha256_v2": "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+        "same_model": true,
+        "settings_differing": {},
+        "kept_per_frame_identical": true,
+        "raw_per_frame_identical": true
+      },
+      "primary_detections": {
+        "n_primary_v1": 43,
+        "n_primary_v2": 43,
+        "same_keys": true,
+        "columns_compared": [
+          "area_px",
+          "area_um2",
+          "bbox_max_x",
+          "bbox_max_y",
+          "bbox_min_x",
+          "bbox_min_y",
+          "eccentricity",
+          "elapsed_min",
+          "extent_px",
+          "frame",
+          "label",
+          "major_axis_px",
+          "minor_axis_px",
+          "orientation_rad",
+          "solidity",
+          "source_frame",
+          "touches_border",
+          "x",
+          "x_um",
+          "y",
+          "y_um"
+        ],
+        "values_differing_by_column": {},
+        "identical": true,
+        "lane_id_changes": 0
+      },
+      "recovery": {
+        "n_recovered_v1": 9,
+        "n_recovered_v2": 4,
+        "matched": [
+          {
+            "frame": 9,
+            "label_v1": 2,
+            "label_v2": 2,
+            "distance_px": 2.28,
+            "tier_v1": "windowed",
+            "tier_v2": "permissive"
+          },
+          {
+            "frame": 10,
+            "label_v1": 2,
+            "label_v2": 2,
+            "distance_px": 3.69,
+            "tier_v1": "windowed",
+            "tier_v2": "windowed"
+          },
+          {
+            "frame": 15,
+            "label_v1": 2,
+            "label_v2": 2,
+            "distance_px": 3.87,
+            "tier_v1": "windowed",
+            "tier_v2": "windowed"
+          },
+          {
+            "frame": 16,
+            "label_v1": 2,
+            "label_v2": 2,
+            "distance_px": 4.65,
+            "tier_v1": "permissive",
+            "tier_v2": "permissive"
+          }
+        ],
+        "only_v1": [
+          {
+            "frame": 1,
+            "label_v1": 3,
+            "x": 63.8,
+            "y": 102.1,
+            "tier": "permissive",
+            "nearest_primary_px": 177.9,
+            "attributed_to": "recovery",
+            "why": "v2 searched here and found nothing: brightest object is 71 px, under 35% of the expected area"
+          },
+          {
+            "frame": 11,
+            "label_v1": 3,
+            "x": 368.4,
+            "y": 206.1,
+            "tier": "windowed",
+            "nearest_primary_px": 20.7,
+            "attributed_to": "tracking",
+            "why": "v2's first pass made no link across this gap, so its recovery never searched here"
+          },
+          {
+            "frame": 12,
+            "label_v1": 3,
+            "x": 368.5,
+            "y": 216.3,
+            "tier": "windowed",
+            "nearest_primary_px": 7.9,
+            "attributed_to": "tracking",
+            "why": "v2's first pass made no link across this gap, so its recovery never searched here"
+          },
+          {
+            "frame": 13,
+            "label_v1": 4,
+            "x": 369.7,
+            "y": 204.6,
+            "tier": "windowed",
+            "nearest_primary_px": 1.2,
+            "attributed_to": "tracking",
+            "why": "v2's first pass made no link across this gap, so its recovery never searched here"
+          },
+          {
+            "frame": 14,
+            "label_v1": 4,
+            "x": 369.5,
+            "y": 209.2,
+            "tier": "windowed",
+            "nearest_primary_px": 0.6,
+            "attributed_to": "tracking",
+            "why": "v2's first pass made no link across this gap, so its recovery never searched here"
+          }
+        ],
+        "only_v2": [],
+        "attempts_v1": 9,
+        "attempts_v2": 5,
+        "duplicates_dropped_v2": []
+      },
+      "tracking": {
+        "n_tracks_v1": 7,
+        "n_tracks_v2": 9,
+        "n_observations_v1": 52,
+        "n_observations_v2": 47,
+        "identity_agreement_obs_weighted": 0.8077,
+        "identity_agreement_primary_obs_only": 0.907,
+        "v1_to_v2_track": {
+          "1": 1,
+          "2": 2,
+          "3": 3,
+          "4": 4,
+          "5": 5,
+          "6": 7,
+          "7": 8
+        },
+        "v2_tracks_with_no_v1_majority": [
+          6,
+          9
+        ],
+        "links_v1": 45,
+        "links_v2": 38,
+        "links_only_in_v1": [
+          {
+            "from": [
+              "p",
+              0,
+              2
+            ],
+            "to": [
+              "r_v1_only",
+              1,
+              3
+            ],
+            "attributed_to": "recovery"
+          },
+          {
+            "from": [
+              "p",
+              10,
+              1
+            ],
+            "to": [
+              "r_v1_only",
+              11,
+              3
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "p",
+              15,
+              1
+            ],
+            "to": [
+              "p",
+              16,
+              1
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "r",
+              9,
+              2
+            ],
+            "to": [
+              "r",
+              10,
+              2
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "r",
+              10,
+              2
+            ],
+            "to": [
+              "p",
+              11,
+              1
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "r_v1_only",
+              1,
+              3
+            ],
+            "to": [
+              "p",
+              2,
+              3
+            ],
+            "attributed_to": "recovery"
+          },
+          {
+            "from": [
+              "r_v1_only",
+              11,
+              3
+            ],
+            "to": [
+              "r_v1_only",
+              12,
+              3
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "r_v1_only",
+              12,
+              3
+            ],
+            "to": [
+              "r_v1_only",
+              13,
+              4
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "r_v1_only",
+              13,
+              4
+            ],
+            "to": [
+              "r_v1_only",
+              14,
+              4
+            ],
+            "attributed_to": "tracking"
+          }
+        ],
+        "links_only_in_v2": [
+          {
+            "from": [
+              "p",
+              0,
+              2
+            ],
+            "to": [
+              "p",
+              2,
+              3
+            ],
+            "attributed_to": "tracking"
+          },
+          {
+            "from": [
+              "r",
+              9,
+              2
+            ],
+            "to": [
+              "p",
+              11,
+              1
+            ],
+            "attributed_to": "tracking"
+          }
+        ]
+      },
+      "speeds_per_track": [
+        {
+          "v1_track": 1,
+          "v2_track": 1,
+          "n_obs_v1": 9,
+          "n_obs_v2": 9,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": 0.633672347,
+          "net_speed_um_per_min_v2": 0.633672347,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 0.59002878,
+          "median_speed_um_per_min_v2": 0.59002878,
+          "median_speed_um_per_min_diff": 0.0,
+          "mean_speed_um_per_min_v1": 0.669636271,
+          "mean_speed_um_per_min_v2": 0.669636271,
+          "mean_speed_um_per_min_diff": 0.0,
+          "attributed_to": "none (identical)"
+        },
+        {
+          "v1_track": 2,
+          "v2_track": 2,
+          "n_obs_v1": 3,
+          "n_obs_v2": 2,
+          "same_observations": false,
+          "net_speed_um_per_min_v1": 1.538493558,
+          "net_speed_um_per_min_v2": 1.538493558,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 1.539166575,
+          "median_speed_um_per_min_v2": 1.538493558,
+          "median_speed_um_per_min_diff": -0.000673,
+          "mean_speed_um_per_min_v1": 1.539166575,
+          "mean_speed_um_per_min_v2": 1.538493558,
+          "mean_speed_um_per_min_diff": -0.000673,
+          "attributed_to": "recovery",
+          "observations_only_v1": [
+            [
+              "r_v1_only",
+              1,
+              3
+            ]
+          ],
+          "observations_only_v2": []
+        },
+        {
+          "v1_track": 3,
+          "v2_track": 3,
+          "n_obs_v1": 15,
+          "n_obs_v2": 11,
+          "same_observations": false,
+          "net_speed_um_per_min_v1": 0.235020281,
+          "net_speed_um_per_min_v2": 0.206639119,
+          "net_speed_um_per_min_diff": -0.028381,
+          "median_speed_um_per_min_v1": 0.217272452,
+          "median_speed_um_per_min_v2": 0.190087051,
+          "median_speed_um_per_min_diff": -0.027185,
+          "mean_speed_um_per_min_v1": 0.351947571,
+          "mean_speed_um_per_min_v2": 0.312785142,
+          "mean_speed_um_per_min_diff": -0.039162,
+          "attributed_to": "tracking",
+          "observations_only_v1": [
+            [
+              "r_v1_only",
+              11,
+              3
+            ],
+            [
+              "r_v1_only",
+              12,
+              3
+            ],
+            [
+              "r_v1_only",
+              13,
+              4
+            ],
+            [
+              "r_v1_only",
+              14,
+              4
+            ]
+          ],
+          "observations_only_v2": []
+        },
+        {
+          "v1_track": 4,
+          "v2_track": 4,
+          "n_obs_v1": 4,
+          "n_obs_v2": 4,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": 1.444952179,
+          "net_speed_um_per_min_v2": 1.444952179,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 1.335905408,
+          "median_speed_um_per_min_v2": 1.335905408,
+          "median_speed_um_per_min_diff": 0.0,
+          "mean_speed_um_per_min_v1": 1.445185219,
+          "mean_speed_um_per_min_v2": 1.445185219,
+          "mean_speed_um_per_min_diff": 0.0,
+          "attributed_to": "none (identical)"
+        },
+        {
+          "v1_track": 5,
+          "v2_track": 5,
+          "n_obs_v1": 10,
+          "n_obs_v2": 9,
+          "same_observations": false,
+          "net_speed_um_per_min_v1": 0.065030602,
+          "net_speed_um_per_min_v2": 0.065030602,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 0.219087667,
+          "median_speed_um_per_min_v2": 0.151346268,
+          "median_speed_um_per_min_diff": -0.067741,
+          "mean_speed_um_per_min_v1": 0.230173021,
+          "mean_speed_um_per_min_v2": 0.158949746,
+          "mean_speed_um_per_min_diff": -0.071223,
+          "attributed_to": "tracking",
+          "observations_only_v1": [
+            [
+              "r",
+              10,
+              2
+            ]
+          ],
+          "observations_only_v2": []
+        },
+        {
+          "v1_track": 6,
+          "v2_track": 7,
+          "n_obs_v1": 9,
+          "n_obs_v2": 5,
+          "same_observations": false,
+          "net_speed_um_per_min_v1": 0.405322287,
+          "net_speed_um_per_min_v2": 0.262597391,
+          "net_speed_um_per_min_diff": -0.142725,
+          "median_speed_um_per_min_v1": 0.502896154,
+          "median_speed_um_per_min_v2": 0.24795479,
+          "median_speed_um_per_min_diff": -0.254941,
+          "mean_speed_um_per_min_v1": 0.464932062,
+          "mean_speed_um_per_min_v2": 0.295097918,
+          "mean_speed_um_per_min_diff": -0.169834,
+          "attributed_to": "tracking",
+          "observations_only_v1": [
+            [
+              "p",
+              16,
+              1
+            ],
+            [
+              "p",
+              17,
+              2
+            ],
+            [
+              "p",
+              18,
+              1
+            ],
+            [
+              "p",
+              19,
+              1
+            ]
+          ],
+          "observations_only_v2": []
+        },
+        {
+          "v1_track": 7,
+          "v2_track": 8,
+          "n_obs_v1": 2,
+          "n_obs_v2": 2,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": 1.984089566,
+          "net_speed_um_per_min_v2": 1.984089566,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 1.984089566,
+          "median_speed_um_per_min_v2": 1.984089566,
+          "median_speed_um_per_min_diff": 0.0,
+          "mean_speed_um_per_min_v1": 1.984089566,
+          "mean_speed_um_per_min_v2": 1.984089566,
+          "mean_speed_um_per_min_diff": 0.0,
+          "attributed_to": "none (identical)"
+        }
+      ],
+      "attribution_counts": {
+        "none (identical)": 3,
+        "recovery": 1,
+        "tracking": 3,
+        "link:recovery": 2,
+        "link:tracking": 9
+      },
+      "results_v1": {
+        "n_detections": 43,
+        "n_tracks": 7,
+        "mean_speed_um_per_min": 0.9550186122509748
+      },
+      "results_v2": {
+        "n_detections": 47,
+        "n_detections_primary": 43,
+        "n_detections_recovered": 4,
+        "n_tracks": 9,
+        "mean_speed_um_per_min": 0.8961216697605894,
+        "mean_net_speed_um_per_min": 0.8625257254311887
+      },
+      "channel_geometry_v2": {
+        "source": "channel_ridges",
+        "n_lanes": 6,
+        "pitch_px": 85.19702275755498,
+        "applied": true,
+        "lane_gate_applied": true
+      }
+    },
+    "052924_t1": {
+      "segmentation_bit_identical": true,
+      "segmentation": {
+        "masks.npz": {
+          "shape_v1": [
+            18,
+            324,
+            90
+          ],
+          "shape_v2": [
+            18,
+            324,
+            90
+          ],
+          "dtype_v1": "int32",
+          "dtype_v2": "int32",
+          "identical": true,
+          "pixels_differing": 0,
+          "labelled_pixels": 9375
+        },
+        "masks_raw.npz": {
+          "shape_v1": [
+            18,
+            324,
+            90
+          ],
+          "shape_v2": [
+            18,
+            324,
+            90
+          ],
+          "dtype_v1": "int32",
+          "dtype_v2": "int32",
+          "identical": true,
+          "pixels_differing": 0,
+          "labelled_pixels": 9375
+        },
+        "model_sha256_v1": "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+        "model_sha256_v2": "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+        "same_model": true,
+        "settings_differing": {},
+        "kept_per_frame_identical": true,
+        "raw_per_frame_identical": true
+      },
+      "primary_detections": {
+        "n_primary_v1": 13,
+        "n_primary_v2": 13,
+        "same_keys": true,
+        "columns_compared": [
+          "area_px",
+          "area_um2",
+          "bbox_max_x",
+          "bbox_max_y",
+          "bbox_min_x",
+          "bbox_min_y",
+          "eccentricity",
+          "elapsed_min",
+          "extent_px",
+          "frame",
+          "label",
+          "major_axis_px",
+          "minor_axis_px",
+          "orientation_rad",
+          "solidity",
+          "source_frame",
+          "touches_border",
+          "x",
+          "x_um",
+          "y",
+          "y_um"
+        ],
+        "values_differing_by_column": {},
+        "identical": true,
+        "lane_id_changes": 0
+      },
+      "recovery": {
+        "n_recovered_v1": 0,
+        "n_recovered_v2": 0,
+        "matched": [],
+        "only_v1": [],
+        "only_v2": [],
+        "attempts_v1": 0,
+        "attempts_v2": 0,
+        "duplicates_dropped_v2": []
+      },
+      "tracking": {
+        "n_tracks_v1": 1,
+        "n_tracks_v2": 1,
+        "n_observations_v1": 13,
+        "n_observations_v2": 13,
+        "identity_agreement_obs_weighted": 1.0,
+        "identity_agreement_primary_obs_only": 1.0,
+        "v1_to_v2_track": {
+          "1": 1
+        },
+        "v2_tracks_with_no_v1_majority": [],
+        "links_v1": 12,
+        "links_v2": 12,
+        "links_only_in_v1": [],
+        "links_only_in_v2": []
+      },
+      "speeds_per_track": [
+        {
+          "v1_track": 1,
+          "v2_track": 1,
+          "n_obs_v1": 13,
+          "n_obs_v2": 13,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": 0.471905985,
+          "net_speed_um_per_min_v2": 0.471905985,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 0.326688414,
+          "median_speed_um_per_min_v2": 0.326688414,
+          "median_speed_um_per_min_diff": 0.0,
+          "mean_speed_um_per_min_v1": 0.497727795,
+          "mean_speed_um_per_min_v2": 0.497727795,
+          "mean_speed_um_per_min_diff": 0.0,
+          "attributed_to": "none (identical)"
+        }
+      ],
+      "attribution_counts": {
+        "none (identical)": 1
+      },
+      "results_v1": {
+        "n_detections": 13,
+        "n_tracks": 1,
+        "mean_speed_um_per_min": 0.49772779496269304
+      },
+      "results_v2": {
+        "n_detections": 13,
+        "n_detections_primary": 13,
+        "n_detections_recovered": 0,
+        "n_tracks": 1,
+        "mean_speed_um_per_min": 0.49772779496269304,
+        "mean_net_speed_um_per_min": 0.47190598468089445
+      },
+      "channel_geometry_v2": {
+        "source": "channel_ridges",
+        "n_lanes": 1,
+        "pitch_px": null,
+        "applied": true,
+        "lane_gate_applied": true
+      }
+    },
+    "052924_t2_empty": {
+      "segmentation_bit_identical": true,
+      "segmentation": {
+        "masks.npz": {
+          "shape_v1": [
+            5,
+            324,
+            90
+          ],
+          "shape_v2": [
+            5,
+            324,
+            90
+          ],
+          "dtype_v1": "int32",
+          "dtype_v2": "int32",
+          "identical": true,
+          "pixels_differing": 0,
+          "labelled_pixels": 395
+        },
+        "masks_raw.npz": {
+          "shape_v1": [
+            5,
+            324,
+            90
+          ],
+          "shape_v2": [
+            5,
+            324,
+            90
+          ],
+          "dtype_v1": "int32",
+          "dtype_v2": "int32",
+          "identical": true,
+          "pixels_differing": 0,
+          "labelled_pixels": 395
+        },
+        "model_sha256_v1": "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+        "model_sha256_v2": "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+        "same_model": true,
+        "settings_differing": {},
+        "kept_per_frame_identical": true,
+        "raw_per_frame_identical": true
+      },
+      "primary_detections": {
+        "n_primary_v1": 2,
+        "n_primary_v2": 2,
+        "same_keys": true,
+        "columns_compared": [
+          "area_px",
+          "area_um2",
+          "bbox_max_x",
+          "bbox_max_y",
+          "bbox_min_x",
+          "bbox_min_y",
+          "eccentricity",
+          "elapsed_min",
+          "extent_px",
+          "frame",
+          "label",
+          "major_axis_px",
+          "minor_axis_px",
+          "orientation_rad",
+          "solidity",
+          "source_frame",
+          "touches_border",
+          "x",
+          "x_um",
+          "y",
+          "y_um"
+        ],
+        "values_differing_by_column": {},
+        "identical": true,
+        "lane_id_changes": 0
+      },
+      "recovery": {
+        "n_recovered_v1": 0,
+        "n_recovered_v2": 0,
+        "matched": [],
+        "only_v1": [],
+        "only_v2": [],
+        "attempts_v1": 0,
+        "attempts_v2": 0,
+        "duplicates_dropped_v2": []
+      },
+      "tracking": {
+        "n_tracks_v1": 1,
+        "n_tracks_v2": 1,
+        "n_observations_v1": 2,
+        "n_observations_v2": 2,
+        "identity_agreement_obs_weighted": 1.0,
+        "identity_agreement_primary_obs_only": 1.0,
+        "v1_to_v2_track": {
+          "1": 1
+        },
+        "v2_tracks_with_no_v1_majority": [],
+        "links_v1": 1,
+        "links_v2": 1,
+        "links_only_in_v1": [],
+        "links_only_in_v2": []
+      },
+      "speeds_per_track": [
+        {
+          "v1_track": 1,
+          "v2_track": 1,
+          "n_obs_v1": 2,
+          "n_obs_v2": 2,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": 0.06361178,
+          "net_speed_um_per_min_v2": 0.06361178,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 0.06361178,
+          "median_speed_um_per_min_v2": 0.06361178,
+          "median_speed_um_per_min_diff": 0.0,
+          "mean_speed_um_per_min_v1": 0.06361178,
+          "mean_speed_um_per_min_v2": 0.06361178,
+          "mean_speed_um_per_min_diff": 0.0,
+          "attributed_to": "none (identical)"
+        }
+      ],
+      "attribution_counts": {
+        "none (identical)": 1
+      },
+      "results_v1": {
+        "n_detections": 2,
+        "n_tracks": 1,
+        "mean_speed_um_per_min": 0.06361178036058815
+      },
+      "results_v2": {
+        "n_detections": 2,
+        "n_detections_primary": 2,
+        "n_detections_recovered": 0,
+        "n_tracks": 1,
+        "mean_speed_um_per_min": 0.06361178036058818,
+        "mean_net_speed_um_per_min": 0.06361178036058818
+      },
+      "channel_geometry_v2": {
+        "source": "channel_ridges",
+        "n_lanes": 1,
+        "pitch_px": null,
+        "applied": true,
+        "lane_gate_applied": true
+      }
+    },
+    "052924_t3_dual": {
+      "segmentation_bit_identical": true,
+      "segmentation": {
+        "masks.npz": {
+          "shape_v1": [
+            11,
+            324,
+            90
+          ],
+          "shape_v2": [
+            11,
+            324,
+            90
+          ],
+          "dtype_v1": "int32",
+          "dtype_v2": "int32",
+          "identical": true,
+          "pixels_differing": 0,
+          "labelled_pixels": 4655
+        },
+        "masks_raw.npz": {
+          "shape_v1": [
+            11,
+            324,
+            90
+          ],
+          "shape_v2": [
+            11,
+            324,
+            90
+          ],
+          "dtype_v1": "int32",
+          "dtype_v2": "int32",
+          "identical": true,
+          "pixels_differing": 0,
+          "labelled_pixels": 4655
+        },
+        "model_sha256_v1": "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+        "model_sha256_v2": "b33bdbdab395a27051b1bf10897b66888abcc24da3b3ddd41814fea970177cd6",
+        "same_model": true,
+        "settings_differing": {},
+        "kept_per_frame_identical": true,
+        "raw_per_frame_identical": true
+      },
+      "primary_detections": {
+        "n_primary_v1": 8,
+        "n_primary_v2": 8,
+        "same_keys": true,
+        "columns_compared": [
+          "area_px",
+          "area_um2",
+          "bbox_max_x",
+          "bbox_max_y",
+          "bbox_min_x",
+          "bbox_min_y",
+          "eccentricity",
+          "elapsed_min",
+          "extent_px",
+          "frame",
+          "label",
+          "major_axis_px",
+          "minor_axis_px",
+          "orientation_rad",
+          "solidity",
+          "source_frame",
+          "touches_border",
+          "x",
+          "x_um",
+          "y",
+          "y_um"
+        ],
+        "values_differing_by_column": {},
+        "identical": true,
+        "lane_id_changes": 0
+      },
+      "recovery": {
+        "n_recovered_v1": 0,
+        "n_recovered_v2": 0,
+        "matched": [],
+        "only_v1": [],
+        "only_v2": [],
+        "attempts_v1": 0,
+        "attempts_v2": 0,
+        "duplicates_dropped_v2": []
+      },
+      "tracking": {
+        "n_tracks_v1": 3,
+        "n_tracks_v2": 3,
+        "n_observations_v1": 8,
+        "n_observations_v2": 8,
+        "identity_agreement_obs_weighted": 1.0,
+        "identity_agreement_primary_obs_only": 1.0,
+        "v1_to_v2_track": {
+          "1": 1,
+          "2": 2,
+          "3": 3
+        },
+        "v2_tracks_with_no_v1_majority": [],
+        "links_v1": 5,
+        "links_v2": 5,
+        "links_only_in_v1": [],
+        "links_only_in_v2": []
+      },
+      "speeds_per_track": [
+        {
+          "v1_track": 1,
+          "v2_track": 1,
+          "n_obs_v1": 5,
+          "n_obs_v2": 5,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": 0.18312592,
+          "net_speed_um_per_min_v2": 0.18312592,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 0.280807102,
+          "median_speed_um_per_min_v2": 0.280807102,
+          "median_speed_um_per_min_diff": 0.0,
+          "mean_speed_um_per_min_v1": 0.26900714,
+          "mean_speed_um_per_min_v2": 0.26900714,
+          "mean_speed_um_per_min_diff": 0.0,
+          "attributed_to": "none (identical)"
+        },
+        {
+          "v1_track": 2,
+          "v2_track": 2,
+          "n_obs_v1": 2,
+          "n_obs_v2": 2,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": 0.022354195,
+          "net_speed_um_per_min_v2": 0.022354195,
+          "net_speed_um_per_min_diff": 0.0,
+          "median_speed_um_per_min_v1": 0.022354195,
+          "median_speed_um_per_min_v2": 0.022354195,
+          "median_speed_um_per_min_diff": 0.0,
+          "mean_speed_um_per_min_v1": 0.022354195,
+          "mean_speed_um_per_min_v2": 0.022354195,
+          "mean_speed_um_per_min_diff": 0.0,
+          "attributed_to": "none (identical)"
+        },
+        {
+          "v1_track": 3,
+          "v2_track": 3,
+          "n_obs_v1": 1,
+          "n_obs_v2": 1,
+          "same_observations": true,
+          "net_speed_um_per_min_v1": null,
+          "net_speed_um_per_min_v2": null,
+          "net_speed_um_per_min_diff": null,
+          "median_speed_um_per_min_v1": null,
+          "median_speed_um_per_min_v2": null,
+          "median_speed_um_per_min_diff": null,
+          "mean_speed_um_per_min_v1": null,
+          "mean_speed_um_per_min_v2": null,
+          "mean_speed_um_per_min_diff": null,
+          "attributed_to": "none (identical)"
+        }
+      ],
+      "attribution_counts": {
+        "none (identical)": 3
+      },
+      "results_v1": {
+        "n_detections": 8,
+        "n_tracks": 3,
+        "mean_speed_um_per_min": 0.1456806675120498
+      },
+      "results_v2": {
+        "n_detections": 8,
+        "n_detections_primary": 8,
+        "n_detections_recovered": 0,
+        "n_tracks": 3,
+        "mean_speed_um_per_min": 0.1456806675120499,
+        "mean_net_speed_um_per_min": 0.10274005720119557
+      },
+      "channel_geometry_v2": {
+        "source": "channel_ridges",
+        "n_lanes": 1,
+        "pitch_px": null,
+        "applied": true,
+        "lane_gate_applied": true
+      }
+    }
+  },
+  "tracker_alone_on_v1_detections": {
+    "what": "scripts/compare_tracking_to_baseline.py at this commit's tracking defaults: the v2 tracker given exactly v1.3.0's detections (primary and recovered), so neither segmentation nor recovery can differ. Its agreement against the end-to-end figure above separates the tracker's share from recovery's.",
+    "tracking_config": {
+      "max_speed_um_per_min": 5.0,
+      "max_perp_um": 4.0,
+      "area_ratio_min": 0.3,
+      "area_ratio_max": 3.0,
+      "sigma_along_um": 3.0,
+      "speed_uncertainty_fraction": 0.7,
+      "sigma_perp_um": 0.8,
+      "perp_width_fraction": 0.35,
+      "max_perp_widths": 1.6,
+      "sigma_ln_area": 0.3,
+      "w_reversal": 4.0,
+      "w_orientation": 1.0,
+      "orientation_min_eccentricity": 0.6,
+      "direction_noise_floor_um": 1.0,
+      "unmatched_chi2": 15.0,
+      "gate_chi2": 30.0,
+      "max_gap": 3,
+      "min_observations": 2,
+      "enforce_channel_identity": true,
+      "position_sigma_um": 0.5,
+      "shape_position_fraction": 0.065,
+      "width_position_fraction": 0.12,
+      "velocity_sigma_um_per_min": 0.1,
+      "initial_speed_sigma_um_per_min": null,
+      "w_shape": 0.5,
+      "w_overlap": 1.0,
+      "gap_penalty_chi2": 1.0,
+      "global_gap_closing": true,
+      "channel_constraint": "auto"
+    },
+    "summary": {
+      "baseline_tracks": 27,
+      "v2_tracks": 29,
+      "baseline_observations": 155,
+      "identity_agreement_obs_weighted": 0.9097,
+      "links_only_in_v1": 9,
+      "links_only_in_v2": 7,
+      "v2_lane_crossings_in_wide_fields": 0,
+      "stage2_gap_closures": 8,
+      "unreviewed_disagreements": 11,
+      "stale_reviewed_explanations": 3
+    }
+  }
+}
