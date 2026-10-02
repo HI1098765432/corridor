@@ -1,0 +1,959 @@
+{
+  "group": "KK1",
+  "reference_version": "v2",
+  "ordering": "true time index from the ImageJ label; crops by registration",
+  "rule": {
+    "max_speed_um_per_min": 3.0,
+    "position_tolerance_um": 5.0,
+    "max_bracket_min": 90.0,
+    "link_iou": 0.15,
+    "min_added_px": 80,
+    "identity": "unique mutual mask overlap (IoU) between t0 and t1, registered",
+    "position": "t0 centroid + (t1 - t0 centroid) * elapsed fraction",
+    "outline": "human mask from the nearer labelled time, translated",
+    "drawn_here": "any drawn mask at t touching the outline grown by the tolerance"
+  },
+  "images": 40,
+  "original_instances": 138,
+  "added": 2,
+  "corrected_instances": 140,
+  "checked_images": [
+    "041824_15.tif",
+    "041824_18.tif",
+    "041824_5.tif",
+    "041824_9.tif",
+    "122324_5.tif",
+    "122324_7.tif",
+    "122324_8.tif"
+  ],
+  "frames": [
+    {
+      "image": "041824_4.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "t": 1,
+      "labelled": 0,
+      "checkable": false,
+      "reason": "first labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "041824_3.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "t": 23,
+      "labelled": 2,
+      "checkable": false,
+      "reason": "bracket t1-t44 spans 656 min > 90",
+      "linked_pairs": 0,
+      "span_min": 656.0
+    },
+    {
+      "image": "041824_1.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "t": 44,
+      "labelled": 2,
+      "checkable": false,
+      "reason": "bracket t23-t45 spans 336 min > 90",
+      "linked_pairs": 0,
+      "span_min": 335.6
+    },
+    {
+      "image": "041824_5.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "t": 45,
+      "labelled": 3,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 1,
+      "span_min": 61.0
+    },
+    {
+      "image": "041824_6.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "t": 48,
+      "labelled": 2,
+      "checkable": false,
+      "reason": "bracket t45-t67 spans 336 min > 90",
+      "linked_pairs": 0,
+      "span_min": 335.6
+    },
+    {
+      "image": "041824_2.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "t": 67,
+      "labelled": 3,
+      "checkable": false,
+      "reason": "bracket t48-t69 spans 320 min > 90",
+      "linked_pairs": 0,
+      "span_min": 320.4
+    },
+    {
+      "image": "041824_7.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "t": 67,
+      "labelled": 3,
+      "checkable": false,
+      "reason": "bracket t48-t69 spans 320 min > 90",
+      "linked_pairs": 0,
+      "span_min": 320.4
+    },
+    {
+      "image": "041824_8.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "t": 69,
+      "labelled": 3,
+      "checkable": false,
+      "reason": "nothing drawn at t71 (041824_9.tif, the later side of the bracket)",
+      "linked_pairs": 0,
+      "span_min": 61.0
+    },
+    {
+      "image": "041824_9.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "t": 71,
+      "labelled": 0,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 1,
+      "span_min": 61.0
+    },
+    {
+      "image": "041824_10.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "t": 73,
+      "labelled": 2,
+      "checkable": false,
+      "reason": "nothing drawn at t71 (041824_9.tif, the earlier side of the bracket)",
+      "linked_pairs": 0,
+      "span_min": 61.0
+    },
+    {
+      "image": "041824_11.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "t": 75,
+      "labelled": 2,
+      "checkable": false,
+      "reason": "bracket t73-t80 spans 107 min > 90",
+      "linked_pairs": 0,
+      "span_min": 106.8
+    },
+    {
+      "image": "041824_12.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "t": 80,
+      "labelled": 3,
+      "checkable": false,
+      "reason": "last labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "122324_1.tif",
+      "sequence": "KK1-20241223-s01-c0",
+      "t": 15,
+      "labelled": 0,
+      "checkable": false,
+      "reason": "first labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "122324_2.tif",
+      "sequence": "KK1-20241223-s01-c0",
+      "t": 33,
+      "labelled": 1,
+      "checkable": false,
+      "reason": "bracket t15-t51 spans 365 min > 90",
+      "linked_pairs": 0,
+      "span_min": 365.3
+    },
+    {
+      "image": "122324_3.tif",
+      "sequence": "KK1-20241223-s01-c0",
+      "t": 51,
+      "labelled": 3,
+      "checkable": false,
+      "reason": "bracket t33-t54 spans 213 min > 90",
+      "linked_pairs": 0,
+      "span_min": 213.1
+    },
+    {
+      "image": "122324_4.tif",
+      "sequence": "KK1-20241223-s01-c0",
+      "t": 54,
+      "labelled": 6,
+      "checkable": false,
+      "reason": "no cell drawn on one side links to one on the other: nothing to test",
+      "linked_pairs": 0,
+      "span_min": 71.0
+    },
+    {
+      "image": "122324_5.tif",
+      "sequence": "KK1-20241223-s01-c0",
+      "t": 58,
+      "labelled": 5,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 1,
+      "span_min": 60.9
+    },
+    {
+      "image": "122324_6.tif",
+      "sequence": "KK1-20241223-s01-c0",
+      "t": 60,
+      "labelled": 5,
+      "checkable": false,
+      "reason": "no cell drawn on one side links to one on the other: nothing to test",
+      "linked_pairs": 0,
+      "span_min": 50.7
+    },
+    {
+      "image": "122324_7.tif",
+      "sequence": "KK1-20241223-s01-c0",
+      "t": 63,
+      "labelled": 6,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 1,
+      "span_min": 50.7
+    },
+    {
+      "image": "122324_8.tif",
+      "sequence": "KK1-20241223-s01-c0",
+      "t": 65,
+      "labelled": 6,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 3,
+      "span_min": 60.9
+    },
+    {
+      "image": "122324_9.tif",
+      "sequence": "KK1-20241223-s01-c0",
+      "t": 69,
+      "labelled": 8,
+      "checkable": false,
+      "reason": "bracket t65-t74 spans 91 min > 90",
+      "linked_pairs": 0,
+      "span_min": 91.3
+    },
+    {
+      "image": "122324_10.tif",
+      "sequence": "KK1-20241223-s01-c0",
+      "t": 74,
+      "labelled": 7,
+      "checkable": false,
+      "reason": "bracket t69-t85 spans 162 min > 90",
+      "linked_pairs": 0,
+      "span_min": 162.3
+    },
+    {
+      "image": "122324_11.tif",
+      "sequence": "KK1-20241223-s01-c0",
+      "t": 85,
+      "labelled": 8,
+      "checkable": false,
+      "reason": "bracket t74-t145 spans 720 min > 90",
+      "linked_pairs": 0,
+      "span_min": 720.4
+    },
+    {
+      "image": "122324_12.tif",
+      "sequence": "KK1-20241223-s01-c0",
+      "t": 145,
+      "labelled": 1,
+      "checkable": false,
+      "reason": "last labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "041824_13.tif",
+      "sequence": "KK1-20240418-s42-c0",
+      "t": 23,
+      "labelled": 2,
+      "checkable": false,
+      "reason": "first labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "041824_14.tif",
+      "sequence": "KK1-20240418-s42-c0",
+      "t": 44,
+      "labelled": 5,
+      "checkable": false,
+      "reason": "bracket t23-t46 spans 351 min > 90",
+      "linked_pairs": 0,
+      "span_min": 351.0
+    },
+    {
+      "image": "041824_15.tif",
+      "sequence": "KK1-20240418-s42-c0",
+      "t": 46,
+      "labelled": 6,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 4,
+      "span_min": 61.0
+    },
+    {
+      "image": "041824_16.tif",
+      "sequence": "KK1-20240418-s42-c0",
+      "t": 48,
+      "labelled": 6,
+      "checkable": false,
+      "reason": "bracket t46-t54 spans 122 min > 90",
+      "linked_pairs": 0,
+      "span_min": 122.1
+    },
+    {
+      "image": "041824_17.tif",
+      "sequence": "KK1-20240418-s42-c0",
+      "t": 54,
+      "labelled": 4,
+      "checkable": false,
+      "reason": "bracket t48-t56 spans 122 min > 90",
+      "linked_pairs": 0,
+      "span_min": 122.1
+    },
+    {
+      "image": "041824_18.tif",
+      "sequence": "KK1-20240418-s42-c0",
+      "t": 56,
+      "labelled": 5,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 1,
+      "span_min": 76.3
+    },
+    {
+      "image": "041824_19.tif",
+      "sequence": "KK1-20240418-s42-c0",
+      "t": 59,
+      "labelled": 4,
+      "checkable": false,
+      "reason": "bracket t56-t64 spans 122 min > 90",
+      "linked_pairs": 0,
+      "span_min": 122.1
+    },
+    {
+      "image": "041824_20.tif",
+      "sequence": "KK1-20240418-s42-c0",
+      "t": 64,
+      "labelled": 2,
+      "checkable": false,
+      "reason": "bracket t59-t73 spans 214 min > 90",
+      "linked_pairs": 0,
+      "span_min": 213.6
+    },
+    {
+      "image": "041824_21.tif",
+      "sequence": "KK1-20240418-s42-c0",
+      "t": 73,
+      "labelled": 3,
+      "checkable": false,
+      "reason": "bracket t64-t74 spans 153 min > 90",
+      "linked_pairs": 0,
+      "span_min": 152.6
+    },
+    {
+      "image": "041824_22.tif",
+      "sequence": "KK1-20240418-s42-c0",
+      "t": 74,
+      "labelled": 3,
+      "checkable": false,
+      "reason": "last labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "061523_1.tif",
+      "sequence": "KK1-20230615-s04-c0",
+      "t": 1,
+      "labelled": 1,
+      "checkable": false,
+      "reason": "first labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "061523_2.tif",
+      "sequence": "KK1-20230615-s04-c0",
+      "t": 29,
+      "labelled": 4,
+      "checkable": false,
+      "reason": "bracket t1-t37 spans 367 min > 90",
+      "linked_pairs": 0,
+      "span_min": 366.7
+    },
+    {
+      "image": "061523_3.tif",
+      "sequence": "KK1-20230615-s04-c0",
+      "t": 37,
+      "labelled": 4,
+      "checkable": false,
+      "reason": "bracket t29-t38 spans 92 min > 90",
+      "linked_pairs": 0,
+      "span_min": 91.7
+    },
+    {
+      "image": "061523_4.tif",
+      "sequence": "KK1-20230615-s04-c0",
+      "t": 38,
+      "labelled": 4,
+      "checkable": false,
+      "reason": "bracket t37-t67 spans 306 min > 90",
+      "linked_pairs": 0,
+      "span_min": 305.6
+    },
+    {
+      "image": "061523_5.tif",
+      "sequence": "KK1-20230615-s04-c0",
+      "t": 67,
+      "labelled": 4,
+      "checkable": false,
+      "reason": "last labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "34-34.tif",
+      "sequence": null,
+      "t": null,
+      "labelled": 0,
+      "checkable": false,
+      "reason": "not part of any crop with three or more labelled times",
+      "linked_pairs": 0,
+      "span_min": null
+    }
+  ],
+  "sequences": [
+    {
+      "name": "KK1-20240418-s01-c0",
+      "experiment": "20240418-s01",
+      "crop": 0,
+      "shape": [
+        264,
+        727
+      ],
+      "frame_interval_min": 15.2563,
+      "pixel_size_um": 0.639386189258312,
+      "frame_correlation": 0.879,
+      "frames": [
+        {
+          "image": "041824_4.tif",
+          "t": 1,
+          "offset_px": [
+            0.0,
+            0.0
+          ],
+          "link_ncc": 1.0
+        },
+        {
+          "image": "041824_3.tif",
+          "t": 23,
+          "offset_px": [
+            -10.0,
+            -16.0
+          ],
+          "link_ncc": 0.774
+        },
+        {
+          "image": "041824_1.tif",
+          "t": 44,
+          "offset_px": [
+            -10.0,
+            -14.0
+          ],
+          "link_ncc": 0.765
+        },
+        {
+          "image": "041824_5.tif",
+          "t": 45,
+          "offset_px": [
+            -10.0,
+            -16.0
+          ],
+          "link_ncc": 0.709
+        },
+        {
+          "image": "041824_6.tif",
+          "t": 48,
+          "offset_px": [
+            -8.0,
+            -16.0
+          ],
+          "link_ncc": 0.709
+        },
+        {
+          "image": "041824_2.tif",
+          "t": 67,
+          "offset_px": [
+            -6.0,
+            -14.0
+          ],
+          "link_ncc": 0.775
+        },
+        {
+          "image": "041824_7.tif",
+          "t": 67,
+          "offset_px": [
+            -6.0,
+            -14.0
+          ],
+          "link_ncc": 1.0
+        },
+        {
+          "image": "041824_8.tif",
+          "t": 69,
+          "offset_px": [
+            -6.0,
+            -14.0
+          ],
+          "link_ncc": 0.741
+        },
+        {
+          "image": "041824_9.tif",
+          "t": 71,
+          "offset_px": [
+            -4.0,
+            -14.0
+          ],
+          "link_ncc": 0.721
+        },
+        {
+          "image": "041824_10.tif",
+          "t": 73,
+          "offset_px": [
+            -4.0,
+            -12.0
+          ],
+          "link_ncc": 0.732
+        },
+        {
+          "image": "041824_11.tif",
+          "t": 75,
+          "offset_px": [
+            -4.0,
+            -12.0
+          ],
+          "link_ncc": 0.746
+        },
+        {
+          "image": "041824_12.tif",
+          "t": 80,
+          "offset_px": [
+            -4.0,
+            -10.0
+          ],
+          "link_ncc": 0.727
+        }
+      ]
+    },
+    {
+      "name": "KK1-20241223-s01-c0",
+      "experiment": "20241223-s01",
+      "crop": 0,
+      "shape": [
+        290,
+        762
+      ],
+      "frame_interval_min": 10.1465,
+      "pixel_size_um": 0.639386189258312,
+      "frame_correlation": 0.881,
+      "frames": [
+        {
+          "image": "122324_1.tif",
+          "t": 15,
+          "offset_px": [
+            0.0,
+            0.0
+          ],
+          "link_ncc": 1.0
+        },
+        {
+          "image": "122324_2.tif",
+          "t": 33,
+          "offset_px": [
+            0.0,
+            -4.0
+          ],
+          "link_ncc": 0.716
+        },
+        {
+          "image": "122324_3.tif",
+          "t": 51,
+          "offset_px": [
+            0.0,
+            -6.0
+          ],
+          "link_ncc": 0.742
+        },
+        {
+          "image": "122324_4.tif",
+          "t": 54,
+          "offset_px": [
+            0.0,
+            -6.0
+          ],
+          "link_ncc": 0.713
+        },
+        {
+          "image": "122324_5.tif",
+          "t": 58,
+          "offset_px": [
+            0.0,
+            -6.0
+          ],
+          "link_ncc": 0.728
+        },
+        {
+          "image": "122324_6.tif",
+          "t": 60,
+          "offset_px": [
+            0.0,
+            -8.0
+          ],
+          "link_ncc": 0.666
+        },
+        {
+          "image": "122324_7.tif",
+          "t": 63,
+          "offset_px": [
+            0.0,
+            -8.0
+          ],
+          "link_ncc": 0.695
+        },
+        {
+          "image": "122324_8.tif",
+          "t": 65,
+          "offset_px": [
+            0.0,
+            -6.0
+          ],
+          "link_ncc": 0.674
+        },
+        {
+          "image": "122324_9.tif",
+          "t": 69,
+          "offset_px": [
+            0.0,
+            -8.0
+          ],
+          "link_ncc": 0.673
+        },
+        {
+          "image": "122324_10.tif",
+          "t": 74,
+          "offset_px": [
+            0.0,
+            -8.0
+          ],
+          "link_ncc": 0.639
+        },
+        {
+          "image": "122324_11.tif",
+          "t": 85,
+          "offset_px": [
+            2.0,
+            -8.0
+          ],
+          "link_ncc": 0.606
+        },
+        {
+          "image": "122324_12.tif",
+          "t": 145,
+          "offset_px": [
+            0.0,
+            -10.0
+          ],
+          "link_ncc": 0.643
+        }
+      ]
+    },
+    {
+      "name": "KK1-20240418-s42-c0",
+      "experiment": "20240418-s42",
+      "crop": 0,
+      "shape": [
+        309,
+        649
+      ],
+      "frame_interval_min": 15.2598,
+      "pixel_size_um": 0.639386189258312,
+      "frame_correlation": 0.781,
+      "frames": [
+        {
+          "image": "041824_13.tif",
+          "t": 23,
+          "offset_px": [
+            0.0,
+            0.0
+          ],
+          "link_ncc": 1.0
+        },
+        {
+          "image": "041824_14.tif",
+          "t": 44,
+          "offset_px": [
+            2.0,
+            0.0
+          ],
+          "link_ncc": 0.451
+        },
+        {
+          "image": "041824_15.tif",
+          "t": 46,
+          "offset_px": [
+            2.0,
+            2.0
+          ],
+          "link_ncc": 0.461
+        },
+        {
+          "image": "041824_16.tif",
+          "t": 48,
+          "offset_px": [
+            2.0,
+            -4.0
+          ],
+          "link_ncc": 0.48
+        },
+        {
+          "image": "041824_17.tif",
+          "t": 54,
+          "offset_px": [
+            2.0,
+            -2.0
+          ],
+          "link_ncc": 0.486
+        },
+        {
+          "image": "041824_18.tif",
+          "t": 56,
+          "offset_px": [
+            2.0,
+            -2.0
+          ],
+          "link_ncc": 0.526
+        },
+        {
+          "image": "041824_19.tif",
+          "t": 59,
+          "offset_px": [
+            4.0,
+            -2.0
+          ],
+          "link_ncc": 0.536
+        },
+        {
+          "image": "041824_20.tif",
+          "t": 64,
+          "offset_px": [
+            2.0,
+            -2.0
+          ],
+          "link_ncc": 0.567
+        },
+        {
+          "image": "041824_21.tif",
+          "t": 73,
+          "offset_px": [
+            4.0,
+            2.0
+          ],
+          "link_ncc": 0.489
+        },
+        {
+          "image": "041824_22.tif",
+          "t": 74,
+          "offset_px": [
+            6.0,
+            0.0
+          ],
+          "link_ncc": 0.571
+        }
+      ]
+    },
+    {
+      "name": "KK1-20230615-s04-c0",
+      "experiment": "20230615-s04",
+      "crop": 0,
+      "shape": [
+        381,
+        864
+      ],
+      "frame_interval_min": 10.1865,
+      "pixel_size_um": 0.639386189258312,
+      "frame_correlation": 0.808,
+      "frames": [
+        {
+          "image": "061523_1.tif",
+          "t": 1,
+          "offset_px": [
+            0.0,
+            0.0
+          ],
+          "link_ncc": 1.0
+        },
+        {
+          "image": "061523_2.tif",
+          "t": 29,
+          "offset_px": [
+            -8.0,
+            -2.0
+          ],
+          "link_ncc": 0.33
+        },
+        {
+          "image": "061523_3.tif",
+          "t": 37,
+          "offset_px": [
+            -8.0,
+            -2.0
+          ],
+          "link_ncc": 0.53
+        },
+        {
+          "image": "061523_4.tif",
+          "t": 38,
+          "offset_px": [
+            -8.0,
+            0.0
+          ],
+          "link_ncc": 0.28
+        },
+        {
+          "image": "061523_5.tif",
+          "t": 67,
+          "offset_px": [
+            -6.0,
+            -4.0
+          ],
+          "link_ncc": 0.237
+        }
+      ]
+    }
+  ],
+  "per_image": [
+    {
+      "image": "041824_9.tif",
+      "sequence": "KK1-20240418-s01-c0",
+      "at": [
+        433.6,
+        145.0
+      ],
+      "t": 71,
+      "t0": 69,
+      "t1": 73,
+      "span_min": 61.0,
+      "fraction": 0.5,
+      "displacement_um": 0.62,
+      "link_iou": 0.704,
+      "added_px": 706
+    },
+    {
+      "image": "041824_18.tif",
+      "sequence": "KK1-20240418-s42-c0",
+      "at": [
+        615.6,
+        90.2
+      ],
+      "t": 56,
+      "t0": 54,
+      "t1": 59,
+      "span_min": 76.3,
+      "fraction": 0.4,
+      "displacement_um": 17.71,
+      "link_iou": 0.267,
+      "added_px": 459
+    }
+  ],
+  "legacy_additions": [
+    {
+      "image": "041824_2.tif",
+      "at": [
+        431.0,
+        77.7
+      ],
+      "survives": false,
+      "why_not": "not checkable: bracket t48-t69 spans 320 min > 90"
+    },
+    {
+      "image": "041824_4.tif",
+      "at": [
+        431.8,
+        90.2
+      ],
+      "survives": false,
+      "why_not": "not checkable: first labelled time of its crop"
+    },
+    {
+      "image": "041824_4.tif",
+      "at": [
+        515.4,
+        138.5
+      ],
+      "survives": false,
+      "why_not": "not checkable: first labelled time of its crop"
+    },
+    {
+      "image": "041824_7.tif",
+      "at": [
+        519.0,
+        179.7
+      ],
+      "survives": false,
+      "why_not": "not checkable: bracket t48-t69 spans 320 min > 90"
+    },
+    {
+      "image": "041824_9.tif",
+      "at": [
+        432.6,
+        146.0
+      ],
+      "survives": true,
+      "why_not": ""
+    },
+    {
+      "image": "122324_9.tif",
+      "at": [
+        618.0,
+        103.3
+      ],
+      "survives": false,
+      "why_not": "not checkable: bracket t65-t74 spans 91 min > 90"
+    },
+    {
+      "image": "122324_10.tif",
+      "at": [
+        623.8,
+        213.4
+      ],
+      "survives": false,
+      "why_not": "not checkable: bracket t69-t85 spans 162 min > 90"
+    },
+    {
+      "image": "041824_17.tif",
+      "at": [
+        534.1,
+        254.2
+      ],
+      "survives": false,
+      "why_not": "not checkable: bracket t48-t56 spans 122 min > 90"
+    },
+    {
+      "image": "041824_18.tif",
+      "at": [
+        615.9,
+        91.9
+      ],
+      "survives": true,
+      "why_not": ""
+    }
+  ],
+  "legacy_survivors": 2,
+  "out_dir": "build/corrected_reference_v2/KK1"
+}

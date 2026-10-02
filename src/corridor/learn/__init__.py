@@ -1,29 +1,29 @@
 """Learning from the data already in hand, rather than from more of it.
 
-Everything this package does rests on one observation. The 71 hand-labelled
-images are not 71 independent pictures: they are **six time-lapse sequences**,
-contiguous frames of the same field, and nobody has ever used the fact that
-they are sequences. Neither has anyone used the 74 unlabelled frames in
-``sample_data``.
+The 71 hand-labelled images are not 71 unrelated pictures. Each still's ImageJ
+label records the movie and time point it was cut from, and read that way they
+are **sparse, irregular samples of eight fields in seven experiments**: a few
+stills per field, from one to sixty frames apart, two groups out of time order
+in filename order, and one experiment holding two crops of the same size. An
+earlier version of this docstring called them "six time-lapse sequences,
+contiguous frames"; they are not, and the methods built on that reading were
+re-derived on the true order (``docs/RESEARCH_V2.md``).
 
 That matters because of what it makes available. A human tracing frame *t* sees
-frame *t* alone. A cell, however, is one object persisting through time: its
-outline at *t* is over-determined by its outline at *t-1* and *t+1* together
-with smooth motion and a near-conserved area. Solving for the mask *sequence*
-that best explains the image evidence under those constraints yields a
-per-frame mask that can be **better than the single-frame tracing** -- not
-because the algorithm is cleverer than the annotator, but because it is given
-evidence the annotator never had.
+frame *t* alone. A cell, however, is one object persisting through time: drawn
+at the nearest earlier and later labelled times of the same field, close enough
+in time that "the same cell" still means something, it is evidence about frame
+*t* that the annotator never used. The constraint supplying that evidence is
+time and physics, not the model's own opinion, so using it is not the model
+marking its own homework.
 
-This is the whole argument, and it is also what keeps the method honest. The
-constraint supplying the supervision is time and physics, not the model's own
-opinion, so training on the result is not the model marking its own homework.
-The same principle already holds at the level of positions rather than
-outlines: track-guided recovery fills 10 of 13 known holes with zero false
-positives purely by interpolating between the observations either side of a gap
-(``scripts/experiment_recovery.py``).
+- :mod:`.sequences` -- stills grouped by experiment and crop, in true time
+  order, registered, with elapsed minutes between them.
+- :mod:`.brackets` -- the time-aware rule for which cells were provably not
+  drawn, shared by the corrected reference and the label-completeness ceiling.
+- :mod:`.reconstruct` -- linking, temporal consensus and boundary refinement.
 """
 
 from __future__ import annotations
 
-__all__ = ["sequences", "reconstruct"]
+__all__ = ["sequences", "brackets", "reconstruct"]

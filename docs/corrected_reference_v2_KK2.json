@@ -1,0 +1,766 @@
+{
+  "group": "KK2",
+  "reference_version": "v2",
+  "ordering": "true time index from the ImageJ label; crops by registration",
+  "rule": {
+    "max_speed_um_per_min": 3.0,
+    "position_tolerance_um": 5.0,
+    "max_bracket_min": 90.0,
+    "link_iou": 0.15,
+    "min_added_px": 80,
+    "identity": "unique mutual mask overlap (IoU) between t0 and t1, registered",
+    "position": "t0 centroid + (t1 - t0 centroid) * elapsed fraction",
+    "outline": "human mask from the nearer labelled time, translated",
+    "drawn_here": "any drawn mask at t touching the outline grown by the tolerance"
+  },
+  "images": 31,
+  "original_instances": 108,
+  "added": 2,
+  "corrected_instances": 110,
+  "checked_images": [
+    "052924_17.tif",
+    "052924_18.tif",
+    "052924_19.tif",
+    "052924_23.tif",
+    "052924_24.tif",
+    "052924_28.tif",
+    "052924_29.tif",
+    "052924_7.tif"
+  ],
+  "frames": [
+    {
+      "image": "052924_15.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 1,
+      "labelled": 0,
+      "checkable": false,
+      "reason": "first labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "052924_16.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 7,
+      "labelled": 3,
+      "checkable": false,
+      "reason": "bracket t1-t9 spans 160 min > 90",
+      "linked_pairs": 0,
+      "span_min": 160.1
+    },
+    {
+      "image": "052924_17.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 9,
+      "labelled": 4,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 1,
+      "span_min": 80.0
+    },
+    {
+      "image": "052924_18.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 11,
+      "labelled": 4,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 2,
+      "span_min": 80.0
+    },
+    {
+      "image": "052924_19.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 13,
+      "labelled": 3,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 2,
+      "span_min": 80.0
+    },
+    {
+      "image": "052924_20.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 15,
+      "labelled": 4,
+      "checkable": false,
+      "reason": "no cell drawn on one side links to one on the other: nothing to test",
+      "linked_pairs": 0,
+      "span_min": 80.0
+    },
+    {
+      "image": "052924_21.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 17,
+      "labelled": 4,
+      "checkable": false,
+      "reason": "bracket t15-t21 spans 120 min > 90",
+      "linked_pairs": 0,
+      "span_min": 120.0
+    },
+    {
+      "image": "052924_22.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 21,
+      "labelled": 3,
+      "checkable": false,
+      "reason": "bracket t17-t23 spans 120 min > 90",
+      "linked_pairs": 0,
+      "span_min": 120.0
+    },
+    {
+      "image": "052924_23.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 23,
+      "labelled": 5,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 1,
+      "span_min": 80.0
+    },
+    {
+      "image": "052924_24.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 25,
+      "labelled": 5,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 4,
+      "span_min": 80.0
+    },
+    {
+      "image": "052924_25.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 27,
+      "labelled": 6,
+      "checkable": false,
+      "reason": "nothing drawn at t29 (052924_26.tif, the later side of the bracket)",
+      "linked_pairs": 0,
+      "span_min": 80.0
+    },
+    {
+      "image": "052924_26.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 29,
+      "labelled": 0,
+      "checkable": false,
+      "reason": "bracket t27-t48 spans 420 min > 90",
+      "linked_pairs": 0,
+      "span_min": 420.1
+    },
+    {
+      "image": "052924_27.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 48,
+      "labelled": 5,
+      "checkable": false,
+      "reason": "bracket t29-t50 spans 420 min > 90",
+      "linked_pairs": 0,
+      "span_min": 420.1
+    },
+    {
+      "image": "052924_28.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 50,
+      "labelled": 5,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 3,
+      "span_min": 80.0
+    },
+    {
+      "image": "052924_29.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 52,
+      "labelled": 3,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 2,
+      "span_min": 80.0
+    },
+    {
+      "image": "052924_30.tif",
+      "sequence": "KK2-20240529-s02-c0",
+      "t": 54,
+      "labelled": 3,
+      "checkable": false,
+      "reason": "last labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "052924_6.tif",
+      "sequence": "KK2-20240529-s01-c0",
+      "t": 1,
+      "labelled": 3,
+      "checkable": false,
+      "reason": "first labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "052924_7.tif",
+      "sequence": "KK2-20240529-s01-c0",
+      "t": 3,
+      "labelled": 0,
+      "checkable": true,
+      "reason": "",
+      "linked_pairs": 2,
+      "span_min": 80.0
+    },
+    {
+      "image": "052924_8.tif",
+      "sequence": "KK2-20240529-s01-c0",
+      "t": 5,
+      "labelled": 4,
+      "checkable": false,
+      "reason": "nothing drawn at t3 (052924_7.tif, the earlier side of the bracket)",
+      "linked_pairs": 0,
+      "span_min": 80.0
+    },
+    {
+      "image": "052924_9.tif",
+      "sequence": "KK2-20240529-s01-c0",
+      "t": 7,
+      "labelled": 4,
+      "checkable": false,
+      "reason": "bracket t5-t32 spans 540 min > 90",
+      "linked_pairs": 0,
+      "span_min": 540.2
+    },
+    {
+      "image": "052924_10.tif",
+      "sequence": "KK2-20240529-s01-c0",
+      "t": 32,
+      "labelled": 5,
+      "checkable": false,
+      "reason": "bracket t7-t40 spans 660 min > 90",
+      "linked_pairs": 0,
+      "span_min": 660.2
+    },
+    {
+      "image": "052924_13.tif",
+      "sequence": "KK2-20240529-s01-c0",
+      "t": 40,
+      "labelled": 2,
+      "checkable": false,
+      "reason": "bracket t32-t45 spans 260 min > 90",
+      "linked_pairs": 0,
+      "span_min": 260.1
+    },
+    {
+      "image": "052924_11.tif",
+      "sequence": "KK2-20240529-s01-c0",
+      "t": 45,
+      "labelled": 0,
+      "checkable": false,
+      "reason": "bracket t40-t54 spans 280 min > 90",
+      "linked_pairs": 0,
+      "span_min": 280.1
+    },
+    {
+      "image": "052924_12.tif",
+      "sequence": "KK2-20240529-s01-c0",
+      "t": 54,
+      "labelled": 2,
+      "checkable": false,
+      "reason": "last labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "052924_14.tif",
+      "sequence": "KK2-20240529-s01-c1",
+      "t": 1,
+      "labelled": 1,
+      "checkable": false,
+      "reason": "first labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    },
+    {
+      "image": "052924_3.tif",
+      "sequence": "KK2-20240529-s01-c1",
+      "t": 6,
+      "labelled": 6,
+      "checkable": false,
+      "reason": "bracket t1-t14 spans 260 min > 90",
+      "linked_pairs": 0,
+      "span_min": 260.1
+    },
+    {
+      "image": "052924.tif",
+      "sequence": "KK2-20240529-s01-c1",
+      "t": 14,
+      "labelled": 0,
+      "checkable": false,
+      "reason": "bracket t6-t15 spans 180 min > 90",
+      "linked_pairs": 0,
+      "span_min": 180.1
+    },
+    {
+      "image": "052924_1.tif",
+      "sequence": "KK2-20240529-s01-c1",
+      "t": 15,
+      "labelled": 8,
+      "checkable": false,
+      "reason": "bracket t14-t29 spans 300 min > 90",
+      "linked_pairs": 0,
+      "span_min": 300.1
+    },
+    {
+      "image": "052924_2.tif",
+      "sequence": "KK2-20240529-s01-c1",
+      "t": 29,
+      "labelled": 5,
+      "checkable": false,
+      "reason": "bracket t15-t31 spans 320 min > 90",
+      "linked_pairs": 0,
+      "span_min": 320.1
+    },
+    {
+      "image": "052924_4.tif",
+      "sequence": "KK2-20240529-s01-c1",
+      "t": 31,
+      "labelled": 6,
+      "checkable": false,
+      "reason": "bracket t29-t51 spans 440 min > 90",
+      "linked_pairs": 0,
+      "span_min": 440.2
+    },
+    {
+      "image": "052924_5.tif",
+      "sequence": "KK2-20240529-s01-c1",
+      "t": 51,
+      "labelled": 5,
+      "checkable": false,
+      "reason": "last labelled time of its crop",
+      "linked_pairs": 0,
+      "span_min": null
+    }
+  ],
+  "sequences": [
+    {
+      "name": "KK2-20240529-s02-c0",
+      "experiment": "20240529-s02",
+      "crop": 0,
+      "shape": [
+        303,
+        573
+      ],
+      "frame_interval_min": 20.0069,
+      "pixel_size_um": 0.46706055440087807,
+      "frame_correlation": 0.796,
+      "frames": [
+        {
+          "image": "052924_15.tif",
+          "t": 1,
+          "offset_px": [
+            0.0,
+            0.0
+          ],
+          "link_ncc": 1.0
+        },
+        {
+          "image": "052924_16.tif",
+          "t": 7,
+          "offset_px": [
+            -12.0,
+            14.0
+          ],
+          "link_ncc": 0.574
+        },
+        {
+          "image": "052924_17.tif",
+          "t": 9,
+          "offset_px": [
+            -10.0,
+            14.0
+          ],
+          "link_ncc": 0.684
+        },
+        {
+          "image": "052924_18.tif",
+          "t": 11,
+          "offset_px": [
+            -16.0,
+            20.0
+          ],
+          "link_ncc": 0.657
+        },
+        {
+          "image": "052924_19.tif",
+          "t": 13,
+          "offset_px": [
+            -14.0,
+            18.0
+          ],
+          "link_ncc": 0.65
+        },
+        {
+          "image": "052924_20.tif",
+          "t": 15,
+          "offset_px": [
+            -14.0,
+            18.0
+          ],
+          "link_ncc": 0.654
+        },
+        {
+          "image": "052924_21.tif",
+          "t": 17,
+          "offset_px": [
+            -26.0,
+            28.0
+          ],
+          "link_ncc": 0.634
+        },
+        {
+          "image": "052924_22.tif",
+          "t": 21,
+          "offset_px": [
+            -16.0,
+            18.0
+          ],
+          "link_ncc": 0.624
+        },
+        {
+          "image": "052924_23.tif",
+          "t": 23,
+          "offset_px": [
+            -18.0,
+            20.0
+          ],
+          "link_ncc": 0.736
+        },
+        {
+          "image": "052924_24.tif",
+          "t": 25,
+          "offset_px": [
+            -18.0,
+            20.0
+          ],
+          "link_ncc": 0.571
+        },
+        {
+          "image": "052924_25.tif",
+          "t": 27,
+          "offset_px": [
+            -16.0,
+            18.0
+          ],
+          "link_ncc": 0.634
+        },
+        {
+          "image": "052924_26.tif",
+          "t": 29,
+          "offset_px": [
+            -14.0,
+            18.0
+          ],
+          "link_ncc": 0.639
+        },
+        {
+          "image": "052924_27.tif",
+          "t": 48,
+          "offset_px": [
+            -10.0,
+            14.0
+          ],
+          "link_ncc": 0.575
+        },
+        {
+          "image": "052924_28.tif",
+          "t": 50,
+          "offset_px": [
+            -8.0,
+            14.0
+          ],
+          "link_ncc": 0.592
+        },
+        {
+          "image": "052924_29.tif",
+          "t": 52,
+          "offset_px": [
+            -14.0,
+            20.0
+          ],
+          "link_ncc": 0.582
+        },
+        {
+          "image": "052924_30.tif",
+          "t": 54,
+          "offset_px": [
+            -14.0,
+            18.0
+          ],
+          "link_ncc": 0.556
+        }
+      ]
+    },
+    {
+      "name": "KK2-20240529-s01-c0",
+      "experiment": "20240529-s01",
+      "crop": 0,
+      "shape": [
+        306,
+        621
+      ],
+      "frame_interval_min": 20.0069,
+      "pixel_size_um": 0.46706055440087807,
+      "frame_correlation": 0.723,
+      "frames": [
+        {
+          "image": "052924_6.tif",
+          "t": 1,
+          "offset_px": [
+            0.0,
+            0.0
+          ],
+          "link_ncc": 1.0
+        },
+        {
+          "image": "052924_7.tif",
+          "t": 3,
+          "offset_px": [
+            -4.0,
+            4.0
+          ],
+          "link_ncc": 0.746
+        },
+        {
+          "image": "052924_8.tif",
+          "t": 5,
+          "offset_px": [
+            -8.0,
+            10.0
+          ],
+          "link_ncc": 0.73
+        },
+        {
+          "image": "052924_9.tif",
+          "t": 7,
+          "offset_px": [
+            -14.0,
+            12.0
+          ],
+          "link_ncc": 0.591
+        },
+        {
+          "image": "052924_10.tif",
+          "t": 32,
+          "offset_px": [
+            -14.0,
+            14.0
+          ],
+          "link_ncc": 0.522
+        },
+        {
+          "image": "052924_13.tif",
+          "t": 40,
+          "offset_px": [
+            -10.0,
+            10.0
+          ],
+          "link_ncc": 0.519
+        },
+        {
+          "image": "052924_11.tif",
+          "t": 45,
+          "offset_px": [
+            -6.0,
+            8.0
+          ],
+          "link_ncc": 0.509
+        },
+        {
+          "image": "052924_12.tif",
+          "t": 54,
+          "offset_px": [
+            -14.0,
+            14.0
+          ],
+          "link_ncc": 0.481
+        }
+      ]
+    },
+    {
+      "name": "KK2-20240529-s01-c1",
+      "experiment": "20240529-s01",
+      "crop": 1,
+      "shape": [
+        306,
+        621
+      ],
+      "frame_interval_min": 20.0069,
+      "pixel_size_um": 0.46706055440087807,
+      "frame_correlation": 0.725,
+      "frames": [
+        {
+          "image": "052924_14.tif",
+          "t": 1,
+          "offset_px": [
+            0.0,
+            0.0
+          ],
+          "link_ncc": 1.0
+        },
+        {
+          "image": "052924_3.tif",
+          "t": 6,
+          "offset_px": [
+            -8.0,
+            10.0
+          ],
+          "link_ncc": 0.695
+        },
+        {
+          "image": "052924.tif",
+          "t": 14,
+          "offset_px": [
+            -14.0,
+            16.0
+          ],
+          "link_ncc": 0.745
+        },
+        {
+          "image": "052924_1.tif",
+          "t": 15,
+          "offset_px": [
+            -14.0,
+            16.0
+          ],
+          "link_ncc": 0.577
+        },
+        {
+          "image": "052924_2.tif",
+          "t": 29,
+          "offset_px": [
+            -16.0,
+            16.0
+          ],
+          "link_ncc": 0.59
+        },
+        {
+          "image": "052924_4.tif",
+          "t": 31,
+          "offset_px": [
+            -16.0,
+            16.0
+          ],
+          "link_ncc": 0.622
+        },
+        {
+          "image": "052924_5.tif",
+          "t": 51,
+          "offset_px": [
+            -12.0,
+            14.0
+          ],
+          "link_ncc": 0.646
+        }
+      ]
+    }
+  ],
+  "per_image": [
+    {
+      "image": "052924_7.tif",
+      "sequence": "KK2-20240529-s01-c0",
+      "at": [
+        68.8,
+        43.8
+      ],
+      "t": 3,
+      "t0": 1,
+      "t1": 5,
+      "span_min": 80.0,
+      "fraction": 0.5,
+      "displacement_um": 10.99,
+      "link_iou": 0.397,
+      "added_px": 637
+    },
+    {
+      "image": "052924_7.tif",
+      "sequence": "KK2-20240529-s01-c0",
+      "at": [
+        474.0,
+        57.3
+      ],
+      "t": 3,
+      "t0": 1,
+      "t1": 5,
+      "span_min": 80.0,
+      "fraction": 0.5,
+      "displacement_um": 18.94,
+      "link_iou": 0.362,
+      "added_px": 671
+    }
+  ],
+  "legacy_additions": [
+    {
+      "image": "052924_21.tif",
+      "at": [
+        380.9,
+        246.4
+      ],
+      "survives": false,
+      "why_not": "not checkable: bracket t15-t21 spans 120 min > 90"
+    },
+    {
+      "image": "052924_22.tif",
+      "at": [
+        142.3,
+        34.0
+      ],
+      "survives": false,
+      "why_not": "not checkable: bracket t17-t23 spans 120 min > 90"
+    },
+    {
+      "image": "052924_22.tif",
+      "at": [
+        387.2,
+        30.6
+      ],
+      "survives": false,
+      "why_not": "not checkable: bracket t17-t23 spans 120 min > 90"
+    },
+    {
+      "image": "052924_24.tif",
+      "at": [
+        58.9,
+        182.9
+      ],
+      "survives": false,
+      "why_not": "a drawn cell touches the time-interpolated outline"
+    },
+    {
+      "image": "052924_26.tif",
+      "at": [
+        389.4,
+        135.2
+      ],
+      "survives": false,
+      "why_not": "not checkable: bracket t27-t48 spans 420 min > 90"
+    },
+    {
+      "image": "052924_26.tif",
+      "at": [
+        474.3,
+        54.6
+      ],
+      "survives": false,
+      "why_not": "not checkable: bracket t27-t48 spans 420 min > 90"
+    },
+    {
+      "image": "052924_28.tif",
+      "at": [
+        228.0,
+        88.4
+      ],
+      "survives": false,
+      "why_not": "a drawn cell touches the time-interpolated outline"
+    }
+  ],
+  "legacy_survivors": 0,
+  "out_dir": "build/corrected_reference_v2/KK2"
+}
