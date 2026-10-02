@@ -3,16 +3,18 @@
 A packaged application can be missing a module that only a particular code
 path touches, and the usual way that surfaces is a researcher pressing Analyse
 and getting an error. This walks the paths instead: it imports every subsystem,
-verifies the bundled model's checksum, runs the full torch/Cellpose path on a
-synthetic frame, tracks a known trajectory and checks the velocity arithmetic,
-round-trips every output format, and exercises Napari's layer construction and
-plugin discovery.
+resolves the validated model through the registry (hashing it before anything
+loads it), runs the full torch/Cellpose path on a synthetic frame, tracks
+known trajectories and checks the velocity and MSD arithmetic, round-trips
+every output format the 2.0 schema writes, and exercises Napari's layer
+construction and plugin discovery.
 
 Run it with ``corridor --self-test``.
 """
 
 from __future__ import annotations
 
+import math
 import platform
 import sys
 import tempfile
@@ -76,19 +78,34 @@ def _check_qt() -> str:
     return f"PySide6 {QtCore.__version__}"
 
 
-def _check_model() -> str:
-    path = resources.bundled_model_path()
-    if path is None:
-        raise RuntimeError("No Cellpose model is bundled or configured.")
-    from .core.segmentation import file_sha256
+def _resolve_validated_model():
+    """The production model, verified by the registry -- never an override.
 
-    digest = file_sha256(path)
-    expected = resources.BUNDLED_MODEL_SHA256
-    if digest != expected:
+    A developer override is a deliberate research setting, and a self-test
+    that passed under one would certify a model nobody validated.
+    """
+    from .core import model_registry
+
+    resolved = model_registry.resolve_model("2D")
+    if resolved.developer_override:
         raise RuntimeError(
-            f"The bundled model has checksum {digest[:16]}..., expected {expected[:16]}..."
+            f"{model_registry.ENV_DEVELOPER} and {model_registry.ENV_DEVELOPER_MODEL} are set, "
+            f"so {resolved.path} would run instead of the validated model. Unset them to "
+            "check this installation."
         )
-    return f"{path.name} ({digest[:12]}...)"
+    return resolved
+
+
+def _check_model() -> str:
+    """Resolve through the registry: every candidate is hashed before use."""
+    resolved = _resolve_validated_model()
+    spec = resolved.spec
+    if resolved.sha256 != spec.sha256 or spec.sha256 != resources.BUNDLED_MODEL_SHA256:
+        raise RuntimeError(
+            f"checksum {resolved.sha256[:16]}... does not match the registry "
+            f"({spec.sha256[:16]}...) and the application ({resources.BUNDLED_MODEL_SHA256[:16]}...)"
+        )
+    return f"{spec.model_id} {spec.model_version} ({resolved.sha256[:12]}...) at {resolved.path}"
 
 
 def _check_segmentation() -> str:
@@ -98,11 +115,8 @@ def _check_segmentation() -> str:
     from .core.config import SegmentationConfig
     from .core.segmentation import SegmentationService
 
-    model = resources.bundled_model_path()
-    service = SegmentationService(
-        SegmentationConfig(model_path=str(model) if model else None,
-                           use_custom_model=bool(model))
-    )
+    # The service re-hashes the file immediately before Cellpose reads it.
+    service = SegmentationService(SegmentationConfig(), model=_resolve_validated_model())
     rng = np.random.default_rng(0)
     frame = rng.normal(1000, 30, size=(160, 96)).astype(np.uint16)
     frame[40:120, 44:56] += 2500  # something cell-shaped to find
@@ -118,61 +132,188 @@ def _check_segmentation() -> str:
     )
 
 
-def _check_tracking() -> str:
-    import numpy as np
+#: The supplied KK2 calibration (0.467 um/px, 20.0 min frames), so the check
+#: exercises the unit conversions real runs use.
+_PIXEL_UM = 0.467060342995564
+_FRAME_MIN = 20.006894938151042
+_N_FRAMES = 6
 
-    from .core.confinement import Channel, ConfinementAxis
-    from .core.config import Scale, TrackingConfig
+
+def _synthetic_cells():
+    """Two elongated cells moving at constant velocity, in different directions.
+
+    One runs down the image and one diagonally, so nothing about the check
+    depends on a migration direction: the tracker is given none, and each
+    cell's uncertainty comes from its own body.  Steps (px/frame) are well
+    inside the 5 um/min speed gate (20 px/frame = 0.47 um/min).
+    """
     from .core.detections import Detection
+
+    cells = {
+        1: {"start": (40.0, 30.0), "step": (0.0, 20.0), "orientation": 0.0},
+        2: {"start": (160.0, 30.0), "step": (12.0, 12.0), "orientation": math.pi / 4},
+    }
+    detections = []
+    for label, cell in cells.items():
+        (x0, y0), (sx, sy) = cell["start"], cell["step"]
+        for t in range(_N_FRAMES):
+            x, y = x0 + sx * t, y0 + sy * t
+            detections.append(
+                Detection(
+                    frame=t, label=label, x=x, y=y, area_px=800.0,
+                    bbox=(int(y - 45), int(x - 6), int(y + 45), int(x + 6)),
+                    extent_px=90, eccentricity=0.99,
+                    orientation_rad=cell["orientation"], major_axis_px=90.0,
+                    minor_axis_px=11.0, solidity=0.95, touches_border=False,
+                )
+            )
+    return cells, detections
+
+
+def _track_synthetic():
+    from .core.config import Scale, TrackingConfig
+    from .core.measurements import frame_rows, msd_rows, summarise
     from .core.tracking import track_detections
 
-    axis = ConfinementAxis(
-        ux=0.0, uy=1.0, source="configured", confidence=1.0,
-        channels=[Channel(0, (45.0, 0.0), 45.0)],
+    scale = Scale.from_values(_PIXEL_UM, _FRAME_MIN)
+    cells, detections = _synthetic_cells()
+    tracks, events = track_detections(detections, _N_FRAMES, scale, TrackingConfig())
+    msd = msd_rows(tracks, scale)
+    rows = frame_rows(tracks, scale)
+    summaries = summarise(tracks, scale, msd_rows=msd)
+    return scale, cells, detections, tracks, events, rows, msd, summaries
+
+
+def _close(a: float | None, b: float, rel: float = 1e-9) -> bool:
+    return a is not None and math.isclose(float(a), b, rel_tol=rel, abs_tol=1e-12)
+
+
+def _check_tracking() -> str:
+    """Identity, speed in um/min and um/hr, and MSD = v^2 tau^2, with no axis anywhere."""
+    scale, cells, _, tracks, _, rows, msd, _ = _track_synthetic()
+    if len(tracks) != len(cells):
+        raise RuntimeError(f"expected {len(cells)} tracks, got {len(tracks)}")
+    for tr in tracks:
+        labels = {o.det_label for o in tr.observations}
+        if len(labels) != 1 or tr.n_obs != _N_FRAMES:
+            raise RuntimeError(
+                f"track {tr.id} mixes cells {sorted(labels)} or is incomplete ({tr.n_obs} obs)"
+            )
+
+    checked = []
+    for tr in tracks:
+        (label,) = {o.det_label for o in tr.observations}
+        sx, sy = cells[label]["step"]
+        step_um = math.hypot(sx, sy) * _PIXEL_UM
+        v_min = step_um / _FRAME_MIN
+        for row in (r for r in rows if r["track_id"] == tr.id and r["observation_index"] > 0):
+            if not _close(row["speed_um_per_min"], v_min):
+                raise RuntimeError(f"speed {row['speed_um_per_min']} um/min, expected {v_min}")
+            if not _close(row["speed_um_per_hr"], v_min * 60.0):
+                raise RuntimeError(f"speed {row['speed_um_per_hr']} um/hr, expected {v_min * 60}")
+        # A constant-velocity track: every pair k frames apart is k steps
+        # apart, so MSD(tau) = (v tau)^2 exactly, in um^2.
+        for r in (r for r in msd if r["track_id"] == tr.id):
+            tau_min = r["lag_frames"] * _FRAME_MIN
+            if not _close(r["msd_um2"], (v_min * tau_min) ** 2, rel=1e-9):
+                raise RuntimeError(
+                    f"MSD {r['msd_um2']} um^2 at lag {r['lag_frames']}, "
+                    f"expected {(v_min * tau_min) ** 2}"
+                )
+        checked.append(f"{v_min:.4f} um/min = {v_min * 60:.2f} um/hr")
+    return f"{len(tracks)} identities kept apart; speeds {', '.join(checked)}; MSD = v^2 tau^2"
+
+
+def _synthetic_result(directory: Path):
+    """A complete AnalysisResult of the synthetic cells, built by the real code."""
+    import numpy as np
+
+    from .core import pipeline
+    from .core.config import RunConfig
+    from .core.geometry import ChannelGeometry
+    from .core.imaging import SOURCE_USER, Calibrated, StackMetadata
+    from .core.segmentation import SegmentationOutput
+
+    scale, _, detections, tracks, events, rows, msd, summaries = _track_synthetic()
+    metadata = StackMetadata(
+        path=directory / "synthetic.tif", n_frames=_N_FRAMES, height=200, width=240,
+        dtype="uint16", axes_raw="TYX", axes_interpretation="TYX",
+        pixel_size_um=Calibrated(_PIXEL_UM, SOURCE_USER),
+        frame_interval_min=Calibrated(_FRAME_MIN, SOURCE_USER),
+        axes="TYX", axes_used="TYX",
     )
-    scale = Scale.from_values(0.467060342995564, 20.006894938151042)
-    detections = [
-        Detection(
-            frame=t, label=1, x=45.0, y=20.0 + 20.0 * t, area_px=800.0,
-            bbox=(0, 0, 90, 11), extent_px=90, eccentricity=0.99,
-            orientation_rad=0.0, major_axis_px=90.0, minor_axis_px=11.0,
-            solidity=0.95, touches_border=False, channel=0,
-        )
-        for t in range(5)
-    ]
-    tracks, _ = track_detections(detections, 5, axis, scale, TrackingConfig())
-    if len(tracks) != 1 or tracks[0].n_obs != 5:
-        raise RuntimeError(f"expected one 5-point track, got {len(tracks)}")
-
-    from .core.measurements import frame_rows
-
-    rows = frame_rows(tracks, axis, scale)
-    speed = rows[1]["speed_um_per_min"]
-    expected = 20.0 * 0.467060342995564 / 20.006894938151042
-    if abs(speed - expected) > 1e-9:
-        raise RuntimeError(f"velocity is wrong: {speed} vs {expected}")
-    return f"one track, speed {speed:.4f} um/min as expected"
+    segmentation = SegmentationOutput(
+        masks=np.zeros((_N_FRAMES, 200, 240), np.int32),
+        raw_masks=np.zeros((_N_FRAMES, 200, 240), np.int32),
+        detections=detections, diagnostics=[], model_path="", model_sha256=None,
+        cellpose_version="", used_gpu=False,
+    )
+    config = RunConfig(input_path=str(metadata.path), output_dir=str(directory / "run"))
+    geometry = ChannelGeometry()
+    manifest = pipeline.build_manifest(
+        config, metadata, scale, geometry, segmentation, tracks, summaries,
+        elapsed_s=0.0, output_dir=directory / "run",
+    )
+    return pipeline.AnalysisResult(
+        config=config, metadata=metadata, scale=scale, geometry=geometry,
+        segmentation=segmentation, tracks=tracks, events=events, rows=rows,
+        summaries=summaries, issues=[], msd=msd, manifest=manifest,
+        output_dir=directory / "run",
+    )
 
 
 def _check_outputs() -> str:
-    import numpy as np
+    """Write a whole result, read it back, export a track to CSV and XLSX."""
+    import json
+    import zipfile
+    from xml.etree import ElementTree
 
-    from .core import export
+    from .core import export, pipeline
+    from .store.project import export_track, load_analysis, read_table
 
     with tempfile.TemporaryDirectory() as tmp:
         directory = Path(tmp)
-        export.write_csv(directory / "t.csv", export.TRACK_COLUMNS, [])
-        export.write_json(directory / "m.json", {"x": float("nan"), "y": 1})
-        export.save_masks(directory / "k.npz", np.zeros((2, 4, 4), np.int32))
-        loaded = export.load_masks(directory / "k.npz")
-        if loaded.shape != (2, 4, 4):
-            raise RuntimeError("mask round-trip failed")
-        import json
+        result = _synthetic_result(directory)
+        out = directory / "run"
+        pipeline.save_result(result, out)
 
-        data = json.loads((directory / "m.json").read_text(encoding="utf-8"))
-        if data["x"] is not None:
+        manifest = json.loads((out / pipeline.F_MANIFEST).read_text(encoding="utf-8"))
+        if manifest.get("schema_version") != export.SCHEMA_VERSION:
+            raise RuntimeError(f"run.json schema_version is {manifest.get('schema_version')}")
+        saved = load_analysis(out)
+        if len(saved.tracks) != len(result.rows):
+            raise RuntimeError(f"tracks.csv: wrote {len(result.rows)} rows, read {len(saved.tracks)}")
+        msd = read_table(out / pipeline.F_MSD)
+        if len(msd) != len(result.msd) or not msd:
+            raise RuntimeError(f"track_msd.csv: wrote {len(result.msd)} rows, read {len(msd)}")
+        for written, read in zip(result.msd, msd):
+            if not _close(read["msd_um2"], written["msd_um2"], rel=1e-8):
+                raise RuntimeError("track_msd.csv did not round-trip its MSD values")
+        if {int(s["track_id"]) for s in saved.summaries} != {s.track_id for s in result.summaries}:
+            raise RuntimeError("track_summary.csv did not round-trip its track ids")
+        masks = export.load_masks(out / pipeline.F_MASKS)
+        if masks.shape != result.segmentation.masks.shape:
+            raise RuntimeError(f"masks.npz came back {masks.shape}")
+
+        track_id = saved.track_ids()[0]
+        csv_rows = read_table(export_track(saved, track_id, directory / "one.csv"))
+        if len(csv_rows) != len(saved.rows_for_track(track_id)):
+            raise RuntimeError("the per-track CSV export lost rows")
+        xlsx = export_track(saved, track_id, directory / "one.xlsx", fmt="xlsx")
+        with zipfile.ZipFile(xlsx) as zf:
+            sheets = [n for n in zf.namelist() if n.startswith("xl/worksheets/sheet")]
+            for name in sheets:
+                ElementTree.fromstring(zf.read(name))  # well-formed XML or raises
+        if len(sheets) != 4:
+            raise RuntimeError(f"the XLSX export has {len(sheets)} sheets, expected 4")
+
+        export.write_json(directory / "nan.json", {"x": float("nan")})
+        if json.loads((directory / "nan.json").read_text(encoding="utf-8"))["x"] is not None:
             raise RuntimeError("NaN was not sanitised out of the manifest")
-    return "CSV, JSON and mask round-trips all clean"
+    return (
+        "run.json (schema 2), tracks, summaries, track_msd, masks, per-track CSV and "
+        "XLSX all round-trip"
+    )
 
 
 def _check_store() -> str:
@@ -247,9 +388,9 @@ def _check_gpu() -> str:
 CHECKS: list[tuple[str, Callable[[], str]]] = [
     ("scientific stack", _check_imports),
     ("interface toolkit", _check_qt),
-    ("bundled model", _check_model),
+    ("validated model", _check_model),
     ("segmentation", _check_segmentation),
-    ("tracking and velocity", _check_tracking),
+    ("tracking, speed, MSD", _check_tracking),
     ("output files", _check_outputs),
     ("project store", _check_store),
     ("processing device", _check_gpu),
@@ -260,7 +401,7 @@ CHECKS: list[tuple[str, Callable[[], str]]] = [
 OPTIONAL = {"napari (optional)"}
 
 
-def run(verbose: bool = True) -> int:
+def run(verbose: bool = True, checks: list[tuple[str, Callable[[], str]]] | None = None) -> int:
     report = Report()
     if verbose:
         print(f"{app_meta.APP_NAME} {app_meta.APP_VERSION} self-test")
@@ -268,7 +409,7 @@ def run(verbose: bool = True) -> int:
         print(f"  frozen: {resources.is_frozen()}")
         print()
 
-    for name, fn in CHECKS:
+    for name, fn in checks if checks is not None else CHECKS:
         ok = report.add(name, fn)
         if verbose:
             check = report.checks[-1]
@@ -287,3 +428,4 @@ def run(verbose: bool = True) -> int:
                 + (f" {len(soft)} optional feature unavailable." if soft else "")
             )
     return 1 if hard_failures else 0
+
