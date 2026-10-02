@@ -9,7 +9,8 @@
 #   pip install -e . --no-deps
 #
 # packaging/requirements-locked.txt is this list plus the build and test
-# tools; tests/test_packaging.py fails if the two disagree on any pin.
+# tools; tests/test_packaging.py fails if the two disagree on any pin or the
+# lock pins a runtime package this file does not.
 #
 # Deliberately absent:
 #   pandas       nothing in src/corridor imports it and Cellpose's inference

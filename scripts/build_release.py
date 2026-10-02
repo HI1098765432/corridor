@@ -12,7 +12,10 @@ order of the steps:
 3. PyInstaller (``packaging/corridor.spec``, which checks all of that again,
    because it can be run on its own), then Inno Setup.
 4. ``build/build_manifest.json`` records what was built, including whether
-   Napari is in it.
+   Napari is in it and how the build venv departs from
+   ``packaging/requirements-locked.txt``. PyInstaller follows optional
+   try-imports, so a package installed but not pinned can reach the bundle:
+   a local build matches CI's only when that record is empty.
 
 ``--napari`` bundles Napari (it sets ``CORRIDOR_BUNDLE_NAPARI=1`` for the
 spec); the default bundle has none.
@@ -22,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
 import shutil
@@ -119,6 +123,26 @@ def stage_model() -> tuple[bundle_plan.ProductionModel, Path]:
     return model, target
 
 
+def report_environment_drift(napari: bool) -> dict[str, dict[str, str]]:
+    """Say, without stopping a test build, what in this venv the lock does not pin."""
+    installed = {
+        dist.metadata["Name"]: dist.version
+        for dist in importlib.metadata.distributions()
+        if dist.metadata["Name"]
+    }
+    try:
+        drift = bundle_plan.environment_drift(installed, napari=napari)
+    except bundle_plan.BundleError as exc:
+        raise SystemExit(str(exc)) from exc
+    for key, what in (("outside_lock", "installed but not pinned"),
+                      ("differs_from_lock", "not at the pinned version")):
+        if drift[key]:
+            print(f"note: {len(drift[key])} package(s) {what}; this bundle may differ "
+                  "from one built from the lock: "
+                  + ", ".join(f"{n} {v}" for n, v in drift[key].items()))
+    return drift
+
+
 def find_iscc() -> Path | None:
     for candidate in ISCC_CANDIDATES:
         if candidate.exists():
@@ -147,6 +171,7 @@ def main() -> int:
     except sync_version.VersionError as exc:
         raise SystemExit(f"version: {exc}") from exc
     print(f"Corridor {version}" + (" (with Napari)" if napari_bundled else ""))
+    drift = report_environment_drift(napari_bundled)
 
     python = sys.executable
     run([python, str(ROOT / "scripts" / "make_icon.py")])
@@ -190,6 +215,7 @@ def main() -> int:
             "sha256": model.sha256,
         },
         "napari_bundled": napari_bundled,
+        "environment_drift": drift,
     }
     if installer and installer.exists():
         digest = sha256(installer)

@@ -9,45 +9,60 @@
 #
 # For the same reason never `pip install -e .` into .venv-cp4: pyproject's
 # cellpose>=3,<4 would replace Cellpose 4. Put the checkout on the path
-# instead; corridor.core.metrics needs only numpy:
+# instead; corridor.core.metrics needs numpy, and scipy.optimize (imported
+# inside its matching function, for linear_sum_assignment), both below:
 #
 #   py -3.12 -m venv .venv-cp4
 #   .venv-cp4\Scripts\python -m pip install -r requirements/cp4.txt
 #   set PYTHONPATH=src
 #
-# cellpose 4.2.1.1 and its declared dependencies (PyPI metadata, read
-# 2026-10-02). Where the requirement is unbounded, the pin is the version
-# requirements/app.txt uses, so the two environments differ only in Cellpose,
-# segment_anything and torchvision and a comparison between them measures the
-# model, not numpy or torch. Not yet installed: .venv-cp4 held only pip on
-# 2026-10-02. Replace this list with `pip freeze` once it is.
+# This is `pip freeze --all` of the .venv-cp4 that exists (installed
+# 2026-10-02, read the same day), less pip itself: the environment
+# scripts/experiment_cpsam_zero_shot.py runs in, so a result from it can be
+# reproduced. It was resolved by pip from Cellpose 4.2.1.1's open requirements,
+# not from app.txt, so it is NOT the app environment with Cellpose swapped.
+# Against requirements/app.txt, besides cellpose 4.2.1.1 vs 3.1.1.3 and the
+# additions segment-anything and torchvision, it differs in:
+#   numpy 2.0.2 (app 1.26.4)            scipy 1.18.1 (1.17.1)
+#   opencv-python-headless 5.0.0.93 (4.11.0.86)
+#   scikit-image 0.26.0 (0.25.2)        imagecodecs 2026.3.6 (2026.1.14)
+#   tifffile 2026.4.11 (2026.3.3)       ImageIO 2.38.0 (2.37.4)
+#   lazy-loader 0.6 (0.5)               filelock 3.32.3 (3.32.6)
+#   setuptools 78.1.0 (84.0.0)
+# torch (2.6.0+cpu) and the rest agree. A CP3-vs-CP4 comparison across the two
+# venvs therefore runs the model on a different numpy, scipy, OpenCV and image
+# I/O stack too; it is not a comparison with everything but the model held
+# fixed. Rebuild .venv-cp4 from this file, not from `pip install cellpose==4.2.1.1`,
+# whose open requirements resolve to whatever is newest on the day.
 
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 cellpose==4.2.1.1
-segment_anything==1.0
-torch==2.6.0+cpu
-# torchvision 0.21.0 requires torch==2.6.0 exactly.
-torchvision==0.21.0+cpu
-numpy==1.26.4
-scipy==1.17.1
-natsort==8.4.0
-tifffile==2026.3.3
-tqdm==4.70.1
 colorama==0.4.6
-opencv-python-headless==4.11.0.86
 fastremap==1.20.0
-imagecodecs==2026.1.14
-roifile==2026.2.10
+filelock==3.32.3
 fill_voids==2.1.2
-pillow==12.3.0
-# torch's own requirements, as in app.txt
-filelock==3.32.6
 fsspec==2026.7.0
+imagecodecs==2026.3.6
+ImageIO==2.38.0
 Jinja2==3.1.6
+lazy-loader==0.6
 MarkupSafe==3.0.3
 mpmath==1.3.0
+natsort==8.4.0
 networkx==3.6.1
-setuptools==84.0.0
+numpy==2.0.2
+opencv-python-headless==5.0.0.93
+packaging==26.3
+pillow==12.3.0
+roifile==2026.2.10
+scikit-image==0.26.0
+scipy==1.18.1
+segment-anything==1.0
+setuptools==78.1.0
 sympy==1.13.1
+tifffile==2026.4.11
+torch==2.6.0+cpu
+torchvision==0.21.0+cpu
+tqdm==4.70.1
 typing_extensions==4.16.0

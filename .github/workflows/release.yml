@@ -12,10 +12,16 @@ name: Build and publish the Windows installer
 # release build uses. 1.x hard-coded the model name and hash here, a seventh
 # copy of each.
 #
-# CI and a local build still differ in one way: this environment has no
-# Napari. Since 2.0 Napari is bundled only on request
-# (CORRIDOR_BUNDLE_NAPARI=1), so both produce the same default bundle, but the
-# Napari paths (viz/napari_qc.py, the self-test's optional Napari check,
+# CI and a local build still differ. This environment has only the lock; the
+# project's dev venv also has Napari and everything it brings. Since 2.0 Napari
+# is bundled only on request (CORRIDOR_BUNDLE_NAPARI=1), but PyInstaller still
+# follows optional try-imports, and the runtime measurement shows Cellpose and
+# numba probing QtPy, PyYAML and pywin32: a local default build ships those
+# when the venv has them, and this one cannot. The two default bundles match
+# only when the local venv was installed from packaging/requirements-locked.txt;
+# build_release.py prints and records (build_manifest.json, environment_drift)
+# every installed package the lock does not pin. The Napari paths
+# (viz/napari_qc.py, the self-test's optional Napari check,
 # scripts/napari_check.py) are exercised only locally.
 
 on:
@@ -66,6 +72,15 @@ jobs:
         run: |
           $tag = if ($env:GITHUB_REF -like "refs/tags/*") { $env:GITHUB_REF -replace "refs/tags/","" } else { $env:INPUT_TAG }
           python scripts/sync_version.py --check --release --tag "$tag"
+
+      - name: What the research tests need beyond the lock
+        # tests/ also covers training/ (research code the installer never
+        # contains), and training.predict.dataset imports pandas, which the
+        # lock leaves out because the application never loads it. research.txt
+        # is app.txt -- the same pins as the lock, which test_packaging checks
+        # -- plus the research packages, so this adds and never changes. The
+        # build job below installs the lock alone.
+        run: pip install -r requirements/research.txt
 
       - name: Tests that need no microscopy
         run: python -m pytest -q
@@ -121,7 +136,8 @@ jobs:
           }
 
       - name: Build the application and the installer
-        # No --napari: the default bundle, the same one a local build makes.
+        # No --napari: the default bundle. A local build is the same bundle
+        # only from a lock-only venv (see the note at the top).
         run: python scripts/build_release.py
 
       - name: Publish

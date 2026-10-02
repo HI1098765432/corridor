@@ -38,6 +38,9 @@ INCLUDE = (
     "pytest.ini",
     "docs",
     "packaging",
+    # The install commands in packaging/requirements-locked.txt and the
+    # requirement tests in tests/test_packaging.py both read it.
+    "requirements",
     "scripts",
     "src",
     "tests",

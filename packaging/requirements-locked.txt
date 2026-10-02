@@ -1,7 +1,9 @@
 # The complete build environment for the default installer: every pin in
 # requirements/app.txt (the runtime) plus the tools that build and test it.
 # PyInstaller is GPLv2 and a build tool only; see docs/THIRD_PARTY.md.
-# tests/test_packaging.py fails if a runtime pin here and in app.txt differ.
+# tests/test_packaging.py fails if a runtime pin here and in app.txt differ,
+# or if this file pins anything beyond app.txt and the build and test tools
+# listed below (BUILD_AND_TEST_TOOLS there).
 #
 # Corridor itself is installed from the checkout being built
 # (pip install -e . --no-deps) and is not listed: the 1.x lock pinned it to
