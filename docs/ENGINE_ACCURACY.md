@@ -141,3 +141,24 @@ pipeline remains the best on this benchmark. The remaining sub-98% case (heavy
 detection loss) is information-limited, not a method defect: at 50% loss the
 evidence for some cells is simply gone, and no association recovers what no
 detector and no template ever saw.
+
+## Measured: a hand-coded detector is NOT viable; the model earns its keep per-frame
+
+Tested over the **71 human-labelled stills** (real ground truth, real sample
+size) with `training/benchmark/model_free_detector.py`: a deterministic,
+model-free detector (background subtraction + Sato tubeness + wall rejection +
+shape gates) reaches **F1 ~0.09** against the human masks, versus Cellpose's
+0.73 held-out / 0.839 in-distribution. The reason is fundamental: on a *single
+frame* a channel wall and an elongated cell are the same shape, so hand rules
+either admit walls (false positives) or, tuned to reject walls, delete the
+cells too (KK1 recall → 0). **Single-frame detection is exactly where a trained
+model is irreplaceable.**
+
+So "the model can be zero" is too strong. The honest claim the measurements
+support is: **the model can be mediocre (~0.7) and the temporal architecture
+still delivers accurate trajectories**, because *time* — not hand rules —
+separates persistent walls from moving cells and fills the frames a weak
+detector misses. The novelty is the temporal reconstruction and the
+overlap-for-elongating-cells insight, not a hand-coded detector (F1 0.09,
+measured) nor hand-coded morphology-only prediction (a measured near-null,
+`docs/PREDICTION.md`).
