@@ -101,13 +101,16 @@ def test_skeleton_names_the_bots_it_does_not_have(tmp_path):
     # The real stages ran.
     assert "propose" in result.stages_run
     assert "referee" in result.stages_run
-    # The absent bots are each named as skipped, not silently missing.
+    # The absent bots are each named as skipped, not silently missing. On the
+    # engine-2.1 integration branch, Z consensus (Bot 4), temporal delta
+    # (Bot 5) and measurement (Bot 6) are now merged and present, so only the
+    # registration/atlas bot (Bots 1 and 2) remains unbuilt; the skeleton must
+    # still name those rather than drop them silently.
     skipped = " ".join(result.stages_skipped)
     assert "Bot 1" in skipped  # registration
     assert "Bot 2" in skipped  # atlas
-    assert "Bot 4" in skipped  # Z consensus
-    assert "Bot 5" in skipped  # temporal delta
-    assert "Bot 6" in skipped  # measurement
+    # A bot whose module is present must not be reported as skipped.
+    assert "Bot 4" not in skipped and "Bot 5" not in skipped
 
 
 def test_identity_handoff_links_the_moving_cell(tmp_path):
