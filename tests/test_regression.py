@@ -63,6 +63,11 @@ EXPECTED_COUNTS = {
 #: the five sample movies at the 2.0 defaults.  The narrow crops are unchanged
 #: from v1.3.0; the wide fields differ, and every difference is attributed in
 #: docs/v2_vs_v1_baseline.json.
+#:
+#: 052924_1's 16 INCLUDES A KNOWN DEFECT (track 15, see KNOWN_DEFECTS): the
+#: count is pinned so that any change is noticed, not because 16 is right.
+#: Fixing the defect changes it, and test_no_step_is_faster_than_any_baseline_step
+#: then XPASSes (strict) so both pins are revisited together.
 EXPECTED_TRACKS = {
     "052924_1": 16,
     "052924_2": 9,
@@ -73,6 +78,33 @@ EXPECTED_TRACKS = {
 
 #: The two wide fields: six lanes each, measured from the walls.
 WIDE_FIELDS = ("052924_1", "052924_2")
+
+#: The fastest single step of any track in the v1.3.0 baseline of these five
+#: movies (build/baseline_v1.3.0, tracks.csv ``speed_um_per_min``):
+#: 052924_2 track 7, frame 13 -> 14, 85.0 px in one 20.01 min frame.  The
+#: segmentation is bit-identical in 2.0, so a faster step is a link 1.x never
+#: made and no reviewed track ever showed -- a new claim about a cell that has
+#: to be looked at before it is pinned.  (TrackingConfig's 5 um/min gate is the
+#: hard physical limit; this is the measured one.)
+FASTEST_BASELINE_STEP_UM_PER_MIN = 1.984089566
+
+#: Defects the shipped defaults still produce, pinned as known rather than as
+#: correct.  Each XFAILs (strict) the guard that catches it.
+KNOWN_DEFECTS = {
+    "052924_1": (
+        "track 15: frame 16 (44.4, 279.6) primary -> frame 17 (55.0, 117.1) intensity-tier "
+        "recovery, a 162.9 px (76 um) step in one 20 min frame = 3.80 um/min, backwards up "
+        "the lane; v1.3.0 kept this cell in its track 4. Cause: the first-pass tracker "
+        "linked (44, 280)@16 to (57, 60)@18 across a 2-frame gap (220 px; owner: tracking, "
+        "WP-B), and recovery then accepted an intensity object 52.8 px from that link's "
+        "interpolated prediction (owner: recovery, E2). QC warns about the track "
+        "(fallback_dependent_track, morphology_discontinuity, size_jump)."
+    ),
+}
+
+#: The (track id, frame) of every step each known defect makes, so the xfail
+#: above cannot hide a second, new implausible step in the same movie.
+KNOWN_DEFECT_STEPS = {"052924_1": {(15, 17)}}
 
 _CACHE: dict[str, SavedAnalysis] = {}
 
@@ -257,6 +289,63 @@ def test_wide_field_tracks_never_cross_a_lane(stem, analysed):
         assert lanes != {-1}, f"track {tid} is outside every lane"
 
 
+def _steps(saved: SavedAnalysis):
+    """(track id, frame, um/min) of every step, from tracks.csv's own speed column."""
+    for tid, rows in tracks_of(saved).items():
+        for row in rows[1:]:
+            if row["speed_um_per_min"] is not None:
+                yield tid, row["frame"], float(row["speed_um_per_min"])
+
+
+@pytest.mark.parametrize(
+    "stem",
+    [
+        pytest.param(stem, marks=pytest.mark.xfail(strict=True, reason=KNOWN_DEFECTS[stem]))
+        if stem in KNOWN_DEFECTS else stem
+        for stem in sorted(EXPECTED_TRACKS)
+    ],
+)
+def test_no_step_is_faster_than_any_baseline_step(stem, analysed):
+    """A guard the suite lacked: a track count can pin a physically implausible track.
+
+    tracks.csv's speed is per step (distance from the previous observation /
+    elapsed time), so a gap-bridging link is measured at its true rate.
+    """
+    saved = analysed(stem)
+    fast = [
+        (tid, frame, round(v, 3)) for tid, frame, v in _steps(saved)
+        if v > FASTEST_BASELINE_STEP_UM_PER_MIN * (1 + 1e-9)
+    ]
+    assert not fast, (
+        f"steps faster than any v1.3.0 step ({FASTEST_BASELINE_STEP_UM_PER_MIN} um/min): "
+        f"(track, frame, um/min) {fast}"
+    )
+
+
+@pytest.mark.parametrize("stem", sorted(EXPECTED_TRACKS))
+def test_the_only_implausible_steps_are_the_known_ones(stem, analysed):
+    """A known defect excuses its own step, never another one."""
+    saved = analysed(stem)
+    fast = {
+        (tid, frame) for tid, frame, v in _steps(saved)
+        if v > FASTEST_BASELINE_STEP_UM_PER_MIN * (1 + 1e-9)
+    }
+    assert fast == KNOWN_DEFECT_STEPS.get(stem, set())
+
+
+@pytest.mark.parametrize("stem", sorted(EXPECTED_TRACKS))
+def test_an_implausible_step_is_never_silent(stem, analysed):
+    """Until a known defect is fixed, the reviewer must at least be warned about its track."""
+    saved = analysed(stem)
+    warned = {
+        int(i["track_id"]) for i in saved.issues
+        if i["severity"] in ("warning", "critical") and i["track_id"] is not None
+    }
+    for tid, frame, v in _steps(saved):
+        if v > FASTEST_BASELINE_STEP_UM_PER_MIN * (1 + 1e-9):
+            assert tid in warned, f"track {tid}'s {v:.2f} um/min step at frame {frame} has no QC warning"
+
+
 def test_manifest_is_complete_and_reproducible(analysed):
     saved = analysed("052924_t1")
     m = saved.manifest
@@ -282,6 +371,15 @@ def test_manifest_is_complete_and_reproducible(analysed):
     assert m["tracking"]["gate_chi2"] == 2 * m["tracking"]["unmatched_chi2"]
     assert m["segmentation"]["removed_instances_total"] == 0
     assert set(m["measurement"]) >= {"reference_point_px", "msd_min_pairs"}
+    # Nothing overridden: what was used is what the file reports.
+    cal, file = m["calibration"], m["calibration"]["reported_by_file"]
+    assert cal["pixel_size_um"] == cal["pixel_size_y_um"] == file["pixel_size_x_um"]
+    assert file["pixel_size_y_um"] == pytest.approx(file["pixel_size_x_um"], rel=1e-9)
+    assert cal["anisotropic_pixels"] is False
+    # The run-level speed called robust is the median over tracks.
+    res = m["results"]
+    assert res["speed_estimators"]["robust_estimator"] == "median_net_speed"
+    assert res["median_net_speed_um_per_hr"] == pytest.approx(res["median_net_speed_um_per_min"] * 60)
 
 
 def test_t3_late_object_is_reported_as_a_judgement_not_a_fact(analysed):

@@ -201,7 +201,8 @@ def test_ambiguous_axes_propagate_and_an_explicit_order_resolves_them(tmp_path):
     with pytest.raises(AmbiguousAxes) as info:
         pipeline.run_analysis(config)
     assert "TYX" in info.value.choices
-    assert not (Path(config.output_dir) / pipeline.F_MANIFEST).exists()
+    # Refused before anything was written: not even an empty directory.
+    assert not Path(config.output_dir).exists()
 
     config.import_.axes = "TYX"
     # A plain TIFF carries no calibration either; without it 5 um/min would
@@ -210,7 +211,14 @@ def test_ambiguous_axes_propagate_and_an_explicit_order_resolves_them(tmp_path):
     config.calibration.frame_interval_min = FRAME_S / 60.0
     result = pipeline.run_analysis(config)
     assert result.manifest["input"]["axes_source"] == "user_override"
-    assert result.manifest["calibration"]["pixel_size_um_source"] == "user_override"
+    cal = result.manifest["calibration"]
+    assert cal["pixel_size_um_source"] == "user_override"
+    # The block agrees with itself: Y is measured with the size entered, and
+    # what the file said (nothing) is kept apart, labelled as the file's.
+    assert cal["pixel_size_y_um"] == cal["pixel_size_um"] == pytest.approx(PIXEL_UM)
+    assert cal["pixel_size_y_um_source"] == "user_override"
+    assert cal["reported_by_file"]["pixel_size_x_um"] is None
+    assert cal["reported_by_file"]["frame_interval_min"] is None
     assert result.n_tracks == len(CELLS)
 
 
@@ -225,8 +233,24 @@ def test_a_missing_model_raises_model_unavailable_and_nothing_else_runs(tmp_path
         pipeline.run_analysis(config)
     assert MODEL_UNAVAILABLE_MESSAGE in str(info.value)
     assert str(absent) in str(info.value)
+    assert not Path(config.output_dir).exists(), "a refused run left a directory behind"
+
+
+def test_a_refusal_leaves_a_previous_result_untouched(tmp_path, monkeypatch):
+    """The directory is opened only once there is something to write in it."""
+    movie, labels_path, _ = synthetic_movie(tmp_path)
+    config = config_for(tmp_path, movie, labels_path)
+    pipeline.run_analysis(config)
     out = Path(config.output_dir)
-    assert not (out / pipeline.F_MASKS).exists() and not (out / pipeline.F_MANIFEST).exists()
+    before = {p.name: p.read_bytes() for p in out.iterdir()}
+
+    def refuse(*args, **kwargs):
+        raise ModelUnavailable(MODEL_UNAVAILABLE_MESSAGE, [(tmp_path / "absent", "missing")])
+
+    monkeypatch.setattr(pipeline, "load_label_stack", refuse)
+    with pytest.raises(ModelUnavailable):
+        pipeline.run_analysis(config)
+    assert {p.name: p.read_bytes() for p in out.iterdir()} == before
 
 
 # --------------------------------------------------------------------------

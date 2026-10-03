@@ -59,6 +59,73 @@ def test_the_tracking_check_catches_a_wrong_msd(monkeypatch):
         selftest._check_tracking()
 
 
+def test_the_tracking_check_catches_an_msd_that_returns_nothing(monkeypatch):
+    """A loop over a track's MSD rows passes vacuously when there are none."""
+    monkeypatch.setattr(measurements, "msd_rows", lambda *args, **kwargs: [])
+    with pytest.raises(RuntimeError, match="MSD of track"):
+        selftest._check_tracking()
+
+
+def test_the_tracking_check_catches_a_missing_lag(monkeypatch):
+    real = measurements.msd_rows
+    monkeypatch.setattr(
+        measurements, "msd_rows",
+        lambda *a, **k: [r for r in real(*a, **k) if r["lag_frames"] != 3],
+    )
+    with pytest.raises(RuntimeError, match="lag, pairs"):
+        selftest._check_tracking()
+
+
+def _nearest_centroid_linker(detections, n_frames, scale, config, **kwargs):
+    """A tracker with no motion and no shape: frame to frame, minimum total distance."""
+    import numpy as np
+    from scipy.optimize import linear_sum_assignment
+
+    from corridor.core.tracking import Observation, Track
+
+    by_frame = {t: [d for d in detections if d.frame == t] for t in range(n_frames)}
+    tracks = [
+        Track(id=i + 1, observations=[Observation(d.frame, d.x, d.y, d.area_px, d.label, None, 0)])
+        for i, d in enumerate(by_frame[0])
+    ]
+    for t in range(1, n_frames):
+        cost = np.array([[np.hypot(tr.last.x - d.x, tr.last.y - d.y) for d in by_frame[t]]
+                         for tr in tracks])
+        for i, j in zip(*linear_sum_assignment(cost)):
+            d = by_frame[t][j]
+            tracks[i].observations.append(
+                Observation(d.frame, d.x, d.y, d.area_px, d.label, float(cost[i, j]), 1)
+            )
+    return tracks, []
+
+
+def test_the_cells_are_close_enough_that_a_position_only_linker_swaps_them(monkeypatch):
+    """The identity check is a real test: at 1.5 body widths, position alone is not enough.
+
+    With the cells 120 px apart (1.x self-test), no linker could have swapped
+    them and the check certified nothing.
+    """
+    from corridor.core import tracking
+
+    monkeypatch.setattr(tracking, "track_detections", _nearest_centroid_linker)
+    with pytest.raises(RuntimeError, match="mixes cells"):
+        selftest._check_tracking()
+
+
+def test_the_synthetic_cells_come_within_two_body_widths():
+    import math
+
+    cells, _ = selftest._synthetic_cells()
+    a, b = cells[1], cells[2]
+    closest = min(
+        math.hypot(a["start"][0] + a["step"][0] * t - b["start"][0] - b["step"][0] * t,
+                   a["start"][1] + a["step"][1] * t - b["start"][1] - b["step"][1] * t)
+        for t in range(selftest._N_FRAMES)
+    )
+    assert selftest._BODY_WIDTH_PX <= closest <= 2 * selftest._BODY_WIDTH_PX
+    assert a["step"] != b["step"], "the two cells must move in different directions"
+
+
 def test_the_outputs_round_trip_including_msd_and_xlsx():
     detail = selftest._check_outputs()
     assert "track_msd" in detail and "XLSX" in detail and "schema 2" in detail

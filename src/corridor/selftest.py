@@ -139,6 +139,10 @@ _FRAME_MIN = 20.006894938151042
 _N_FRAMES = 6
 
 
+#: Body width of the synthetic cells (minor axis, px).
+_BODY_WIDTH_PX = 11.0
+
+
 def _synthetic_cells():
     """Two elongated cells moving at constant velocity, in different directions.
 
@@ -146,12 +150,22 @@ def _synthetic_cells():
     depends on a migration direction: the tracker is given none, and each
     cell's uncertainty comes from its own body.  Steps (px/frame) are well
     inside the 5 um/min speed gate (20 px/frame = 0.47 um/min).
+
+    Their paths converge and diverge again: the centroids are 38.8, 26.0,
+    16.1, 16.1, 26.0 and 38.8 px apart at frames 0-5, so at frames 2 and 3
+    they are 1.5 body widths (11 px) apart.  That is close enough for identity
+    to be a real question -- a linker that matches by position alone swaps
+    them between frames 2 and 3 (cell 2 at frame 2 is 4.5 px from cell 1 at
+    frame 3, and the swapped assignment is also the cheaper one in total
+    distance, 35.8 against 37.0 px); see tests/test_selftest.py.
     """
     from .core.detections import Detection
 
     cells = {
         1: {"start": (40.0, 30.0), "step": (0.0, 20.0), "orientation": 0.0},
-        2: {"start": (160.0, 30.0), "step": (12.0, 12.0), "orientation": math.pi / 4},
+        # orientation_rad is the major axis angle with (x, y) = (sin, cos):
+        # pi/4 lies along this cell's own (12, 12) step.
+        2: {"start": (18.0, 62.0), "step": (12.0, 12.0), "orientation": math.pi / 4},
     }
     detections = []
     for label, cell in cells.items():
@@ -164,7 +178,7 @@ def _synthetic_cells():
                     bbox=(int(y - 45), int(x - 6), int(y + 45), int(x + 6)),
                     extent_px=90, eccentricity=0.99,
                     orientation_rad=cell["orientation"], major_axis_px=90.0,
-                    minor_axis_px=11.0, solidity=0.95, touches_border=False,
+                    minor_axis_px=_BODY_WIDTH_PX, solidity=0.95, touches_border=False,
                 )
             )
     return cells, detections
@@ -212,8 +226,17 @@ def _check_tracking() -> str:
             if not _close(row["speed_um_per_hr"], v_min * 60.0):
                 raise RuntimeError(f"speed {row['speed_um_per_hr']} um/hr, expected {v_min * 60}")
         # A constant-velocity track: every pair k frames apart is k steps
-        # apart, so MSD(tau) = (v tau)^2 exactly, in um^2.
-        for r in (r for r in msd if r["track_id"] == tr.id):
+        # apart, so MSD(tau) = (v tau)^2 exactly, in um^2.  Every lag must be
+        # there, each averaged over every pair it has: a loop over rows that
+        # do not exist would pass on an msd_rows that returned nothing.
+        own = sorted((r for r in msd if r["track_id"] == tr.id), key=lambda r: r["lag_frames"])
+        lags = [(r["lag_frames"], r["n_pairs"]) for r in own]
+        expected_lags = [(k, _N_FRAMES - k) for k in range(1, _N_FRAMES)]
+        if lags != expected_lags:
+            raise RuntimeError(
+                f"MSD of track {tr.id} has (lag, pairs) {lags}, expected {expected_lags}"
+            )
+        for r in own:
             tau_min = r["lag_frames"] * _FRAME_MIN
             if not _close(r["msd_um2"], (v_min * tau_min) ** 2, rel=1e-9):
                 raise RuntimeError(
@@ -221,7 +244,10 @@ def _check_tracking() -> str:
                     f"expected {(v_min * tau_min) ** 2}"
                 )
         checked.append(f"{v_min:.4f} um/min = {v_min * 60:.2f} um/hr")
-    return f"{len(tracks)} identities kept apart; speeds {', '.join(checked)}; MSD = v^2 tau^2"
+    return (
+        f"{len(tracks)} identities kept apart at 1.5 body widths; speeds {', '.join(checked)}; "
+        f"MSD = v^2 tau^2 at all {_N_FRAMES - 1} lags"
+    )
 
 
 def _synthetic_result(directory: Path):

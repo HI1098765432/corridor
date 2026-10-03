@@ -34,6 +34,14 @@ For each movie:
     between tracks made of the *same* observations is a measurement
     difference; otherwise it is attributed to whatever changed the
     observations.
+5.  **Plausibility.** Every v2 step faster than the fastest step of any
+    v1.3.0 track (measured from the baseline's own ``tracks.csv``) is listed
+    as a KNOWN DEFECT, never as a neutral difference: the segmentation is
+    bit-identical, so such a step is a link 1.x never made and no reviewed
+    track ever showed.  Each is traced to its cause -- the first-pass link
+    across the gap (its bracket, and how far apart the bracket's two
+    observations are) and the recovery attempt that filled it -- and every
+    link and track comparison that touches it is re-attributed to it.
 
 Usage::
 
@@ -438,10 +446,123 @@ def compare_speeds(
 
 
 # --------------------------------------------------------------------------
+# 5. Plausibility
+# --------------------------------------------------------------------------
+
+
+def fastest_step(baseline: Path) -> dict[str, Any]:
+    """The fastest single step of any track in the baseline, all movies."""
+    best: dict[str, Any] = {"speed_um_per_min": 0.0}
+    for movie in MOVIES:
+        for r in read_table(baseline / movie / "tracks.csv"):
+            v = r.get("speed_um_per_min")
+            if v is not None and float(v) > best["speed_um_per_min"]:
+                best = {"speed_um_per_min": float(v), "movie": movie,
+                        "track_id": _int(r["track_id"]), "frame": _int(r["frame"])}
+    return best
+
+
+def implausible_steps(
+    t2_rows: list[dict], bound: float, attempts2: list[dict], d2: list[dict]
+) -> list[dict[str, Any]]:
+    """v2 steps faster than ``bound`` (µm/min), each traced to its cause."""
+    by_track: dict[int, list[dict]] = defaultdict(list)
+    for r in t2_rows:
+        by_track[int(r["track_id"])].append(r)
+    position = {(r["frame"], r["label"]): (r["x"], r["y"]) for r in d2}
+    out = []
+    for tid, rows in sorted(by_track.items()):
+        rows.sort(key=lambda r: r["frame"])
+        for a, b in zip(rows[:-1], rows[1:]):
+            v = b.get("speed_um_per_min")
+            if v is None or float(v) <= bound * (1 + 1e-9):
+                continue
+            step = {
+                "track_id": tid,
+                "from": {"frame": a["frame"], "det_label": a["det_label"],
+                         "x": round(a["x_px"], 1), "y": round(a["y_px"], 1),
+                         "source": a.get("detection_source")},
+                "to": {"frame": b["frame"], "det_label": b["det_label"],
+                       "x": round(b["x_px"], 1), "y": round(b["y_px"], 1),
+                       "source": b.get("detection_source")},
+                "step_px": round(math.hypot(b["x_px"] - a["x_px"], b["y_px"] - a["y_px"]), 1),
+                "speed_um_per_min": round(float(v), 3),
+                "times_fastest_baseline_step": round(float(v) / bound, 2),
+                "track_observations": len(rows),
+            }
+            causes = []
+            for end in (a, b):
+                if end.get("detection_source") == PRIMARY:
+                    continue
+                attempt = next(
+                    (x for x in attempts2 if x.get("recovered") and x["frame"] == end["frame"]
+                     and _int(x.get("det_label")) == end["det_label"]), None,
+                )
+                if attempt is None:
+                    continue
+                before = (_int(attempt["bracket_frame_before"]), _int(attempt["bracket_label_before"]))
+                after = (_int(attempt["bracket_frame_after"]), _int(attempt["bracket_label_after"]))
+                jump = None
+                if before in position and after in position:
+                    (x0, y0), (x1, y1) = position[before], position[after]
+                    jump = round(math.hypot(x1 - x0, y1 - y0), 1)
+                causes.append({
+                    "recovered_frame": end["frame"],
+                    "found_by": attempt.get("found_by"),
+                    "offset_from_prediction_px": round(float(attempt["offset_from_prediction_px"]), 1),
+                    "first_pass_track_id": _int(attempt["first_pass_track_id"]),
+                    "first_pass_bracket": {"before": list(before), "after": list(after)},
+                    "first_pass_link_px": jump,
+                    "owners": (
+                        "tracking (WP-B): the first pass linked the bracket across the gap; "
+                        "recovery (E2): accepted a candidate this far from the prediction"
+                    ),
+                })
+            step["cause"] = causes or "a link between two primary detections (tracking, WP-B)"
+            out.append(step)
+    return out
+
+
+def _defect_label(step: dict[str, Any]) -> str:
+    return (
+        f"KNOWN DEFECT: track {step['track_id']} steps {step['step_px']} px in "
+        f"{step['to']['frame'] - step['from']['frame']} frame(s) = {step['speed_um_per_min']} "
+        f"um/min ({step['times_fastest_baseline_step']}x the fastest v1.3.0 step)"
+    )
+
+
+def mark_defects(
+    tracking: dict[str, Any], speeds: list[dict[str, Any]], steps: list[dict[str, Any]]
+) -> None:
+    """Re-attribute every comparison that touches an implausible step to it.
+
+    Link and observation keys end in ``(frame, det_label)`` of the version
+    they come from, so a v2 step is found among them by its two endpoints.
+    """
+    for step in steps:
+        ends = {(step["from"]["frame"], step["from"]["det_label"]),
+                (step["to"]["frame"], step["to"]["det_label"])}
+        label = _defect_label(step)
+        for link in tracking["links_only_in_v2"]:
+            if {tuple(link["from"][1:]), tuple(link["to"][1:])} == ends:
+                link["neutral_attribution"] = link["attributed_to"]
+                link["attributed_to"] = "known defect"
+                link["known_defect"] = label
+        for row in speeds:
+            touched = [tuple(k[1:]) for k in row.get("observations_only_v1", [])
+                       + row.get("observations_only_v2", [])]
+            if row["v2_track"] == step["track_id"] or any(k in ends for k in touched):
+                row["neutral_attribution"] = row["attributed_to"]
+                row["attributed_to"] = "known defect"
+                row["known_defect"] = label
+
+
+# --------------------------------------------------------------------------
 
 
 def compare_movie(
-    baseline: Path, v2: Path, movie: str, match_px: float, same_px: float
+    baseline: Path, v2: Path, movie: str, match_px: float, same_px: float,
+    fastest_baseline_step: float,
 ) -> dict[str, Any]:
     b, n = baseline / movie, v2 / movie
     m1 = json.loads((b / "run.json").read_text(encoding="utf-8"))
@@ -459,6 +580,9 @@ def compare_movie(
         read_table(b / "track_summary.csv"), read_table(n / "track_summary.csv"),
         pairing, tr1, tr2, rec["_causes"],
     )
+    t2_rows = read_table(n / "tracks.csv")
+    defects = implausible_steps(t2_rows, fastest_baseline_step, attempts2, d2)
+    mark_defects(tracking, speeds, defects)
     rec.pop("_map_v1_to_v2")
     rec.pop("_causes")
     rec["attempts_v1"] = m1.get("recovery", {}).get("attempted")
@@ -484,12 +608,14 @@ def compare_movie(
         "recovery": rec,
         "tracking": tracking,
         "speeds_per_track": speeds,
+        "known_defects": defects,
         "attribution_counts": dict(attribution),
         "results_v1": {k: m1["results"].get(k) for k in ("n_detections", "n_tracks", "mean_speed_um_per_min")},
         "results_v2": {
             k: m2["results"].get(k)
             for k in ("n_detections", "n_detections_primary", "n_detections_recovered",
-                      "n_tracks", "mean_speed_um_per_min", "mean_net_speed_um_per_min")
+                      "n_tracks", "mean_speed_um_per_min", "mean_net_speed_um_per_min",
+                      "median_net_speed_um_per_min", "median_net_speed_um_per_hr")
         },
         "channel_geometry_v2": {
             k: m2["channel_geometry"].get(k)
@@ -519,8 +645,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = p.parse_args(argv)
 
+    fastest = fastest_step(args.baseline)
     movies = {
-        m: compare_movie(args.baseline, args.v2, m, args.match_px, args.same_prediction_px)
+        m: compare_movie(
+            args.baseline, args.v2, m, args.match_px, args.same_prediction_px,
+            fastest["speed_um_per_min"],
+        )
         for m in MOVIES
     }
     total_obs = sum(r["tracking"]["n_observations_v1"] for r in movies.values())
@@ -546,6 +676,12 @@ def main(argv: list[str] | None = None) -> int:
         "links_only_in_v1": sum(len(r["tracking"]["links_only_in_v1"]) for r in movies.values()),
         "links_only_in_v2": sum(len(r["tracking"]["links_only_in_v2"]) for r in movies.values()),
         "attribution_counts": dict(attribution),
+        "fastest_v1_step": fastest,
+        "known_defects": [
+            {"movie": m, **{k: d[k] for k in ("track_id", "step_px", "speed_um_per_min",
+                                              "times_fastest_baseline_step", "cause")}}
+            for m, r in movies.items() for d in r["known_defects"]
+        ],
         "per_movie_tracks": {
             m: [r["tracking"]["n_tracks_v1"], r["tracking"]["n_tracks_v2"]] for m, r in movies.items()
         },
@@ -556,7 +692,9 @@ def main(argv: list[str] | None = None) -> int:
             "(build/baseline_v1.3.0, CLI defaults), movie by movie. The baseline is v1's answer, "
             "not ground truth: agreement measures consistency, not accuracy. Every difference is "
             "attributed to segmentation, recovery (the re-segmentation of windows a track "
-            "predicts), tracking or measurement."
+            "predicts), tracking or measurement -- except a step faster than any v1.3.0 step, "
+            "which is attributed to 'known defect' (summary.known_defects), with the stage it "
+            "would otherwise have been given kept as neutral_attribution."
         ),
         "how": __doc__.split("For each movie:")[1].split("Usage::")[0].strip(),
         "match_px": args.match_px,
@@ -589,6 +727,8 @@ def main(argv: list[str] | None = None) -> int:
             f"identity {t['identity_agreement_obs_weighted']} "
             f"links only v1 {len(t['links_only_in_v1'])} only v2 {len(t['links_only_in_v2'])}"
         )
+        for d in r["known_defects"]:
+            print(f"  {_defect_label(d)}")
     return 0
 
 
