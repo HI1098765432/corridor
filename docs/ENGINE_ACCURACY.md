@@ -221,3 +221,52 @@ threshold + the architecture filling gaps -- trajectory accuracy is ~0.98
 (synthetic) and 1.00 on the two eye-verified real movies, at the operating
 point. A zero-model result on real data is not achievable, because real-cell
 detection from raw pixels is the unsolved part that the model exists to do.
+
+## The 271-trial architecture study: filling the overlap backbone's two gaps
+
+A 271-trial battery of the *bare* overlap backend reported mean F1 ~0.88 (and
+only ~16/271 trials at >=0.98), which is not 100%. Rather than accept that, the
+cause was measured: the backbone has two gaps, and each was filled with a
+complementary method (`build/traj/recon_plus.py`, `recon_img.py`,
+`arch_study.py`). The battery's own "well-posed" regime placed **two** cells per
+lane, which is not the real assay -- confined-migration devices isolate **one**
+cell per lane -- so the study was re-run on that realistic regime (1 cell/lane,
+with dropout, debris false positives and stall/surge/reversal motion):
+
+| architecture | mean F1 | >=0.98 | >=0.95 |
+|---|---|---|---|
+| plain overlap | 0.821 | 35/271 | — |
+| + support gate (drop unsupported chains) | 0.863 | 41/271 | — |
+| + interior gap-fill (interpolate a track's own holes) | 0.915 | 84/271 | — |
+| + lane-exclusivity prior (one cell per lane per frame) | **0.937** | 88/271 | 160/271 |
+
+Each step is cheap and deterministic and repairs a specific failure: the support
+gate removes phantom tracks from debris (precision), interior gap-fill recovers
+interior dropout (recall), and the lane-exclusivity prior -- a confined-migration
+domain prior -- removes a brief false positive that co-occupies a lane with the
+real cell (precision 0.94 -> 0.95).
+
+**Why it is 0.94 and not 0.98 on this synthetic battery.** The residual is
+*end*-dropout: when a cell's first or last observed frame is missed, extending the
+track needs image evidence, and in a walled channel the cell's appearance is
+dominated by the bright wall -- so NCC template-matching matches the wall, not the
+cell, and precision collapses (0.94 -> 0.82) if end-extension is attempted. This
+is the same wall that defeated the kymograph on real data, measured again. It is
+an information limit of mask-only reconstruction, not a tuning failure.
+
+**What shipped.** The support gate and the lane-exclusivity prior are available
+in `reconstruct_tracks` as opt-in parameters (`min_support`, `lane_exclusive`).
+`lane_exclusive` is **off by default**: on the real eye-verified `t3_dual` it
+dropped a genuine brief second cell that shares a lane (3 tracks -> 2), and in a
+research tool dropping a real cell is worse than keeping a false positive. With
+the defaults the overlap backend is a faithful drop-in -- it reproduces the Kalman
+tracker's counts on both real movies (t1 1 track, t3_dual 3 tracks), and the two
+backends score identically on the real data at every dropout level tested.
+
+**The honest bottom line on "the architecture reaches 98%".** At the detector's
+operating point on the two eye-verified real movies the full pipeline reaches
+F1 1.00. On 271 realistic synthetic trials the architecture reaches mean 0.94
+(88/271 at >=0.98, 160/271 at >=0.95), with the remaining gap being the
+information-limited, wall-dominated end-dropout that the trained model + image
+recovery address on real data. The number is genuine and was pushed from 0.82 to
+0.94 by filling measured gaps; it is not a general 100%.

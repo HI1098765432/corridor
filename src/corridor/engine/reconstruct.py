@@ -124,6 +124,41 @@ def _stitch(chains, objs, max_gap, max_jump):
     return chains
 
 
+def _chain_channel(chain, objs) -> int | None:
+    """The channel a chain sits in: the majority of its detections' channels,
+    ignoring the unassigned ones. None when no detection is in a lane."""
+    chans = [objs[t][lab][0].channel for (t, lab) in chain]
+    chans = [int(c) for c in chans if c is not None and int(c) >= 0]
+    if not chans:
+        return None
+    return max(set(chans), key=chans.count)
+
+
+def _lane_exclusive(chains, objs, max_victim: int = 3):
+    """Confined-migration prior: at most one cell per lane per frame. Keeping
+    chains longest-first, drop a chain that shares a frame with an already-kept
+    chain in the same lane -- but *only* a brief one (at most ``max_victim``
+    observations), so a genuine second cell tracked over many frames is never
+    removed, while a brief debris false positive that co-occupies a lane with
+    the real cell is. Measured on 271 realistic trials to raise precision
+    0.94 -> 0.95 with no recall cost (docs/ENGINE_ACCURACY.md). Only ever applied
+    when real lanes exist; a chain in no lane is always kept."""
+    kept: list = []
+    occupied: dict[int, list[set]] = {}
+    for chain in sorted(chains, key=len, reverse=True):
+        ch = _chain_channel(chain, objs)
+        if ch is None:
+            kept.append(chain)
+            continue
+        frames = {t for (t, _) in chain}
+        occ = occupied.setdefault(ch, [])
+        if len(chain) <= max_victim and any(frames & seen for seen in occ):
+            continue
+        occ.append(frames)
+        kept.append(chain)
+    return kept
+
+
 def reconstruct_tracks(
     detections: Iterable[Detection],
     image_shape,
@@ -136,6 +171,8 @@ def reconstruct_tracks(
     min_overlap: float = 0.1,
     stitch_gap: int = 5,
     stitch_jump_px: float = 60.0,
+    lane_exclusive: bool = False,
+    min_support: int = 1,
 ) -> tuple[TrackList, list[FrameEvent]]:
     """Overlap-linked reconstruction, returned as a Kalman-tracker-shaped
     ``(TrackList, events)`` so it is a drop-in for ``track_detections``.
@@ -143,12 +180,30 @@ def reconstruct_tracks(
     ``image_shape`` is the frame's ``(H, W)`` (or ``(Z, Y, X)``); masks are
     built from each detection's own ``mask_crop``, so both primary and recovered
     detections link without needing the saved label image.
+
+    ``lane_exclusive`` (opt-in, default off) applies the confined-migration
+    prior -- at most one cell per lane per frame -- and only when ``geometry``
+    is present. Measured on a 271-trial realistic study (``docs/ENGINE_ACCURACY.md``)
+    to raise precision 0.94 -> 0.95 on debris-heavy synthetic data; it is **off
+    by default because on real data it can drop a genuine brief second cell that
+    shares a lane** (it took the eye-verified t3_dual from 3 tracks to 2). It is
+    offered for datasets the user knows isolate one cell per lane. ``min_support``
+    (default 1, off) optionally drops tracks still shorter than it *after*
+    stitching -- an opt-in for debris; the stitch runs first so a real cell's
+    terminal fragment is never lost. With both at their defaults the backend is a
+    faithful drop-in: it reproduces the Kalman tracker's counts on the real
+    movies (t1 1 track, t3_dual 3 tracks).
     """
     detections = list(detections)
     shape = tuple(int(s) for s in image_shape)
     objs = _masks_by_frame(detections, shape)
     chains = _link(objs, n_frames, max_gap, min_overlap)
     chains = _stitch(chains, objs, stitch_gap, stitch_jump_px)
+    if lane_exclusive and geometry is not None:
+        chains = _lane_exclusive(chains, objs)
+    if min_support > 1:
+        chains = [c for c in chains if len(c) >= min_support]
+    chains = [c for c in chains if c]
     chains.sort(key=lambda c: (c[0][0], _centroid(objs[c[0][0]][c[0][1]][1])[0]))
 
     tracks: list[Track] = []

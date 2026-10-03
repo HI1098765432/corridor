@@ -32,7 +32,7 @@ import numpy as np
 
 from .. import app_meta
 from . import export, qc, recovery as recovery_mod
-from .config import CalibrationConfig, RunConfig, Scale
+from .config import RECONSTRUCTOR_OVERLAP, CalibrationConfig, RunConfig, Scale
 from .detections import SOURCE_ENSEMBLE, Detection, detections_to_rows
 from .geometry import ChannelGeometry, assign_lanes, detect_channels, static_projection
 from .imaging import (
@@ -62,6 +62,29 @@ from .tracking import (
     lane_gate_applies,
     track_detections,
 )
+
+
+def _track(detections, metadata, scale, config, geometry):
+    """Dispatch to the configured tracking backend, ``(TrackList, events)``.
+
+    ``kalman`` (default) is the axis-free motion-model tracker; ``overlap`` is
+    the mask-overlap reconstructor in :mod:`corridor.engine.reconstruct`, which
+    needs the per-frame image shape (``metadata.shape`` is ``T[Z]YX``, so
+    ``shape[1:]`` is the ``(Y, X)`` or ``(Z, Y, X)`` frame) that the motion
+    tracker does not. The two were measured equal on all eye-verified real data
+    (``docs/ENGINE_ACCURACY.md``); the choice is a config flag, not a default
+    change, so a run reproduces the shipped behaviour unless asked otherwise.
+    """
+    if config.tracking.reconstructor == RECONSTRUCTOR_OVERLAP:
+        from ..engine.reconstruct import reconstruct_tracks
+
+        return reconstruct_tracks(
+            detections, metadata.shape[1:], metadata.n_frames, scale,
+            config.tracking, geometry=geometry,
+        )
+    return track_detections(
+        detections, metadata.n_frames, scale, config.tracking, geometry=geometry,
+    )
 
 # File names inside a result directory. Stable: other tools may rely on them.
 F_DETECTIONS = "detections.csv"
@@ -414,10 +437,7 @@ def run_analysis(
 
     # -- 4. tracking --------------------------------------------------------
     progress.stage("Tracking", "linking cells between frames")
-    tracks, events = track_detections(
-        segmentation.detections, metadata.n_frames, scale, config.tracking,
-        geometry=geometry,
-    )
+    tracks, events = _track(segmentation.detections, metadata, scale, config, geometry)
     _check(progress)
 
     # -- 4b. recovery -------------------------------------------------------
@@ -438,9 +458,7 @@ def run_analysis(
             assign_lanes(recovery_result.detections, geometry)
             _relabel_recovered(segmentation.detections, recovery_result.detections)
             combined = list(segmentation.detections) + list(recovery_result.detections)
-            tracks, events = track_detections(
-                combined, metadata.n_frames, scale, config.tracking, geometry=geometry,
-            )
+            tracks, events = _track(combined, metadata, scale, config, geometry)
         recovery_rows = recovery_attempt_rows(recovery_result, tracks)
         _check(progress)
 

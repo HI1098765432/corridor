@@ -136,6 +136,32 @@ def test_an_imported_segmentation_runs_end_to_end(tmp_path):
     assert {r["track_id"] for r in saved.msd} == {t.id for t in result.tracks}
 
 
+def test_the_overlap_reconstructor_backend_runs_end_to_end(tmp_path):
+    """The ``tracking.reconstructor == "overlap"`` backend (engine.reconstruct)
+    is a production path, not just a benchmark: the whole pipeline runs on it
+    and returns the same two correct, identity-stable, per-lane tracks the
+    default Kalman backend returns on this movie."""
+    from corridor.core.config import RECONSTRUCTOR_OVERLAP
+
+    movie, labels_path, _ = synthetic_movie(tmp_path)
+    config = config_for(tmp_path, movie, labels_path)
+    config.tracking.reconstructor = RECONSTRUCTOR_OVERLAP
+    result = pipeline.run_analysis(config)
+
+    assert result.n_tracks == len(CELLS)
+    for tr in result.tracks:
+        assert len({o.channel for o in tr.observations}) == 1
+        assert len({o.det_label for o in tr.observations}) == 1, "identities were swapped"
+    # Speeds still come out right through the overlap backend.
+    for summary in result.summaries:
+        (label,) = {o.det_label for o in next(t for t in result.tracks if t.id == summary.track_id).observations}
+        expected = CELLS[label][2] * PIXEL_UM / (FRAME_S / 60.0)
+        assert summary.net_speed_um_per_min == pytest.approx(expected, rel=0.02)
+    # And the run reloads as a complete schema-2 result.
+    saved = load_analysis(result.output_dir)
+    assert saved.schema_version == 2 and saved.msd
+
+
 def test_run_json_is_written_last(tmp_path, monkeypatch):
     movie, labels_path, _ = synthetic_movie(tmp_path)
     order: list[str] = []

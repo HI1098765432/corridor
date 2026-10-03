@@ -163,12 +163,9 @@ def run_battery(hard, n=120):
 
 
 def main():
-    run_battery(hard=False)
-    run_battery(hard=True)
-
-
-if __name__ == "__main__":
-    main()
+    n = int(sys.argv[1]) if len(sys.argv) > 1 else 271
+    run_battery(hard=False, n=n)
+    run_battery(hard=True, n=n)
 
 
 if __name__ == "__main__":

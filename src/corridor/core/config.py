@@ -489,6 +489,23 @@ CHANNEL_CONSTRAINT_AUTO = "auto"
 CHANNEL_CONSTRAINT_OFF = "off"
 CHANNEL_CONSTRAINTS = (CHANNEL_CONSTRAINT_AUTO, CHANNEL_CONSTRAINT_OFF)
 
+#: ``TrackingConfig.reconstructor`` values -- which linking backend runs.
+#: ``kalman`` is the axis-free motion-model tracker (``core.tracking``, the
+#: shipped default). ``overlap`` is the mask-overlap reconstructor
+#: (``engine.reconstruct``), which links elongating cells by mask overlap with
+#: containment rather than a motion prediction. The two were measured equal on
+#: all eye-verified real data (both F1 1.00 with correct identity, at the
+#: detector's operating point and at every dropout level tested); the overlap
+#: method's measured advantage is over a *naive centroid* linker (recall
+#: 0.31 -> 1.00), not over the Kalman tracker, which already models the
+#: centroid's slide along an elongating body (``shape_position_fraction``).
+#: ``overlap`` is offered because it needs no spatial/temporal calibration and
+#: is an independent cross-check; it does not apply the physical speed/area
+#: gates or the lane constraint. See ``docs/ENGINE_ACCURACY.md``.
+RECONSTRUCTOR_KALMAN = "kalman"
+RECONSTRUCTOR_OVERLAP = "overlap"
+RECONSTRUCTORS = (RECONSTRUCTOR_KALMAN, RECONSTRUCTOR_OVERLAP)
+
 
 @dataclass
 class TrackingConfig:
@@ -686,6 +703,10 @@ class TrackingConfig:
     #: "auto" applies the lane gate only when lanes were detected from walls;
     #: "off" never applies it. See CHANNEL_CONSTRAINTS.
     channel_constraint: str = CHANNEL_CONSTRAINT_AUTO
+    #: Which linking backend runs: "kalman" (motion model, default) or "overlap"
+    #: (mask-overlap reconstructor). Measured equal on real data; see
+    #: RECONSTRUCTORS above and docs/ENGINE_ACCURACY.md.
+    reconstructor: str = RECONSTRUCTOR_KALMAN
 
     def __post_init__(self) -> None:
         # Construction (including from a saved dict): an opt-out under either
