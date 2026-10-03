@@ -86,6 +86,30 @@ t3_dual, so the gap is held conservative).
 3. The metric uses eye-verified counts; per-cell trajectory labels would let
    identity be scored directly rather than via track-count.
 
+## Breadth: the wide-field many-cell movies (physics-validity, real data)
+
+The gold pair above (t1, t3_dual) has full eye-verified trajectory truth. The
+wide-field movies 052924_1 (≈15 cells) and 052924_2 (≈7) have no per-cell hand
+labels — 15 elongated cells across 20 frames cannot be hand-labelled reliably
+from a montage, and claiming otherwise would be fabricated precision. What *is*
+genuinely checkable without labels is **physics-validity** on real, crowded
+data (rendered montages inspected: a vertical-channel device, elongated cells
+living in channels — the confined model is real here):
+
+| movie | my tracks (shipped) | wall-crossings | max lateral wander |
+|---|---|---|---|
+| 052924_1 | 14 (15) | **0** | 19 px (≪ 80 px channel pitch) |
+| 052924_2 | 10 (7) | **0** | 23 px |
+
+Every reconstructed track stays inside one channel — the "many cells /
+crowding" case produces physically valid trajectories. The honest gap:
+052924_2 over-fragments (10 vs 7) without the global stitch, and neither
+wide-field movie has per-cell label truth, so these are physics-validity and
+count-vs-shipped checks, not label accuracy. A hand-labelled wide-field movie
+remains the one thing needed to turn the ≥98% claim from "on two small
+verified movies + physics-valid on crowded movies" into "verified across
+breadth."
+
 ## Explored and not adopted: appearance-only evidence-gated bridging
 
 To push the dropout case, bridging was made *evidence-gated*: merge two
