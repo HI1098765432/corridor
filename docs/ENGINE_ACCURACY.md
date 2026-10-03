@@ -186,3 +186,38 @@ without breaking past it. A solid *general* 100% is therefore not claimed; the
 defensible claim is ~1.0 when detections are good and graceful degradation
 otherwise. A broadly-verified number needs real labelled movies, not more
 synthetic trials.
+
+## NEW architecture: detector backbone + kymograph gap-fill (hybrid)
+
+A genuinely different path, built after detection-centric tracking plateaued.
+A confined channel is a 1-D tube; collapse it to a position-along-channel x time
+image (a kymograph) from raw intensity. The hybrid keeps the detector's tracks
+as a high-precision backbone and uses the kymograph as independent,
+position-specific evidence to stitch fragments and fill the frames the detector
+dropped (`training/benchmark/hybrid_kymograph.py`).
+
+On SYNTHETIC movies the hybrid clearly beats detection-centric at every dropout
+level and is near-invariant to it:
+
+| detector dropout | detection F1 | HYBRID F1 |
+|---|---|---|
+| 0% (operating point) | 0.974 | **0.977** |
+| 30% | 0.796 | **0.872** |
+| 50% | 0.630 | **0.795** |
+| 70% | 0.428 | **0.699** |
+
+**But it does not transfer to real data under heavy dropout.** On the real
+movies the hybrid equals detection (the kymograph does not fire): a real
+phase-contrast cell has a bright/dark halo, not a clean bright band, so neither
+brightness nor temporal-change locates it in the lumen (6/13 frames at best).
+Recovering a real cell from raw intensity with no trained model is itself the
+segmentation problem -- measured three independent ways now (model-free detector
+F1 0.09; real kymograph 6/13; hybrid no real-data lift). **Time and physics lift
+*existing* detections to near-perfect trajectories (0.73 -> 1.0 at the operating
+point); they cannot manufacture detections a trained model is needed to read.**
+
+The honest, final position: within the stated framing -- Cellpose at its
+threshold + the architecture filling gaps -- trajectory accuracy is ~0.98
+(synthetic) and 1.00 on the two eye-verified real movies, at the operating
+point. A zero-model result on real data is not achievable, because real-cell
+detection from raw pixels is the unsolved part that the model exists to do.
