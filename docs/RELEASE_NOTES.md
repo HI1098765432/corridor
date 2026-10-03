@@ -3,10 +3,50 @@ time-lapse, get cell trajectories and migration velocities you can check.
 
 ## Install
 
-Download **Corridor-1.3.0-Setup.exe** below and run it. It installs for the
-current user, so no administrator is needed. Python, PyTorch, Cellpose, Napari
-and the trained segmentation model are all included — there is nothing else to
-install.
+Download **Corridor-2.0.0-Setup.exe** below and run it. It installs for the
+current user, so no administrator is needed. Python, PyTorch, Cellpose and the
+validated segmentation model are all included — there is nothing else to
+install. (Napari is now an optional developer extra, not bundled by default.)
+
+## New in 2.0.0
+
+2.0 is the first release built from a committed, reproducible source tree, and
+it is a deep rewrite. The output format changes (schema v2), which is why the
+major version moves; analyses saved by 1.x still open.
+
+- **One validated model, locked by its checksum.** The app resolves exactly one
+  segmentation model — the lab's — and verifies its SHA-256 before loading. If
+  the file is missing or altered it stops with a clear message; it never
+  silently falls back to a generic model. The model picker and the
+  "change model" controls are gone. Segmentation is byte-for-byte identical to
+  1.3.0 on every sample movie, so no measured number regressed.
+- **Tracking no longer assumes a migration direction.** The old along/across
+  model is replaced by a per-cell Kalman filter whose uncertainty is shaped by
+  each cell's own body, a global gap-closing pass that rejoins tracks across
+  missed frames, and a printed "link margin" for every link. A device's
+  channel walls are still respected, as lanes, without a global axis.
+- **Per-track measurements you can export.** Selected-track and all-tracks
+  export to CSV or Excel, with MTrackJ-equivalent columns (cumulative path,
+  distance from start, distance from previous, distance from a reference
+  point), speeds in µm/hr, and mean-squared-displacement curves in µm² that
+  handle gaps by true elapsed time. MSD is a curve, reported with the number of
+  pairs behind each lag; an α is fitted only when there are enough lags.
+- **True 3D+t import.** A Z stack is never mistaken for a time-lapse again; the
+  importer reads T and Z from metadata and asks when they are ambiguous. 3D
+  measurement, morphometry (volume, surface area) and tracking work on imported
+  label images. 3D *segmentation* is refused until a 3D-validated model exists,
+  rather than guessed.
+- **Quality control rewritten** around the new tracker: ambiguous links,
+  morphology and size jumps, border entry/exit, likely-missed-detection frames,
+  and a critical flag if a developer override or an unvalidated segmentation was
+  ever used.
+- **Honest accuracy.** The held-out detection F1 is 0.7273 (unchanged — same
+  model). The research behind that was corrected: the published 0.942/0.968
+  "label ceilings" were withdrawn (they assumed filename order was time order;
+  it is not), the contrast-augmentation gain was confirmed against a matched
+  control, and Cellpose-SAM (`cpsam_v2`) was measured zero-shot and fails on
+  this data — it outlines the microfluidic channels, not the cells. See
+  `docs/RESEARCH_V2.md`.
 
 After installing, `Corridor.exe --self-test` checks that the installation is
 complete: it loads the model, verifies its checksum, runs the full

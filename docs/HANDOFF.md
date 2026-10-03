@@ -25,8 +25,14 @@ at.
 - Best held-out detection score: **F1 0.7273** — the round 1 contrast-augmented
   checkpoint (`build/models/models/corridor_contrast_invariant`), read with
   percentile window (3, 97) at diameter 36, trained on KK1 and scored on KK2.
-- Ceiling imposed by the labels: **0.942** on KK2, 0.968 on KK1. Measured without
-  the model, and optimistic — see `docs/TOWARDS_99.md`.
+- Ceiling imposed by the labels: **withdrawn and re-derived.** The old 0.942
+  (KK2) / 0.968 (KK1) assumed filename order was time order; it is not (see
+  `docs/RESEARCH_V2.md`). On the true ImageJ time index only consecutive-in-
+  time pairs can be checked, and in them just **2 undrawn cells per group**
+  turn up (not 7 and 9), giving a label ceiling of ~0.967 (KK2) / 0.969 (KK1)
+  over the checkable subset (`docs/label_completeness_v2_*.json`). The labels
+  are therefore cleaner than the old figure implied, and the gap from the best
+  held-out F1 (0.7273) to that ceiling is the model's, not the labeller's.
 - `corridor_contrast_invariant_w3_97` is round 2 and is **not** used: training with
   the window applied scored 0.6452 against its own 0.6533 start.
 
@@ -63,8 +69,9 @@ at.
    boundaries are off, so a single refinement pass over the predicted mask is the
    cheapest remaining F1 on the board.
 
-5. Lead with the corrected reference. The original labels cap F1 at 0.942 and nothing
-   above that is measurable against them. Keep reporting both.
+5. Lead with the corrected reference (now rebuilt on true time order,
+   `build/corrected_reference_v2/`). The re-derived label ceiling is ~0.967
+   (KK2) / 0.969 (KK1), not 0.942/0.968. Keep reporting both references.
 
 Not on this list: more inference strategies. Eight were measured and all stalled
 together, which is what sent the work to the training side.

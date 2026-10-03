@@ -15,7 +15,7 @@ either oversell this software or dismiss it unfairly.
 | What is being counted | Measured | Can it reach 99%? |
 |---|---|---|
 | **1. Each cell outline, per frame** | F1 **0.839** in-distribution; **0.30–0.48** held out | **No.** Not with this model and this much labelled data. |
-| **2. Cell identity along a trajectory** | **100%** of the available ground truth: no swap, no merge, no cross-channel link | **Yes**, and it is already there on this data. |
+| **2. Cell identity along a trajectory** | No swap, merge or cross-lane link on the hand-checked sample movies and the synthetic identity tests. There is **no independent tracking ground truth** on this data, so this is verified against hand-checked expected tracks and planted-identity synthetics, not measured against labelled trajectories. | Not independently measurable here; a manual-trajectory protocol ships for when it is. |
 | **3. The reported quantity — migration speed** | Net speed **exact at the median, within 2.7–2.9% at p90** at realistic detection loss | **Yes for net speed and net displacement**; ~91–95% for the mean of instantaneous speeds. |
 
 The thing a researcher publishes is level 3. The thing a segmentation
