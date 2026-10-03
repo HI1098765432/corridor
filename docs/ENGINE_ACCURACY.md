@@ -85,3 +85,20 @@ t3_dual, so the gap is held conservative).
    98%. Closing it needs smarter gap bridging that is identity-safe.
 3. The metric uses eye-verified counts; per-cell trajectory labels would let
    identity be scored directly rather than via track-count.
+
+## Explored and not adopted: appearance-only evidence-gated bridging
+
+To push the dropout case, bridging was made *evidence-gated*: merge two
+fragments only when the cell's own matched-filter template is found (NCC) in
+the frames between them. Measured (`engine_real_benchmark.py`, EV-gated mode):
+it *helped* the single-cell movie (t1 0.5-drop F1 0.767 → 0.831, less
+fragmentation) but *broke* the multi-cell movie (t3_dual clean F1 1.000 →
+0.667) — it merged two distinct cells, because similar-looking cells
+template-match each other across a gap. The honest conclusion: **appearance
+alone over-merges look-alike cells; blind gap-bridging fragments under
+dropout.** The correct next step is global (min-cost-flow) data association
+that bridges only when a fragment is the *unique* motion- and appearance-
+consistent continuation — joint, not appearance-only. The committed benchmark
+therefore keeps the conservative `max_gap=5` stitch (identity-correct at the
+operating point, precision 1.000), and EV-gating stays a measured negative
+result, not the shipped path.

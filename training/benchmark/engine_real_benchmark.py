@@ -161,7 +161,85 @@ def template_recover(images, objs, track, win=16, ncc=0.5):
     return present
 
 
-def reconstruct(movie, nframes, drop, seed, use_reg, use_stitch, use_tmpl):
+def _template(images, seg, r=9):
+    H, W = images.shape[1:]
+    crops = []
+    for t, (x, y) in seg.items():
+        xi, yi = int(round(x)), int(round(y))
+        if r <= yi < H - r and r <= xi < W - r:
+            crops.append(images[t, yi - r:yi + r, xi - r:xi + r])
+    return np.median(np.stack(crops), 0) if len(crops) >= 2 else None
+
+
+def _ncc_at(images, t, tmpl, cx, cy, win):
+    H, W = images.shape[1:]
+    y0, y1 = max(0, int(cy) - win), min(H, int(cy) + win)
+    x0, x1 = max(0, int(cx) - win), min(W, int(cx) + win)
+    reg = images[t, y0:y1, x0:x1]
+    if reg.shape[0] <= tmpl.shape[0] or reg.shape[1] <= tmpl.shape[1]:
+        return 0.0
+    return float(match_template(reg, tmpl).max())
+
+
+def evidence_bridge(images, objs, tracks, max_bridge=12, win=16, ncc=0.5, confirm_frac=0.6):
+    """Evidence-gated stitch + recovery. Two fragments are merged ONLY if the
+    cell's own template is found (NCC) in most of the frames between them --
+    which happens when the detector was merely blind there (the cell is still
+    in the pixels), and does NOT happen when the cell truly left. Dropping a
+    detection never drops the cell from the image, so this recovers the weak-
+    proposer case while refusing to fuse two genuinely different cells."""
+    segs = []
+    for tr in tracks:
+        d = {}
+        for (t, lab) in tr:
+            _, x, y = centroid(objs, (t, lab))
+            d[t] = (x, y)
+        if d:
+            segs.append(d)
+    changed = True
+    while changed:
+        changed = False
+        segs.sort(key=lambda s: min(s))
+        for i, a in enumerate(segs):
+            if a is None:
+                continue
+            te = max(a); xe, ye = a[te]
+            tmpl = _template(images, a)
+            for j, b in enumerate(segs):
+                if b is None or j == i:
+                    continue
+                tb = min(b)
+                gap = tb - te
+                if not (1 <= gap <= max_bridge) or tmpl is None:
+                    continue
+                xb, yb = b[tb]
+                confirmed, inner = {}, list(range(te + 1, tb))
+                for t in inner:
+                    w = (t - te) / (tb - te)
+                    cx, cy = xe * (1 - w) + xb * w, ye * (1 - w) + yb * w
+                    if _ncc_at(images, t, tmpl, cx, cy, win) >= ncc:
+                        confirmed[t] = (cx, cy)
+                if not inner or len(confirmed) >= confirm_frac * len(inner):
+                    a.update(confirmed); a.update(b); segs[j] = None; changed = True
+                    break
+        segs = [s for s in segs if s is not None]
+    # fill interior holes within each merged segment that the template confirms
+    out = []
+    for s in segs:
+        tmpl = _template(images, s)
+        ts = sorted(s)
+        present = set(ts)
+        if tmpl is not None:
+            xs = np.array([s[t][0] for t in ts]); ys = np.array([s[t][1] for t in ts])
+            px, py = np.polyfit(ts, xs, 1), np.polyfit(ts, ys, 1)
+            for t in range(ts[0], ts[-1] + 1):
+                if t not in s and _ncc_at(images, t, tmpl, np.polyval(px, t), np.polyval(py, t), win) >= ncc:
+                    present.add(t)
+        out.append(present)
+    return out
+
+
+def reconstruct(movie, nframes, drop, seed, use_reg, use_stitch, use_tmpl, evidence=False):
     rng = np.random.default_rng(seed)
     images, masks = load(movie, nframes)
     if use_reg:
@@ -174,6 +252,8 @@ def reconstruct(movie, nframes, drop, seed, use_reg, use_stitch, use_tmpl):
             o = {lab: m for lab, m in o.items() if rng.random() >= drop}
         objs[t] = o
     tracks = link(objs, nframes)
+    if evidence:
+        return evidence_bridge(images, objs, tracks)
     if use_stitch:
         tracks = stitch(tracks, objs)
     present_sets = []
@@ -201,14 +281,14 @@ def score(present_sets, expected):
 
 
 if __name__ == "__main__":
-    print("4D-ENGINE real-data benchmark (registration+atlas+stitch+template), vs eye-verified truth")
-    print(f"{'movie':>15} {'drop':>5} {'reg':>4} {'stch':>5} {'tmpl':>5} {'trk(exp)':>9} {'rec':>6} {'prec':>6} {'F1':>6}")
+    print("4D-ENGINE real-data benchmark, vs eye-verified truth. EV = evidence-gated bridging.")
+    print(f"{'movie':>15} {'drop':>5} {'mode':>9} {'trk(exp)':>9} {'rec':>6} {'prec':>6} {'F1':>6}")
     for movie, expected in EXPECTED_COUNTS.items():
         n = len(expected); et = EXPECTED_TRACKS[movie]
         for drop in (0.0, 0.3, 0.5):
-            for use_reg, use_stitch, use_tmpl in [(True, True, True)]:
-                rows = [score(reconstruct(movie, n, drop, s, use_reg, use_stitch, use_tmpl), expected)
+            for mode, ev in [("stitch+tpl", False), ("EV-gated", True)]:
+                rows = [score(reconstruct(movie, n, drop, s, True, True, True, evidence=ev), expected)
                         for s in range(15)]
                 rec, prec, f1, ntr = np.mean(rows, axis=0)
-                print(f"{movie:>15} {drop:>5.1f} {int(use_reg):>4} {int(use_stitch):>5} {int(use_tmpl):>5} "
-                      f"{ntr:>4.1f}/{et:<4} {rec:>6.3f} {prec:>6.3f} {f1:>6.3f}")
+                print(f"{movie:>15} {drop:>5.1f} {mode:>9} {ntr:>4.1f}/{et:<4} "
+                      f"{rec:>6.3f} {prec:>6.3f} {f1:>6.3f}")
