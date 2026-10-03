@@ -123,10 +123,15 @@ class MeanRegressor:
 class ConditionMedianRegressor:
     """Training median of the sample's condition, else the overall median.
 
-    With a single experiment every sample has the same condition, so on the
-    supplied data this *is* the population median; it is kept because the
-    directive makes it mandatory and because it becomes a real baseline the
-    day a second condition is analysed.
+    It differs from the population median only when a held-out sample's
+    condition also occurs in the training fold, i.e. when one condition was
+    run in at least two of the held-out groups (fields or acquisitions). The
+    condition must therefore be a real label supplied with the data
+    (``dataset.load_result_folder``), never derived from the acquisition or
+    experiment id: under a leave-one-acquisition-out split such a label is by
+    construction never in training. No condition labels exist for the supplied
+    movies, so there every sample is ``unspecified`` and this *is* the
+    population median; it is kept because the directive makes it mandatory.
     """
 
     def fit(self, X, y, *, groups=None, condition=None):
@@ -620,10 +625,11 @@ class MaskAutoencoder:
     """A small convolutional autoencoder on 64x64 standardised mask crops.
 
     About 30 k parameters, full-batch Adam, seeded and single-process. It sees
-    masks only -- never a target -- and is fitted per cross-validation fold on
-    that fold's training movies, so a held-out movie's shapes never shape the
-    embedding that is used to predict it. Torch is imported here and nowhere
-    else in the package, so the rest runs without it.
+    masks only -- never a target -- and is fitted once per held-out outer group
+    (field or acquisition) on the other groups' masks (``evaluate.Embedder``),
+    so a held-out group's shapes never shape the embedding that is used to
+    predict it. Torch is imported here and nowhere else in the package, so the
+    rest runs without it.
     """
 
     def __init__(self, latent_dim: int = 8, epochs: int = 150, lr: float = 5e-3,
@@ -721,8 +727,8 @@ def split_conformal(make_model, X_train: np.ndarray, y_train: np.ndarray, groups
     observations: a calibration frame whose neighbour was used for fitting has
     an optimistically small residual, and the interval would undercover). The
     guarantee assumes calibration and test samples are exchangeable; a
-    held-out movie need not be, which is exactly what the empirical coverage
-    in the report checks.
+    held-out field or acquisition need not be, which is exactly what the
+    empirical coverage in the report checks.
     """
     rng = np.random.default_rng(seed)
     tracks = np.unique(groups_train)

@@ -3,7 +3,8 @@
 Everything here is out-of-sample at the level the claim is about:
 
 - **Outer split**: leave one group out, groups = fields of view (movies that
-  share pixels merged; experiments once there is more than one). Every split is checked with
+  share pixels merged), or acquisitions once there are two resolved ones
+  (:func:`~.dataset.outer_split`). Every split is checked with
   :func:`~.dataset.assert_no_track_straddles` before a model sees it.
 - **Inner selection** (penalties): grouped by track, inside the outer training
   fold only.
@@ -23,10 +24,12 @@ null from data with none of that structure -- too narrow a null, and too many
 false discoveries. Instead the tracks' target sequences are concatenated in a
 random order and circularly shifted by a random offset
 (:func:`track_block_permutation`): every target value is used exactly once, runs
-of consecutive values stay together (so persistence survives), and no track
-keeps its own targets. The synthetic null in :mod:`.synthetic` is built to have
-exactly the structure that fools a row shuffle, and the experiment reports the
-false-positive rate of both schemes on it.
+of consecutive values stay together (so persistence survives), and most rows
+receive another track's targets. Not all: the shift can hand a track some of
+its own rows back, which leaves part of any real signal in the null and can
+only make the test conservative. The synthetic null in :mod:`.synthetic` is
+built to have exactly the structure that fools a row shuffle, and the
+experiment reports the false-positive rate of both schemes on it.
 
 Delta (directive section 49)
 ----------------------------
@@ -39,9 +42,13 @@ rest. Shuffling the morphology rows outright would also break their
 correlation with history, and C's null would then be "history plus noise
 columns" rather than "history plus a redundant copy of history". Instead each
 morphology column is split into the part a linear fit on history explains
-(kept in place) and its residual (moved in track blocks), the covariate
-permutation of Freedman and Lane. The fit uses no target, so it cannot leak
-one. A track-bootstrap interval for Delta-MAE is reported beside the p-value.
+(kept in place) and its residual (moved in track blocks): a covariate-residual
+permutation, what Winkler et al. (2014) list as the Smith procedure. It is not
+Freedman-Lane, which permutes the residuals of the *response* under the
+reduced model. The fit uses no target, so it cannot leak one. Its level is
+measured, not assumed: the experiment runs it on the synthetic nulls for both
+the ridge and the logistic Delta (``synthetic_validation.calibration``). A
+track-bootstrap interval for Delta-MAE is reported beside the p-value.
 """
 
 from __future__ import annotations
@@ -148,11 +155,12 @@ class Embedder:
     """Fits the mask autoencoder on every crop *outside* the held-out group.
 
     ``pool_crops``/``pool_groups`` are all usable masks (including frames with
-    no future target) and their fields, so the unsupervised part learns from as
-    much shape as exists without ever seeing the held-out field. Fitted models are cached by
-    held-out group, so every task, model and permutation that holds out the
-    same movie reuses one autoencoder (it never sees targets, so permuting
-    targets cannot change it).
+    no future target) and their outer groups (``PredictionDataset.group_ids``
+    of the outer unit: field or acquisition), so the unsupervised part learns
+    from as much shape as exists without ever seeing the held-out group. Fitted
+    models are cached by held-out group, so every task, model and permutation
+    that holds out the same group reuses one autoencoder (it never sees
+    targets, so permuting targets cannot change it).
     """
 
     def __init__(self, pool_crops: np.ndarray, pool_groups: np.ndarray, *, seed: int = 0,
@@ -411,7 +419,7 @@ def permutation_test(task: Task, spec: ModelSpec, baseline: ModelSpec, *, n_perm
 def history_residualisation(strict: np.ndarray, history: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """(fitted, residual) of each morphology column regressed on history (with intercept).
 
-    The Freedman-Lane split used by :func:`history_delta`: ``fitted`` is what
+    The covariate split used by :func:`history_delta`: ``fitted`` is what
     history already says about the shape and stays in place, ``residual`` is
     what only the shape says and is the part a permutation may move. Least
     squares on the covariates alone -- no target enters, so the split cannot
@@ -452,8 +460,8 @@ def history_delta(task: Task, *, n_perm: int = 199, seed: int = 0, group_by: str
     null = np.array(null)
     p = _permutation_p(null, observed)
     out = {"B": B.name, "C": C.name,
-           "permutation": "Freedman-Lane: strict morphology residualised on history, "
-                          "residuals moved in track blocks",
+           "permutation": "covariate-residual (Smith): strict morphology residualised on "
+                          "history, residuals moved in track blocks",
            "strict_variance_explained_by_history_median": float(np.median(explained)),
            "n_permutations": int(n_perm), "p_value": float(p),
            "null_mean": float(np.mean(null)), "null_q95": float(np.quantile(null, 0.95))}

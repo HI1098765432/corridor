@@ -47,12 +47,39 @@ def test_ridge_matches_the_closed_form():
     np.testing.assert_allclose(tiny.predict(X), A @ ols, rtol=1e-7)
 
 
-def test_ridge_penalty_is_chosen_by_whole_tracks():
-    X, y, groups = _data()
-    model = M.RidgeRegressor(seed=1).fit(X, y, groups=groups)
-    assert model.alpha_ in M.RIDGE_ALPHAS
-    for tr, va in group_kfold(groups, 5, seed=1):
-        assert not set(groups[tr]) & set(groups[va])
+def test_ridge_penalty_is_chosen_by_whole_tracks(monkeypatch):
+    """The inner folds receive the tracks, keep them whole, and that changes the answer.
+
+    Each cell's features and target are constant along its track and unrelated
+    across cells, with more features than cells. Predicting a frame from its
+    own track's other frames is then trivial and rewards the least penalty;
+    predicting an unseen cell is impossible and rewards the most.
+    """
+    seen = []
+    real = M.group_kfold
+
+    def spy(groups, k, seed=0):
+        folds = real(groups, k, seed)
+        seen.append((np.asarray(groups).copy(), folds))
+        return folds
+
+    monkeypatch.setattr(M, "group_kfold", spy)
+    rng = np.random.default_rng(0)
+    n_tracks, per, p = 24, 5, 30
+    track = np.repeat(np.arange(n_tracks), per)
+    X = rng.normal(size=(n_tracks, p))[track] + 0.01 * rng.normal(size=(len(track), p))
+    y = rng.normal(size=n_tracks)[track] + 0.01 * rng.normal(size=len(track))
+
+    by_track = M.RidgeRegressor(seed=1).fit(X, y, groups=track).alpha_
+    assert len(seen) == 1
+    np.testing.assert_array_equal(seen[0][0], track)
+    assert len(seen[0][1]) == M.INNER_FOLDS
+    for tr, va in seen[0][1]:
+        assert not set(track[tr]) & set(track[va])
+
+    by_row = M.RidgeRegressor(seed=1).fit(X, y, groups=np.arange(len(y))).alpha_
+    assert by_track == M.RIDGE_ALPHAS.max()
+    assert by_row <= M.RIDGE_ALPHAS[2]
 
 
 def test_elastic_net_satisfies_its_optimality_conditions():

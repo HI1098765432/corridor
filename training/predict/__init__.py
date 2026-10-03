@@ -15,7 +15,7 @@ Modules, in the order the evidence flows:
   texture, explicitly not morphology) and *motion history* (previous speeds,
   a comparator, never a morphology result).
 - ``dataset``   -- per-observation samples with targets at +1/+3/+6 frames and
-  experiment/movie/track ids; splits never cut a track.
+  acquisition/experiment/field/movie/track ids; splits never cut a track.
 - ``models``    -- numpy estimators (no scikit-learn in the app venv), the
   mandatory baselines, a tiny torch autoencoder on standardised mask crops,
   and split-conformal intervals.

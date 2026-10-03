@@ -27,12 +27,20 @@ is counted, never silent):
 - Masks touching the image border are cut off by the frame: their shape is the
   crop's, not the cell's.
 
-Splits: every sample carries ``experiment``, ``field``, ``movie`` and
-``track_uid`` (``movie/track_id``). Cross-validation groups are fields, or
-experiments as soon as there are two (:func:`outer_grouping`), so a track is
-always wholly inside one group; :func:`assert_no_track_straddles` enforces it
-on every split the evaluation makes. Fragments of one physical cell that the tracker split into
-two tracks are inside the same movie, so they stay together too.
+Splits: every sample carries ``acquisition``, ``experiment``, ``field``,
+``movie`` and ``track_uid`` (``movie/track_id``). Cross-validation groups are
+fields, or acquisitions as soon as there are two *resolved* ones
+(:func:`outer_split`), so a track is always wholly inside one group;
+:func:`assert_no_track_straddles` enforces it on every split the evaluation
+makes. Fragments of one physical cell that the tracker split into two tracks
+are inside the same movie, so they stay together too.
+
+``experiment`` is the design contract's id, date + series
+(``training.datasets``), and is recorded as such. It is *not* the unit of
+independence: the supplied nd2 is ``T(54) x XY(57)``, so a series is one of 57
+stage positions in one dish on one day. ``acquisition`` is that unit (see
+:func:`load_result_folder`); two series of one acquisition are compared by
+pixels like two crops, never assumed independent.
 
 A *field* is a set of movies that show the same pixels. Movies are crops, and
 two crops of one acquisition can overlap: in the supplied data ``052924_t1``
@@ -62,10 +70,12 @@ from . import features as F
 HORIZONS_FRAMES = (1, 3, 6)
 #: "Migrating" means the net displacement over the horizon, divided by its
 #: elapsed time, is at least this. 12 um/hr is a cell moving its own width
-#: every 20 minutes: the width is the 4.0 um that ``corridor.core.qc``
+#: every 20 minutes: the width is the 4.0 um constant that ``corridor.core.qc``
 #: (``STATIONARY_NET_UM``) uses for "has not moved its own width" (cells 9-15
-#: px wide at 0.467 um/px), and 20 minutes is the supplied frame interval, so at
-#: h=1 this label and that QC rule agree. It is a *rate*, so it means the same
+#: px wide at 0.467 um/px), and 20 minutes is the supplied frame interval. Only
+#: the number is shared: the QC rule judges a whole track's net displacement
+#: and only once it spans ``STATIONARY_MIN_MINUTES`` (30), so it never fires on
+#: one 20-minute step. It is a *rate*, so it means the same
 #: at every horizon and every frame interval. Fixed before any model was run;
 #: the distribution of the outcome had been looked at (median net rate about
 #: 19 um/hr), the features and models had not.
@@ -85,6 +95,12 @@ SAME_PIXELS_NCC = 0.99
 #: observations of 052924_t1 agree with 052924_1 to within 3.1 px; two distinct
 #: cells 9-15 px wide cannot have centroids this close without overlapping.
 DUPLICATE_MAX_PX = 5.0
+#: Prefix of a placeholder id: nothing said which acquisition or experiment
+#: the movie came from, so it is a name for "unknown", never a group.
+UNRESOLVED = "unknown:"
+#: Condition of a movie nobody labelled. One shared value, so the per-condition
+#: baseline is honestly the population median rather than a per-movie median.
+UNSPECIFIED_CONDITION = "unspecified"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -100,12 +116,17 @@ class LeakageError(AssertionError):
 class ResultFolder:
     path: Path
     movie: str
+    #: The contract's id, date + series (one stage position); see the module docstring.
     experiment: str
+    #: The unit of independence (:func:`load_result_folder`); ``UNRESOLVED``-prefixed if unknown.
+    acquisition: str
     pixel_size_um: float | None
     frame_interval_min: float | None
     tracks: pd.DataFrame
     image_path: Path | None
     run: dict = field(repr=False, default_factory=dict)
+    #: Experimental condition, only if someone said so (run.json or a mapping).
+    condition: str | None = None
 
     def masks(self) -> np.ndarray:
         with np.load(self.path / "masks.npz") as z:
@@ -116,17 +137,18 @@ class ResultFolder:
 #: ``corridor.learn.sequences``. The source name is matched only for its date.
 _LABEL_SOURCE = re.compile(r"^t:\s*\d+\s*/\s*\d+\s*-\s*(.*?)\s*\(series\s+(\d+)\)\s*$")
 _LEADING_DATE = re.compile(r"^(\d{8})(?!\d)")
+#: The contract's experiment id, as ``_experiment_from_tiff`` writes it.
+_EXPERIMENT_ID = re.compile(r"^(\d{8})-s\d+$")
 
 
-def _experiment_from_tiff(path: Path) -> str | None:
-    """Experiment id ``<yyyymmdd>-s<series>`` from the ImageJ ``Labels`` of frame 1.
+def _source_from_tiff(path: Path) -> tuple[str | None, int | None]:
+    """(date ``yyyymmdd``, series) of the source named in the ImageJ ``Labels`` of frame 1.
 
-    The acquisition plus series is the experiment: two crops of one series
-    share a dish, a day and a device, and are not independent replicates. The
-    id has the form ``training.datasets`` uses. The rest of the source name
-    carries experimental conditions and the repository is public, so it is
-    parsed for its date and dropped, never returned (``training/README.md``,
-    *Privacy*).
+    The rest of the source name carries experimental conditions and the
+    repository is public, so it is parsed for its date and dropped, never
+    returned (``training/README.md``, *Privacy*). (None, None) if the file or
+    its labels cannot be read; a source name without a leading date gives no
+    date rather than a guessed one.
     """
     try:
         import tifffile
@@ -134,15 +156,60 @@ def _experiment_from_tiff(path: Path) -> str | None:
         with tifffile.TiffFile(path) as tf:
             labels = (tf.imagej_metadata or {}).get("Labels")
     except Exception:  # noqa: BLE001 - metadata is optional evidence
-        return None
+        return None, None
     if not labels:
-        return None
+        return None, None
     first = labels[0] if isinstance(labels, (list, tuple)) else labels
     match = _LABEL_SOURCE.match(str(first).strip())
     if not match:
-        return None
+        return None, None
     date = _LEADING_DATE.match(match.group(1).strip())
-    return f"{date.group(1) if date else 'unknown'}-s{int(match.group(2)):02d}"
+    return (date.group(1) if date else None), int(match.group(2))
+
+
+def _experiment_from_tiff(path: Path) -> str | None:
+    """The contract's experiment id ``<yyyymmdd>-s<series>`` (the form ``training.datasets`` uses).
+
+    None without a date: an id such as ``unknown-s01`` would be shared by every
+    undated source of series 1 and pass for one real experiment.
+    """
+    date, series = _source_from_tiff(path)
+    return f"{date}-s{series:02d}" if date and series is not None else None
+
+
+def is_resolved(group_id) -> bool:
+    """False for a placeholder (``UNRESOLVED`` prefix) or an empty id."""
+    return bool(group_id) and not str(group_id).startswith(UNRESOLVED)
+
+
+def _acquisition_of(run: dict, experiment: str | None, image: Path | None) -> str | None:
+    """The unit an experiment-level split may hold out, or None if nothing says.
+
+    In order: ``run.json["acquisition"]``; the date of a contract experiment id
+    (``yyyymmdd-sNN``, from run.json or the TIFF); any other id run.json names
+    as its experiment (taken at its word, e.g. the synthetic sets); else the
+    TIFF source's date.
+
+    The *day*, not the nd2 file: the file name cannot be committed (*Privacy*),
+    and a date can be. Two files of one day are merged into one acquisition,
+    which can only make the split coarser, never leakier: dishes imaged the
+    same day usually share the cells' passage and the medium too. Someone who
+    knows two same-day dishes are independent says so with run.json's
+    ``acquisition``.
+    """
+    explicit = run.get("acquisition")
+    if explicit:
+        return str(explicit)
+    if experiment:
+        m = _EXPERIMENT_ID.match(str(experiment))
+        if m:
+            return m.group(1)
+        if run.get("experiment"):
+            return str(experiment)
+    if image is not None:
+        date, _ = _source_from_tiff(image)
+        return date
+    return None
 
 
 def _rel(path: Path | None) -> str | None:
@@ -166,8 +233,18 @@ def _resolve_image(run: dict, folder: Path) -> Path | None:
     return None
 
 
-def load_result_folder(path: str | Path) -> ResultFolder:
-    """Read one Corridor result folder (schema v1 or v2 column names)."""
+def load_result_folder(path: str | Path, conditions: dict[str, str] | None = None) -> ResultFolder:
+    """Read one Corridor result folder (schema v1 or v2 column names).
+
+    ``experiment`` and ``acquisition`` that nothing resolves become
+    ``unknown:<folder name>`` (``UNRESOLVED``): a name for "unknown", which
+    :func:`outer_split` refuses to treat as a group of its own. The condition
+    comes from ``conditions`` (keyed by movie, then acquisition, then
+    experiment), else ``run.json["condition"]``, else stays None. Nothing
+    derives it from an id: a condition that is just the experiment id can never
+    appear in the training fold of a held-out experiment, and the per-condition
+    baseline would silently be the population median.
+    """
     path = Path(path)
     run = json.loads((path / "run.json").read_text(encoding="utf-8"))
     cal = run.get("calibration") or {}
@@ -182,13 +259,21 @@ def load_result_folder(path: str | Path) -> ResultFolder:
     experiment = run.get("experiment")
     if not experiment and image is not None:
         experiment = _experiment_from_tiff(image)
-    if not experiment:
-        experiment = f"unknown:{path.name}"
+    acquisition = _acquisition_of(run, experiment, image)
+    condition = None
+    for key in (path.name, acquisition, experiment):
+        if conditions and key and key in conditions:
+            condition = str(conditions[key])
+            break
+    if condition is None and run.get("condition"):
+        condition = str(run["condition"])
     return ResultFolder(
-        path=path, movie=path.name, experiment=str(experiment),
+        path=path, movie=path.name,
+        experiment=str(experiment) if experiment else f"{UNRESOLVED}{path.name}",
+        acquisition=str(acquisition) if acquisition else f"{UNRESOLVED}{path.name}",
         pixel_size_um=float(px) if px else None,
         frame_interval_min=float(fi) if fi else None,
-        tracks=tracks, image_path=image, run=run,
+        tracks=tracks, image_path=image, run=run, condition=condition,
     )
 
 
@@ -263,26 +348,38 @@ def find_region_overlaps(loaded: list[ResultFolder], stacks: dict[str, np.ndarra
     Only frames with the same *source* frame index are compared (ImageJ frame
     numbers recorded in ``run.json``), so "identical" means the same pixels at
     the same instant. A pair is an overlap if the best tile matches at
-    ``SAME_PIXELS_NCC`` or better at one offset in every checked frame.
+    ``SAME_PIXELS_NCC`` or better at one offset in every checked frame. Two
+    series (stage positions) of one acquisition are compared the same way:
+    their time point k is the same imaging cycle, and positions in one dish
+    can overlap.
+
+    Every pair gets an evidence entry. A pair that could not be compared (a
+    movie without its image) says so, ``"not checked: no image"``; it is never
+    dropped, because a missing row there is exactly how a duplicated cell
+    would go unnoticed.
     """
     overlaps: list[RegionOverlap] = []
     evidence: list[dict] = []
     for a_i, a in enumerate(loaded):
         for b in loaded[a_i + 1:]:
+            if is_resolved(a.acquisition) and is_resolved(b.acquisition) \
+                    and a.acquisition != b.acquisition:
+                # Frame 1 of two acquisitions is two instants, so equal source
+                # numbers prove nothing here, and two dishes share no cell.
+                evidence.append({"small": a.movie, "large": b.movie,
+                                 "verdict": "different acquisitions"})
+                continue
             if a.movie not in stacks or b.movie not in stacks:
+                evidence.append({"small": a.movie, "large": b.movie,
+                                 "verdict": "not checked: no image",
+                                 "missing_image": sorted(m for m in (a.movie, b.movie)
+                                                         if m not in stacks)})
                 continue
             sa, sb = stacks[a.movie], stacks[b.movie]
             small, large = (a, b) if sa[0].size <= sb[0].size else (b, a)
             ss, sl = stacks[small.movie], stacks[large.movie]
             src_s, src_l = _source_frames(small, len(ss)), _source_frames(large, len(sl))
             entry: dict = {"small": small.movie, "large": large.movie}
-            known = not (a.experiment.startswith("unknown:") or b.experiment.startswith("unknown:"))
-            if known and a.experiment != b.experiment:
-                # Frame 1 of two acquisitions is two instants, so equal source
-                # numbers prove nothing here, and two dishes share no cell.
-                entry["verdict"] = "different experiments"
-                evidence.append(entry)
-                continue
             if src_s is None or src_l is None:
                 entry["verdict"] = "not checked: no source frame numbers"
                 evidence.append(entry)
@@ -339,7 +436,7 @@ def _duplicate_tracks(overlap: RegionOverlap, small: ResultFolder, large: Result
 
 
 #: Overlap verdicts that prove two movies hold different cells.
-ESTABLISHED_DISTINCT = ("different regions", "different experiments")
+ESTABLISHED_DISTINCT = ("different regions", "different acquisitions")
 
 
 def pixel_established_fields(folders: list[dict], evidence: list[dict]) -> list[str]:
@@ -347,7 +444,8 @@ def pixel_established_fields(folders: list[dict], evidence: list[dict]) -> list[
 
     Two fields are established as distinct only if every pair of their movies
     was compared at a shared instant and found to be different regions, or
-    belongs to two known experiments (two dishes share no cell). A crop
+    belongs to two resolved acquisitions (two dishes share no cell). A pair
+    with no evidence entry, or one ``"not checked"``, is not established. A crop
     that shares no source frame with another (``052924_t3_dual`` is frames
     42-52, ``052924_1`` frames 1-20) may show the same lanes, and so possibly
     the same cell, hours later; pixels cannot say (``SAME_PIXELS_NCC``), so it
@@ -408,10 +506,23 @@ class PredictionDataset:
     all_crops: np.ndarray = field(default_factory=lambda: np.zeros((0, F.CROP_SIZE_PX, F.CROP_SIZE_PX), np.float32))
     all_crop_movies: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=object))
     all_crop_experiments: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=object))
+    all_crop_acquisitions: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=object))
     all_crop_fields: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=object))
     #: Pixel-identical overlaps found between movies, and the evidence for every pair.
     overlaps: list = field(default_factory=list)
     overlap_evidence: list = field(default_factory=list)
+    #: What could and could not be checked (``build_dataset``): a guard that
+    #: did not run must be visible, not just produce fewer rows.
+    checks: dict = field(default_factory=dict)
+
+    def group_ids(self, by: str) -> np.ndarray:
+        """``all_crops``' group ids for a grouping of :meth:`Task.groups` (the embedding pool)."""
+        pools = {"movie": self.all_crop_movies, "field": self.all_crop_fields,
+                 "experiment": self.all_crop_experiments,
+                 "acquisition": self.all_crop_acquisitions}
+        if by not in pools:
+            raise ValueError(f"no embedding pool for grouping {by!r}")
+        return pools[by]
 
     def target_names(self) -> list[str]:
         return [c for c in self.samples.columns if re.match(r"^(disp_um|speed_um_per_hr|migrating)_h\d+$", c)]
@@ -445,6 +556,7 @@ class PredictionDataset:
             movie=sub["movie"].to_numpy(),
             field=sub["field"].to_numpy(),
             experiment=sub["experiment"].to_numpy(),
+            acquisition=sub["acquisition"].to_numpy(),
             condition=sub["condition"].to_numpy(),
             frame=sub["frame"].to_numpy(int),
             classification=target.startswith("migrating"),
@@ -467,6 +579,7 @@ class Task:
     movie: np.ndarray
     field: np.ndarray
     experiment: np.ndarray
+    acquisition: np.ndarray
     condition: np.ndarray
     frame: np.ndarray
     classification: bool
@@ -486,6 +599,8 @@ class Task:
             return self.field
         if by == "experiment":
             return self.experiment
+        if by == "acquisition":
+            return self.acquisition
         raise ValueError(f"unknown grouping {by!r}")
 
     def summary(self) -> dict:
@@ -495,6 +610,7 @@ class Task:
             "n_movies": int(len(np.unique(self.movie))),
             "n_fields": int(len(np.unique(self.field))),
             "n_experiments": int(len(np.unique(self.experiment))),
+            "n_acquisitions": int(len(np.unique(self.acquisition))),
             "observations_per_field": {str(k): int(v) for k, v in
                                        zip(*np.unique(self.field, return_counts=True))},
             "observations_per_movie": {str(k): int(v) for k, v in
@@ -513,9 +629,17 @@ class Task:
 
 def build_dataset(folders: list[str | Path], *, horizons: tuple[int, ...] = HORIZONS_FRAMES,
                   with_phenotype: bool = True, exclude_border: bool = True,
-                  detect_overlaps: bool = True) -> PredictionDataset:
-    """Samples from Corridor result folders (see the module docstring)."""
-    loaded = [load_result_folder(f) for f in folders]
+                  detect_overlaps: bool = True,
+                  conditions: dict[str, str] | None = None) -> PredictionDataset:
+    """Samples from Corridor result folders (see the module docstring).
+
+    ``conditions`` maps a movie, acquisition or experiment id to its
+    experimental condition (:func:`load_result_folder`); unlabelled movies get
+    ``UNSPECIFIED_CONDITION``. ``ds.checks`` records which movies had no image,
+    whether every pair of movies was compared for overlap, and whether the
+    phenotype set was computed or dropped, and why.
+    """
+    loaded = [load_result_folder(f, conditions) for f in folders]
     calibrated = {lf.pixel_size_um is not None for lf in loaded}
     if len(calibrated) > 1:
         raise ValueError(
@@ -536,6 +660,21 @@ def build_dataset(folders: list[str | Path], *, horizons: tuple[int, ...] = HORI
                 stacks[lf.movie] = tifffile.imread(lf.image_path)
     overlaps, overlap_evidence = (find_region_overlaps(loaded, stacks)
                                   if detect_overlaps else ([], []))
+    without_image = sorted(lf.movie for lf in loaded if lf.image_path is None)
+    unchecked = [e for e in overlap_evidence if str(e.get("verdict", "")).startswith("not checked")]
+    checks = {
+        "movies_without_image": without_image,
+        "overlap_check": ("not requested" if not detect_overlaps
+                          else "complete" if not unchecked
+                          else f"incomplete: {len(unchecked)} of {len(overlap_evidence)} movie pairs "
+                               "not compared"),
+        "overlap_pairs_not_checked": len(unchecked),
+        "phenotype": ("not requested" if not with_phenotype
+                      else "computed" if want_pheno
+                      else "dropped: no image for " + ", ".join(without_image)),
+        "unresolved_acquisitions": sorted(lf.movie for lf in loaded if not is_resolved(lf.acquisition)),
+        "n_movies_with_condition": int(sum(lf.condition is not None for lf in loaded)),
+    }
     by_movie = {lf.movie: lf for lf in loaded}
     duplicates: dict[str, set[int]] = {}
     for o in overlaps:
@@ -549,6 +688,7 @@ def build_dataset(folders: list[str | Path], *, horizons: tuple[int, ...] = HORI
     all_crops: list[np.ndarray] = []
     all_movies: list[str] = []
     all_exps: list[str] = []
+    all_acqs: list[str] = []
     all_fields: list[str] = []
     excl = {"recovered_no_mask": 0, "label_area_mismatch": 0, "touches_border": 0,
             "too_small_or_no_contour": 0, "duplicate_of_overlapping_movie": 0,
@@ -568,8 +708,12 @@ def build_dataset(folders: list[str | Path], *, horizons: tuple[int, ...] = HORI
         excl["duplicate_of_overlapping_movie"] += int(is_dupe.sum())
         tr_all = tr_all[~is_dupe].reset_index(drop=True)
         folder_info.append({
-            "movie": lf.movie, "experiment": lf.experiment, "path": _rel(lf.path),
+            "movie": lf.movie, "experiment": lf.experiment, "acquisition": lf.acquisition,
+            "path": _rel(lf.path),
             "field": field_of[lf.movie],
+            # Whether a condition was given, never the label itself: conditions
+            # are what the privacy rule keeps out of committed files.
+            "condition_known": lf.condition is not None,
             "source_frames": _source_frames(lf, len(masks)),
             "duplicate_tracks_dropped": sorted(dropped),
             "pixel_size_um": lf.pixel_size_um, "frame_interval_min": lf.frame_interval_min,
@@ -622,11 +766,13 @@ def build_dataset(folders: list[str | Path], *, horizons: tuple[int, ...] = HORI
                 all_crops.append(crop)
                 all_movies.append(lf.movie)
                 all_exps.append(lf.experiment)
+                all_acqs.append(lf.acquisition)
                 all_fields.append(field_of[lf.movie])
                 _, n_components = F.largest_component(crop_mask)
                 row: dict = {
                     "experiment": lf.experiment,
-                    "condition": lf.experiment,
+                    "acquisition": lf.acquisition,
+                    "condition": lf.condition if lf.condition is not None else UNSPECIFIED_CONDITION,
                     "field": field_of[lf.movie],
                     "movie": lf.movie,
                     "track_id": int(track_id),
@@ -670,15 +816,17 @@ def build_dataset(folders: list[str | Path], *, horizons: tuple[int, ...] = HORI
         all_crops=np.stack(all_crops) if all_crops else np.zeros((0, F.CROP_SIZE_PX, F.CROP_SIZE_PX), np.float32),
         all_crop_movies=np.array(all_movies, dtype=object),
         all_crop_experiments=np.array(all_exps, dtype=object),
+        all_crop_acquisitions=np.array(all_acqs, dtype=object),
         all_crop_fields=np.array(all_fields, dtype=object),
         overlaps=[{"small": o.small, "large": o.large, "offset_rc": list(o.offset_rc),
                    "ncc": o.ncc, "source_frames_checked": o.source_frames_checked}
                   for o in overlaps],
         overlap_evidence=overlap_evidence,
+        checks=checks,
     )
     if len(ds.samples):
-        assert_tracks_within_groups(ds.samples, "movie")
-        assert_tracks_within_groups(ds.samples, "field")
+        for col in ("movie", "field", "acquisition"):
+            assert_tracks_within_groups(ds.samples, col)
     return ds
 
 
@@ -724,19 +872,41 @@ def assert_no_track_straddles(track: np.ndarray, train_idx: np.ndarray, test_idx
         raise LeakageError(f"{len(both)} track(s) on both sides of a split, e.g. {list(both[:3])}")
 
 
-def outer_grouping(experiments) -> str:
-    """The outer cross-validation unit: ``"experiment"`` from two experiments up, else ``"field"``.
+def outer_split(acquisitions) -> tuple[str, str]:
+    """(unit, why): ``"acquisition"`` from two resolved acquisitions up, else ``"field"``.
 
     The design contract asks for experiment-level splits. Cells of one dish,
     day and device share everything a new experiment would not (medium,
     coating, temperature, focus, the segmentation's error pattern), so holding
-    out a field of the same experiment measures less than generalisation to a
-    new one. With a single experiment that split does not exist, and a field
-    (crops sharing no pixels) is the strongest one there is; the switch is
-    automatic so that the first second experiment changes the claim's level
-    without anyone having to remember to.
+    out a field of the same dish measures less than generalisation to a new
+    one. The unit is therefore the acquisition, not the contract's date +
+    series id, which names one stage position of a dish (module docstring):
+    a second series of the same nd2 adds fields, never a second experiment.
+
+    A placeholder id (``UNRESOLVED``, a movie whose run.json names nothing and
+    whose image could not be read) is refused: it is a different string for
+    every movie, so counting it would turn leave-one-movie-out into an
+    "experiment-level" split, and in exactly the case where the overlap check
+    could not run either. With fewer than two resolved acquisitions, a field
+    (crops proven or assumed to share no pixels) is the strongest split there
+    is. The switch is automatic so that the first second acquisition changes
+    the claim's level without anyone having to remember to.
     """
-    return "experiment" if len({str(e) for e in experiments}) >= 2 else "field"
+    ids = sorted({str(a) for a in acquisitions})
+    unresolved = [a for a in ids if not is_resolved(a)]
+    if unresolved:
+        return "field", (f"{len(unresolved)} movie(s) with no resolved acquisition "
+                         f"({', '.join(unresolved[:3])}{', ...' if len(unresolved) > 3 else ''}); "
+                         "an unknown is not a group, so no acquisition-level split is claimed")
+    if len(ids) >= 2:
+        return "acquisition", f"{len(ids)} resolved acquisitions"
+    return "field", (f"one acquisition ({ids[0]}): leave-one-field-out is the strongest split"
+                     if ids else "no acquisitions")
+
+
+def outer_grouping(acquisitions) -> str:
+    """The unit of :func:`outer_split`, without its reason."""
+    return outer_split(acquisitions)[0]
 
 
 def leave_one_group_out(groups: np.ndarray, track: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
