@@ -2,8 +2,8 @@
 # src/corridor/_version.py: edit that file and re-run the script, not this one.
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(2, 0, 0, 0),
-    prodvers=(2, 0, 0, 0),
+    filevers=(2, 1, 0, 0),
+    prodvers=(2, 1, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -19,12 +19,12 @@ VSVersionInfo(
           [
             StringStruct('CompanyName', 'Corridor'),
             StringStruct('FileDescription', 'Corridor - Confined cell migration analysis'),
-            StringStruct('FileVersion', '2.0.0.0'),
+            StringStruct('FileVersion', '2.1.0.0'),
             StringStruct('InternalName', 'Corridor'),
             StringStruct('LegalCopyright', 'MIT licensed'),
             StringStruct('OriginalFilename', 'Corridor.exe'),
             StringStruct('ProductName', 'Corridor'),
-            StringStruct('ProductVersion', '2.0.0.0'),
+            StringStruct('ProductVersion', '2.1.0.0'),
           ],
         )
       ]

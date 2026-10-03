@@ -16,4 +16,4 @@ Kept to a single literal assignment so that setuptools and
 ``sync_version.py`` can read it without importing the package.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"

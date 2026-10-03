@@ -3,10 +3,33 @@ time-lapse, get cell trajectories and migration velocities you can check.
 
 ## Install
 
-Download **Corridor-2.0.0-Setup.exe** below and run it. It installs for the
+Download **Corridor-2.1.0-Setup.exe** below and run it. It installs for the
 current user, so no administrator is needed. Python, PyTorch, Cellpose and the
 validated segmentation model are all included — there is nothing else to
 install. (Napari is now an optional developer extra, not bundled by default.)
+
+## New in 2.1.0
+
+2.1 adds a second, lane-aware tracking engine and a live 4-D view of the
+analysis, on top of the 2.0 rewrite. No output format change; 2.0 analyses open
+unchanged.
+
+- **Lane-primary tracking for large along-lane motion.** A new tracking backend
+  keys a cell's identity on its microfluidic lane (which it physically cannot
+  leave) and links it along the lane by position continuity, instead of frame
+  overlap. On real movies where cells move several body-lengths per frame — fast
+  enough that overlap linking breaks — this takes trajectory F1 from 0.89 to
+  0.99. Select it under **Advanced → Tracking method**; the motion-model tracker
+  remains the default and is unchanged. With no detected lanes it has no effect.
+- **A 4-D block of the movie while it runs.** During analysis the preview
+  becomes an x–y–time block that fills in frame by frame — green where the engine
+  has finished a frame — so you can watch the reconstruction build.
+- **Measured robustness.** On a real movie with injected noise, detection is
+  unchanged up to ~0.25× the image noise and degrades gracefully above it, and
+  precision stays 1.0 throughout (noise causes missed cells, never phantom ones);
+  injected static cell-shaped artifacts produce no phantom cells.
+
+Full method, training and accuracy history: `docs/METHODS_AND_PROGRESS.md`.
 
 ## New in 2.0.0
 
@@ -240,10 +263,10 @@ used if one is present.
 ## Verifying the download
 
 The SHA-256 is published beside the installer in
-`Corridor-2.0.0-Setup.exe.sha256`:
+`Corridor-2.1.0-Setup.exe.sha256`:
 
 ```powershell
-Get-FileHash Corridor-2.0.0-Setup.exe -Algorithm SHA256
+Get-FileHash Corridor-2.1.0-Setup.exe -Algorithm SHA256
 ```
 
 The installer is also digitally signed, so any modification after build breaks
