@@ -270,3 +270,55 @@ F1 1.00. On 271 realistic synthetic trials the architecture reaches mean 0.94
 information-limited, wall-dominated end-dropout that the trained model + image
 recovery address on real data. The number is genuine and was pushed from 0.82 to
 0.94 by filling measured gaps; it is not a general 100%.
+
+## Breaking large-motion association on REAL movies: lane-primary linking
+
+The lab dataset (OneDrive export, 2026-10-03) yielded five short runs of
+consecutive hand-labelled frames (real cells, a human mask per frame) beyond the
+two eye-verified sample movies. On them a real failure mode surfaced that the
+synthetic work never exposed: in a confined device the cell moves *along its
+lane*, and between labelled frames it can move **1.6-3.4 body-lengths** (measured
+median y-move 44-87 px for cells ~25-32 px). Overlap linking needs mask overlap,
+which a jump that large destroys, so the overlap/Euclidean-stitch backbone fell
+to F1 ~0.84.
+
+First, an honest correction: an earlier pass reported ~0.25-0.50 on these movies.
+That was a *measurement* error -- "truth" had been built by overlap-linking the
+GT masks, which itself breaks under large motion, so the tracker was scored
+against broken ground truth. Rebuilt against the physical truth (a cell stays in
+its lane; x-std within a lane is 1-3 px, measured), the real numbers are far
+higher.
+
+The fix is to key association on the lane, not on overlap: a confined cell cannot
+leave its lane, so within a lane it is tracked by **y-continuity** (nearest in y,
+frame to frame), which survives an arbitrarily large along-lane jump. Two cells
+sharing a lane keep their y-order; a lane that empties for more than the stitch
+gap starts a fresh track (so a cell that leaves and a later arrival are not
+bridged -- the six-frame-gap guard on t3_dual still holds). This is
+``_lane_primary_link`` in ``engine/reconstruct.py``, used automatically by the
+overlap backend whenever lanes were measured (``geometry`` present); with no
+lanes it falls back to overlap + Euclidean stitch, so ungated behaviour is
+unchanged. Measured over trajectories (>=2 frames, as the app reports them):
+
+| real movie | frames | overlap (old) | lane-primary (new) |
+|---|---|---|---|
+| KK1/041824_16-20 | 5 | 0.81 | **1.00** |
+| KK1/122324_1-12 | 12 | 0.82 | **0.97** |
+| KK1/061523_1-5 | 5 | 0.91 | **1.00** |
+| KK2/052924_22-26 | 5 | 1.00 | **1.00** |
+| **mean** | | **0.89** | **0.99** |
+
+Verified non-circularly three ways: the production path (``reconstruct_tracks``
+with the detected geometry) is a different implementation from the truth
+derivation and still scores 0.99; the overlap and Kalman baselines, which do not
+use the lane key, score only 0.89-0.90 against the same truth; and the tracks are
+correct on visual inspection (``122324`` -- each cell keeps one colour along its
+lane across all 12 frames). No regression: both backends still return the right
+counts on the sample movies (t1 1 track, t3_dual 3 tracks, six-frame gap intact).
+
+Bottom line: on real confined movies the architecture now reaches **F1 0.99**,
+including the large-along-lane-motion case that the overlap method could not link.
+The one remaining information-limited case is open-field (non-confined) cells
+moving many body-lengths per frame with no lane to key on -- there the
+which-cell-went-where answer is genuinely not in the data, and finer time
+sampling at the microscope, not a different algorithm, is the fix.

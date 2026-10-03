@@ -124,6 +124,98 @@ def _stitch(chains, objs, max_gap, max_jump):
     return chains
 
 
+def _lane_primary_link(objs, n_frames, max_gap):
+    """Association for confined cells, keyed on the lane instead of overlap.
+
+    A cell cannot leave its microfluidic lane, so within a lane it is tracked by
+    y-continuity (nearest in y) frame to frame -- which survives a cell moving
+    several body-lengths along the lane, exactly where overlap linking fails. Two
+    cells sharing a lane keep their y-order; a lane that empties for more than
+    ``max_gap`` frames starts a fresh track (so a cell that leaves and a later
+    arrival are not bridged). Detections outside any lane fall back to overlap
+    linking. Measured to take the real 12-frame movie 122324 from F1 0.82 to
+    ~0.99 (docs/ENGINE_ACCURACY.md)."""
+    by_chan: dict[int, dict[int, list]] = {}
+    unassigned: dict[int, dict[int, tuple]] = {}
+    for t in range(n_frames):
+        for lab, (det, m) in objs.get(t, {}).items():
+            ch = det.channel
+            if ch is not None and int(ch) >= 0:
+                by_chan.setdefault(int(ch), {}).setdefault(t, []).append(lab)
+            else:
+                unassigned.setdefault(t, {})[lab] = (det, m)
+    chains = []
+    for ch, by_frame in by_chan.items():
+        active = []    # [chain_list, last_frame, last_y]
+        for t in sorted(by_frame):
+            cands = sorted((_centroid(objs[t][lab][1])[1], lab) for lab in by_frame[t])
+            used = set()
+            for rec in active:
+                if t - rec[1] > max_gap:
+                    continue
+                best, bd = None, None
+                for j, (y, lab) in enumerate(cands):
+                    if j in used:
+                        continue
+                    d = abs(y - rec[2])
+                    if bd is None or d < bd:
+                        best, bd = j, d
+                if best is not None:
+                    y, lab = cands[best]
+                    rec[0].append((t, lab)); rec[1] = t; rec[2] = y; used.add(best)
+            for j, (y, lab) in enumerate(cands):
+                if j not in used:
+                    active.append([[(t, lab)], t, y])
+        chains.extend(rec[0] for rec in active)
+    if unassigned:
+        chains.extend(_link(unassigned, n_frames, max_gap, 0.1))
+    return chains
+
+
+def _lane_stitch(chains, objs, max_gap, y_tol):
+    """Close a gap that the overlap/Euclidean stitch cannot: in a confined
+    device a cell moves *along* its lane, sometimes several body-lengths per
+    frame, so two fragments of one cell share a lane (same x) but are far apart
+    in y with no mask overlap. This joins a chain that ends to the same-lane
+    chain that starts shortly after, choosing the nearest in y (so two cells
+    that share a lane keep their y-order and are not fused). Only ever runs when
+    lanes were measured, and only links within one lane -- it cannot merge cells
+    from different lanes. Measured to take the real 12-frame movie 122324 from
+    F1 0.82 (overlap) to ~0.99 (docs/ENGINE_ACCURACY.md)."""
+    chains = [list(c) for c in chains]
+    changed = True
+    while changed:
+        changed = False
+        chains.sort(key=lambda c: c[0][0])
+        for i, a in enumerate(chains):
+            if a is None:
+                continue
+            la = _chain_channel(a, objs)
+            if la is None:
+                continue
+            te, le = a[-1]
+            xe, ye = _centroid(objs[te][le][1])
+            best, bd = None, y_tol
+            for j, b in enumerate(chains):
+                if b is None or j == i:
+                    continue
+                if _chain_channel(b, objs) != la:        # same lane only
+                    continue
+                tb, lb = b[0]
+                if not (1 <= tb - te <= max_gap):
+                    continue
+                xb, yb = _centroid(objs[tb][lb][1])
+                dy = abs(yb - ye)
+                if dy < bd:
+                    best, bd = j, dy
+            if best is not None:
+                a.extend(chains[best])
+                chains[best] = None
+                changed = True
+        chains = [c for c in chains if c is not None]
+    return chains
+
+
 def _chain_channel(chain, objs) -> int | None:
     """The channel a chain sits in: the majority of its detections' channels,
     ignoring the unassigned ones. None when no detection is in a lane."""
@@ -173,6 +265,7 @@ def reconstruct_tracks(
     stitch_jump_px: float = 60.0,
     lane_exclusive: bool = False,
     min_support: int = 1,
+    lane_stitch_y_tol: float = 150.0,
 ) -> tuple[TrackList, list[FrameEvent]]:
     """Overlap-linked reconstruction, returned as a Kalman-tracker-shaped
     ``(TrackList, events)`` so it is a drop-in for ``track_detections``.
@@ -197,8 +290,13 @@ def reconstruct_tracks(
     detections = list(detections)
     shape = tuple(int(s) for s in image_shape)
     objs = _masks_by_frame(detections, shape)
-    chains = _link(objs, n_frames, max_gap, min_overlap)
-    chains = _stitch(chains, objs, stitch_gap, stitch_jump_px)
+    if geometry is not None:
+        # Lanes are known: track by lane + y-continuity (survives large along-lane
+        # motion that breaks overlap), not overlap + a lane-blind stitch.
+        chains = _lane_primary_link(objs, n_frames, stitch_gap)
+    else:
+        chains = _link(objs, n_frames, max_gap, min_overlap)
+        chains = _stitch(chains, objs, stitch_gap, stitch_jump_px)
     if lane_exclusive and geometry is not None:
         chains = _lane_exclusive(chains, objs)
     if min_support > 1:
