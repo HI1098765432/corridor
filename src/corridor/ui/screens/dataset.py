@@ -11,11 +11,14 @@ from pathlib import Path
 
 import numpy as np
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QLabel,
     QProgressBar,
     QScrollArea,
     QSizePolicy,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -100,7 +103,20 @@ class DatasetScreen(QWidget):
         self.canvas.layers.centroids = False
         self.canvas.layers.trails = False
         self.canvas.layers.labels = False
-        body.addWidget(self.canvas, 1)
+
+        # During analysis the preview is replaced by a 4-D block of the movie
+        # (x, y, time-as-depth) that fills in frame by frame as the engine works
+        # through them -- the "meshing" building up as the hard code runs.
+        self.block_view = QLabel()
+        self.block_view.setAlignment(Qt.AlignCenter)
+        self.block_view.setMinimumSize(240, 240)
+        self.block_view.setStyleSheet(f"background: {PALETTE.canvas};")
+        self._view_stack = QStackedWidget()
+        self._view_stack.addWidget(self.canvas)       # index 0: preview
+        self._view_stack.addWidget(self.block_view)   # index 1: 4-D block
+        body.addWidget(self._view_stack, 1)
+        #: Downscaled grayscale slices, prepared once per run for a cheap redraw.
+        self._block_slices: list[np.ndarray] | None = None
 
         body.addWidget(divider(vertical=True))
         body.addWidget(self._build_side_panel())
@@ -256,6 +272,7 @@ class DatasetScreen(QWidget):
 
         self.canvas.set_stack(preview_stack(stack))
         self.canvas.fit_to_view()
+        self._prepare_block(preview_stack(stack))
 
         self.metric_frames.set_value(str(metadata.n_frames))
         depth = _depth(metadata, stack)
@@ -368,14 +385,21 @@ class DatasetScreen(QWidget):
         if busy:
             self.spinner.start()
             self.status_label.setText(message)
+            self._draw_block(0.0)
+            self._view_stack.setCurrentWidget(self.block_view)
         else:
             self.spinner.stop()
             self.progress.setValue(0)
+            self._view_stack.setCurrentWidget(self.canvas)
 
     def set_stage(self, name: str, detail: str = "") -> None:
         text = name if not detail else f"{name} — {detail}"
         self.status_label.setText(text)
         self.progress.setRange(0, 0)  # indeterminate until steps arrive
+        # Stages after segmentation have no per-frame progress; show the block
+        # fully meshed once the frames have been worked through.
+        if name and name.lower() not in ("reading", "segmenting", "starting"):
+            self._draw_block(1.0)
 
     def set_progress(self, done: int, total: int) -> None:
         if total <= 0:
@@ -383,3 +407,61 @@ class DatasetScreen(QWidget):
             return
         self.progress.setRange(0, total)
         self.progress.setValue(done)
+        self._draw_block(done / total)
+
+    # ------------------------------------------------------------------- 4-D block
+    def _prepare_block(self, flat: np.ndarray, max_px: int = 150, max_frames: int = 40) -> None:
+        """Cache small grayscale slices of the movie for a cheap block redraw.
+
+        ``flat`` is the T×Y×X preview (Z already projected). Frames are capped
+        and downscaled so compositing the isometric block stays instant on the
+        UI thread even for a long stack."""
+        try:
+            if flat is None or flat.ndim != 3 or flat.shape[0] == 0:
+                self._block_slices = None
+                return
+            n = flat.shape[0]
+            idx = np.linspace(0, n - 1, min(n, max_frames)).round().astype(int)
+            lo, hi = np.percentile(flat, [1, 99])
+            scale = max_px / max(flat.shape[1], flat.shape[2])
+            sh = max(1, int(flat.shape[1] * scale)); sw = max(1, int(flat.shape[2] * scale))
+            ys = np.linspace(0, flat.shape[1] - 1, sh).astype(int)
+            xs = np.linspace(0, flat.shape[2] - 1, sw).astype(int)
+            slices = []
+            for t in idx:
+                g = np.clip((flat[t][np.ix_(ys, xs)] - lo) / (hi - lo + 1e-6), 0, 1)
+                slices.append((g * 255).astype(np.uint8))
+            self._block_slices = slices
+        except Exception:  # noqa: BLE001 - a missing preview must never break a run
+            self._block_slices = None
+
+    def _draw_block(self, frac: float) -> None:
+        """Composite the cached slices into an isometric x-y-time block with the
+        first ``frac`` of frames drawn solid (meshed) and the rest dim."""
+        slices = self._block_slices
+        if not slices:
+            return
+        try:
+            n = len(slices); sh, sw = slices[0].shape
+            dx, dy = max(4, sw // 12), max(3, sh // 14)
+            H = sh + dy * (n - 1); W = sw + dx * (n - 1)
+            canvas = np.zeros((H, W, 3), np.float32)
+            n_done = max(1, int(round(n * max(0.0, min(1.0, frac)))))
+            for t in range(n - 1, -1, -1):
+                ox, oy = dx * t, dy * (n - 1 - t)
+                g = slices[t].astype(np.float32)
+                tile = np.stack([g, g, g], -1)
+                if t < n_done:
+                    tile[..., 1] += g * 0.25          # processed frames tint green
+                else:
+                    tile *= 0.3                        # pending frames dim
+                canvas[oy:oy + sh, ox:ox + sw] = np.maximum(canvas[oy:oy + sh, ox:ox + sw], tile)
+            arr = np.clip(canvas, 0, 255).astype(np.uint8)
+            img = QImage(arr.data, W, H, 3 * W, QImage.Format_RGB888).copy()
+            pm = QPixmap.fromImage(img)
+            target = self.block_view.size()
+            if target.width() > 10 and target.height() > 10:
+                pm = pm.scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.block_view.setPixmap(pm)
+        except Exception:  # noqa: BLE001 - never let the preview break the analysis
+            pass
