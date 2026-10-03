@@ -45,6 +45,8 @@ from ...core.config import (
     ENSEMBLE_WIDE,
     NORMALISATION_LABELS,
     NORMALISATION_MODES,
+    RECONSTRUCTOR_KALMAN,
+    RECONSTRUCTOR_OVERLAP,
     RunConfig,
     SegmentationConfig,
 )
@@ -263,6 +265,21 @@ class AdvancedPanel(QWidget):
 
     def _tracking_form(self) -> QFormLayout:
         form = self._form()
+        self.reconstructor = QComboBox()
+        self.reconstructor.addItem("Motion model (default)", RECONSTRUCTOR_KALMAN)
+        self.reconstructor.addItem("Lane-primary (confined, large motion)", RECONSTRUCTOR_OVERLAP)
+        self.reconstructor.currentIndexChanged.connect(self._emit)
+        self.reconstructor.setToolTip(
+            "How cells are linked between frames.\n\n"
+            "Motion model: an axis-free Kalman tracker (the validated default).\n"
+            "Lane-primary: for confined cells that move several body-lengths "
+            "along their lane per frame -- it keys identity on the lane (which a "
+            "cell cannot leave) and links along it, where overlap/motion linking "
+            "breaks. Measured F1 0.89 -> 0.99 on the real large-motion movies "
+            "(docs/ENGINE_ACCURACY.md); needs detected channel walls."
+        )
+        form.addRow("Tracking method", self.reconstructor)
+
         self.respect_walls = QCheckBox("Respect detected channel walls")
         self.respect_walls.toggled.connect(self._emit)
         self.respect_walls.setToolTip(
@@ -356,6 +373,8 @@ class AdvancedPanel(QWidget):
         self.use_gpu.setChecked(seg.use_gpu)
 
         trk = config.tracking
+        index = self.reconstructor.findData(getattr(trk, "reconstructor", RECONSTRUCTOR_KALMAN))
+        self.reconstructor.setCurrentIndex(max(0, index))
         self.respect_walls.setChecked(
             getattr(trk, "channel_constraint", CHANNEL_CONSTRAINT_AUTO) != CHANNEL_CONSTRAINT_OFF
         )
@@ -422,6 +441,7 @@ class AdvancedPanel(QWidget):
         seg.use_gpu = self.use_gpu.isChecked()
 
         trk = config.tracking
+        trk.reconstructor = self.reconstructor.currentData()
         trk.channel_constraint = (
             CHANNEL_CONSTRAINT_AUTO if self.respect_walls.isChecked() else CHANNEL_CONSTRAINT_OFF
         )
