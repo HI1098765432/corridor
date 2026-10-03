@@ -126,3 +126,18 @@ consistent continuation — joint, not appearance-only. The committed benchmark
 therefore keeps the conservative `max_gap=5` stitch (identity-correct at the
 operating point, precision 1.000), and EV-gating stays a measured negative
 result, not the shipped path.
+
+## Explored and not adopted: global min-cost-flow association
+
+Global MCF (successive shortest paths; `training/benchmark/mcf_association.py`)
+was built to beat the trade-off. It has the property EV-gating lacked —
+global uniqueness holds precision at 1.000 and refuses look-alike merges — but
+its single track-count cost cannot win both ways: cheap enough to keep a
+genuine single-frame cell, it fragments; dear enough to avoid fragments, it
+drops lone real cells and over-merges same-channel sequential cells, and at
+dropout it is *worse* than the committed method (t1 50%-drop F1 0.69 vs 0.77).
+Measured conclusion: the committed overlap + conservative-stitch + self-template
+pipeline remains the best on this benchmark. The remaining sub-98% case (heavy
+detection loss) is information-limited, not a method defect: at 50% loss the
+evidence for some cells is simply gone, and no association recovers what no
+detector and no template ever saw.
