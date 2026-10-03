@@ -162,3 +162,27 @@ detector misses. The novelty is the temporal reconstruction and the
 overlap-for-elongating-cells insight, not a hand-coded detector (F1 0.09,
 measured) nor hand-coded morphology-only prediction (a measured near-null,
 `docs/PREDICTION.md`).
+
+## Statistical solidity: 240 trials, and the honest distribution
+
+`training/benchmark/battery.py` runs the production reconstructor over 240
+independent trials with planted per-cell truth (120 well-posed + 120 full
+adversarial with collisions, divisions, entries/exits, fast reversals, false
+positives, dropout). The identity-aware F1 distribution:
+
+| regime | trials | mean F1 | median | >=0.98 |
+|---|---|---|---|---|
+| real movies, clean detections (operating point) | 2 | ~1.00 | ~1.00 | 2/2 |
+| well-posed synthetic + dropout/FP | 120 | 0.859 | 0.862 | 7 |
+| full adversarial | 120 | 0.883 | 0.902 | 9 |
+
+**The 100% is real only at the operating point (clean detections).** Injecting
+realistic dropout + false positives drops it to ~0.86, dominated by
+over-fragmentation (a cell split into two identity-pieces across a detection
+gap). Division/collision cases are not the main driver -- well-posed is no
+better -- so it is the fragmentation-under-missing-detections limit, attacked
+three ways (conservative stitch, motion-predicted linking, global min-cost-flow)
+without breaking past it. A solid *general* 100% is therefore not claimed; the
+defensible claim is ~1.0 when detections are good and graceful degradation
+otherwise. A broadly-verified number needs real labelled movies, not more
+synthetic trials.
