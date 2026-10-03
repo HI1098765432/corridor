@@ -240,10 +240,10 @@ used if one is present.
 ## Verifying the download
 
 The SHA-256 is published beside the installer in
-`Corridor-1.3.0-Setup.exe.sha256`:
+`Corridor-2.0.0-Setup.exe.sha256`:
 
 ```powershell
-Get-FileHash Corridor-1.3.0-Setup.exe -Algorithm SHA256
+Get-FileHash Corridor-2.0.0-Setup.exe -Algorithm SHA256
 ```
 
 The installer is also digitally signed, so any modification after build breaks
