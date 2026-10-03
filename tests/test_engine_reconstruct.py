@@ -49,7 +49,7 @@ def _render(cells, nframes, H=120, W=120):
 def test_returns_tracklist_and_events():
     cell = _elongating_cell(30, 20, 6, [10, 40, 70, 30, 20], [0, 1, 2, 3, 4], 1)
     masks, dets = _render([cell], 5)
-    tracks, events = reconstruct_tracks(dets, masks, 5, Scale.from_values(0.5, 10.0), TrackingConfig())
+    tracks, events = reconstruct_tracks(dets, masks.shape[1:], 5, Scale.from_values(0.5, 10.0), TrackingConfig())
     assert isinstance(tracks, TrackList)
     assert all(isinstance(t, Track) for t in tracks)
     assert len(events) == 5
@@ -59,7 +59,7 @@ def test_one_elongating_cell_is_one_track_not_split_by_centroid_jumps():
     # length swings 10->70->20 px: the centroid lurches, but overlap holds it.
     cell = _elongating_cell(30, 30, 2, [10, 40, 70, 50, 20, 15], range(6), 1)
     masks, dets = _render([cell], 6)
-    tracks, _ = reconstruct_tracks(dets, masks, 6, Scale.from_values(0.5, 10.0), TrackingConfig())
+    tracks, _ = reconstruct_tracks(dets, masks.shape[1:], 6, Scale.from_values(0.5, 10.0), TrackingConfig())
     assert len(tracks) == 1
     assert len(tracks[0].observations) == 6
 
@@ -68,7 +68,7 @@ def test_two_cells_in_two_lanes_keep_separate_identities():
     a = _elongating_cell(25, 20, 5, [30] * 6, range(6), 1)
     b = _elongating_cell(90, 80, -4, [30] * 6, range(6), 2)
     masks, dets = _render([a, b], 6)
-    tracks, _ = reconstruct_tracks(dets, masks, 6, Scale.from_values(0.5, 10.0), TrackingConfig())
+    tracks, _ = reconstruct_tracks(dets, masks.shape[1:], 6, Scale.from_values(0.5, 10.0), TrackingConfig())
     assert len(tracks) == 2
 
 
@@ -93,7 +93,7 @@ def test_real_t1_is_one_track_over_its_verified_lifetime():
                 orientation_rad=float(r["orientation_rad"]), major_axis_px=float(r["major_axis_px"]),
                 minor_axis_px=float(r["minor_axis_px"]), solidity=float(r["solidity"]),
                 touches_border=(r["touches_border"] == "true"), channel=int(float(r["channel"]))))
-    tracks, _ = reconstruct_tracks(dets, masks, masks.shape[0],
+    tracks, _ = reconstruct_tracks(dets, masks.shape[1:], masks.shape[0],
                                    Scale.from_values(0.467060342995564, 20.006894938151042),
                                    TrackingConfig())
     assert len(tracks) == 1

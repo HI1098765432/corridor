@@ -34,13 +34,23 @@ def _overlap(a: np.ndarray, b: np.ndarray) -> float:
     return max(inter / union, inter / max(smaller, 1))
 
 
-def _masks_by_frame(detections, masks):
-    """{frame: {det_label: (Detection, boolmask)}} from the label image."""
+def _detection_mask(d: Detection, shape) -> np.ndarray:
+    """A boolean full-frame mask for one detection, from its own ``mask_crop``
+    (so a recovered detection, absent from the saved label image, still links);
+    a detection without a crop falls back to its bounding box."""
+    if d.mask_crop is not None:
+        return np.asarray(d.full_mask(shape), dtype=bool)
+    m = np.zeros(shape, bool)
+    r0, c0, r1, c1 = d.bbox
+    m[int(r0):int(r1), int(c0):int(c1)] = True
+    return m
+
+
+def _masks_by_frame(detections, shape):
+    """{frame: {det_label: (Detection, boolmask)}} built from the detections."""
     out: dict[int, dict[int, tuple]] = {}
     for d in detections:
-        f = int(d.frame)
-        plane = masks[f]
-        out.setdefault(f, {})[int(d.label)] = (d, plane == int(d.label))
+        out.setdefault(int(d.frame), {})[int(d.label)] = (d, _detection_mask(d, shape))
     return out
 
 
@@ -116,7 +126,7 @@ def _stitch(chains, objs, max_gap, max_jump):
 
 def reconstruct_tracks(
     detections: Iterable[Detection],
-    masks: np.ndarray,
+    image_shape,
     n_frames: int,
     scale: Scale,
     config: TrackingConfig,
@@ -128,9 +138,15 @@ def reconstruct_tracks(
     stitch_jump_px: float = 60.0,
 ) -> tuple[TrackList, list[FrameEvent]]:
     """Overlap-linked reconstruction, returned as a Kalman-tracker-shaped
-    ``(TrackList, events)`` so it is a drop-in for ``track_detections``."""
+    ``(TrackList, events)`` so it is a drop-in for ``track_detections``.
+
+    ``image_shape`` is the frame's ``(H, W)`` (or ``(Z, Y, X)``); masks are
+    built from each detection's own ``mask_crop``, so both primary and recovered
+    detections link without needing the saved label image.
+    """
     detections = list(detections)
-    objs = _masks_by_frame(detections, masks)
+    shape = tuple(int(s) for s in image_shape)
+    objs = _masks_by_frame(detections, shape)
     chains = _link(objs, n_frames, max_gap, min_overlap)
     chains = _stitch(chains, objs, stitch_gap, stitch_jump_px)
     chains.sort(key=lambda c: (c[0][0], _centroid(objs[c[0][0]][c[0][1]][1])[0]))
