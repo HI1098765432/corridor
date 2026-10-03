@@ -18,7 +18,7 @@ only dependencies are numpy, scipy and scikit-image.
 Import a bot by its submodule so that importing one never drags in another's
 work::
 
-    from corridor.engine import z_consensus, temporal_delta, consensus
+    from corridor.engine import registration4d, static_atlas, z_consensus
 
 The orchestrator (:mod:`corridor.engine.pipeline4d`) imports the bots lazily,
 so the package builds and runs before every bot exists.
@@ -27,12 +27,14 @@ so the package builds and runs before every bot exists.
 from __future__ import annotations
 
 __all__ = [
-    "proposer",
-    "consensus",
-    "z_consensus",
-    "temporal_delta",
-    "object4d",
-    "surface_delta",
-    "uncertainty",
-    "pipeline4d",
+    "registration4d",   # Bot 1 — whole-volume registration
+    "static_atlas",     # Bot 2 — static device atlas
+    "proposer",         # Bot 3 — proposal interface
+    "z_consensus",      # Bot 4 — Z-slice consensus
+    "temporal_delta",   # Bot 5 — forward/backward temporal consistency
+    "object4d",         # Bot 6 — 4D tubes and measurement
+    "surface_delta",    # Bot 6 — surface displacement
+    "uncertainty",      # Bot 6 — precision floor
+    "consensus",        # Bot 8 — the referee
+    "pipeline4d",       # orchestrator skeleton
 ]
