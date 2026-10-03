@@ -287,14 +287,16 @@ def _register(vol, cfg, reference_t, run, skipped):
         skipped.append("register (disabled)")
         return [(0.0, 0.0, 0.0, 0.0) for _ in range(vol.shape[0])]
     try:
-        from . import registration4d  # Bot 1, lands later
+        from . import registration4d  # Bot 1
     except ImportError:
         skipped.append("register (Bot 1 not present -> identity)")
         return [(0.0, 0.0, 0.0, 0.0) for _ in range(vol.shape[0])]
     run.append("register")
-    return registration4d.estimate_shifts(  # pragma: no cover - exercised post-integration
-        vol, reference_t=reference_t, estimate_rotation=cfg.estimate_rotation
-    )
+    # register_stack takes the (T, Z, Y, X) stack directly and returns one row
+    # per timepoint with the volume's translation and a correlation error.
+    reg_cfg = registration4d.RegistrationConfig(estimate_rotation=cfg.estimate_rotation)
+    result = registration4d.register_stack(vol, reg_cfg)
+    return [(r.dx_px, r.dy_px, r.dz_px, r.error) for r in result.rows]
 
 
 def _atlas(vol, cfg, run, skipped):
@@ -314,7 +316,11 @@ def _atlas(vol, cfg, run, skipped):
         class_map = np.full((Z, Y, X), ATLAS_CLASS_CODES[VALID_CELL_REGION], dtype=np.int8)
         return background, class_map
     run.append("atlas")
-    result = static_atlas.build_atlas(vol, cfg)  # pragma: no cover - post-integration
+    # build_atlas(stack, geometry=None, occupancy=None, config): pass an atlas
+    # config, not the pipeline config (the 2nd positional arg is geometry).
+    # Its integer class codes match consensus.ATLAS_CLASS_CODES (0=background,
+    # 1=wall, ..., 4=valid), so the class map is consumed directly.
+    result = static_atlas.build_atlas(vol, config=static_atlas.AtlasConfig())
     return result.background, result.class_map
 
 

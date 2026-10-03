@@ -1,0 +1,801 @@
+{
+  "task": "deterministic-recovery ceiling on held-out KK2 labelled stills",
+  "law": "MEASURE never assert: every figure here was produced by this script on the 31 KK2 stills and is reproducible by rerunning it.",
+  "generated_utc": "2026-10-03T07:52:25Z",
+  "checkpoint": "C:/Users/ironb/Projects/ConfinedMig/build/models/models/corridor_contrast_invariant",
+  "checkpoint_sha256": "ec8d2c2a58d181dffce6d8b50e1f9e46061256fad71bca5faf3b8b9f8b878d22",
+  "checkpoint_choice": "round-1 corridor_contrast_invariant, not the shipped combi lab model: it is the source of the published 0.7273, and the combi model trained on all 71 images (KK2 included) so it cannot give a held-out KK2 figure.",
+  "window_percentile": [
+    3.0,
+    97.0
+  ],
+  "cellprob_threshold": 0.0,
+  "flow_threshold": 0.4,
+  "matcher": "corridor.core.metrics (count-first, IoU>=0.5) via training.scoring",
+  "held_out_status": "round-1 corridor_contrast_invariant was trained on KK1 and scored on KK2, so KK2 is genuinely held out from training. The research model registry build/registry/models.json has no entry for this checkpoint, so the formal training.registry.held_out() check cannot confirm the lineage; the held-out claim here rests on the documented KK1->KK2 training direction.",
+  "n_stills": 31,
+  "n_original_instances": 108,
+  "n_corrected_v2_instances": 110,
+  "undrawn_cells_added_in_v2": 2,
+  "diameters_px": [
+    36.0,
+    null
+  ],
+  "primary_diameter_px": 36.0,
+  "border_margins_px": [
+    3,
+    5,
+    10
+  ],
+  "refine_methods": [
+    "image",
+    "contour"
+  ],
+  "refine_max_px": 3,
+  "mask_cache_dir": "C:/Users/ironb/Projects/ConfinedMig/build/eng/measure/masks",
+  "per_diameter": {
+    "d36": {
+      "diameter_px": 36.0,
+      "harness_sound": true,
+      "raw_vs_original_expected": {
+        "tp": 76,
+        "fp": 25,
+        "fn": 32,
+        "f1": 0.7273
+      },
+      "levers": {
+        "original": {
+          "0_raw": {
+            "tp": 76,
+            "fp": 25,
+            "fn": 32,
+            "precision": 0.7525,
+            "recall": 0.7037,
+            "f1": 0.7273,
+            "mean_iou_of_matches": 0.6853
+          },
+          "1_border_margin_3px": {
+            "tp": 63,
+            "fp": 31,
+            "fn": 21,
+            "precision": 0.6702,
+            "recall": 0.75,
+            "f1": 0.7079,
+            "mean_iou_of_matches": 0.6783
+          },
+          "1_border_margin_5px": {
+            "tp": 59,
+            "fp": 30,
+            "fn": 20,
+            "precision": 0.6629,
+            "recall": 0.7468,
+            "f1": 0.7024,
+            "mean_iou_of_matches": 0.6788
+          },
+          "1_border_margin_10px": {
+            "tp": 56,
+            "fp": 24,
+            "fn": 14,
+            "precision": 0.7,
+            "recall": 0.8,
+            "f1": 0.7467,
+            "mean_iou_of_matches": 0.6732
+          },
+          "2_refine_image": {
+            "tp": 30,
+            "fp": 71,
+            "fn": 78,
+            "precision": 0.297,
+            "recall": 0.2778,
+            "f1": 0.2871,
+            "mean_iou_of_matches": 0.5754
+          },
+          "2_refine_contour": {
+            "tp": 56,
+            "fp": 45,
+            "fn": 52,
+            "precision": 0.5545,
+            "recall": 0.5185,
+            "f1": 0.5359,
+            "mean_iou_of_matches": 0.6025
+          },
+          "stacked_margin3px_refine_image": {
+            "tp": 28,
+            "fp": 63,
+            "fn": 56,
+            "precision": 0.3077,
+            "recall": 0.3333,
+            "f1": 0.32,
+            "mean_iou_of_matches": 0.5786
+          },
+          "stacked_margin3px_refine_contour": {
+            "tp": 45,
+            "fp": 50,
+            "fn": 39,
+            "precision": 0.4737,
+            "recall": 0.5357,
+            "f1": 0.5028,
+            "mean_iou_of_matches": 0.6062
+          },
+          "stacked_margin5px_refine_image": {
+            "tp": 26,
+            "fp": 61,
+            "fn": 53,
+            "precision": 0.2989,
+            "recall": 0.3291,
+            "f1": 0.3133,
+            "mean_iou_of_matches": 0.5664
+          },
+          "stacked_margin5px_refine_contour": {
+            "tp": 44,
+            "fp": 46,
+            "fn": 35,
+            "precision": 0.4889,
+            "recall": 0.557,
+            "f1": 0.5207,
+            "mean_iou_of_matches": 0.6083
+          },
+          "stacked_margin10px_refine_image": {
+            "tp": 26,
+            "fp": 52,
+            "fn": 44,
+            "precision": 0.3333,
+            "recall": 0.3714,
+            "f1": 0.3514,
+            "mean_iou_of_matches": 0.5664
+          },
+          "stacked_margin10px_refine_contour": {
+            "tp": 40,
+            "fp": 41,
+            "fn": 30,
+            "precision": 0.4938,
+            "recall": 0.5714,
+            "f1": 0.5298,
+            "mean_iou_of_matches": 0.6094
+          }
+        },
+        "corrected_v2": {
+          "0_raw": {
+            "tp": 77,
+            "fp": 24,
+            "fn": 33,
+            "precision": 0.7624,
+            "recall": 0.7,
+            "f1": 0.7299,
+            "mean_iou_of_matches": 0.6838
+          },
+          "1_border_margin_3px": {
+            "tp": 64,
+            "fp": 30,
+            "fn": 22,
+            "precision": 0.6809,
+            "recall": 0.7442,
+            "f1": 0.7111,
+            "mean_iou_of_matches": 0.6766
+          },
+          "1_border_margin_5px": {
+            "tp": 60,
+            "fp": 29,
+            "fn": 21,
+            "precision": 0.6742,
+            "recall": 0.7407,
+            "f1": 0.7059,
+            "mean_iou_of_matches": 0.677
+          },
+          "1_border_margin_10px": {
+            "tp": 56,
+            "fp": 24,
+            "fn": 16,
+            "precision": 0.7,
+            "recall": 0.7778,
+            "f1": 0.7368,
+            "mean_iou_of_matches": 0.6732
+          },
+          "2_refine_image": {
+            "tp": 30,
+            "fp": 71,
+            "fn": 80,
+            "precision": 0.297,
+            "recall": 0.2727,
+            "f1": 0.2844,
+            "mean_iou_of_matches": 0.5754
+          },
+          "2_refine_contour": {
+            "tp": 57,
+            "fp": 44,
+            "fn": 53,
+            "precision": 0.5644,
+            "recall": 0.5182,
+            "f1": 0.5403,
+            "mean_iou_of_matches": 0.601
+          },
+          "stacked_margin3px_refine_image": {
+            "tp": 28,
+            "fp": 63,
+            "fn": 58,
+            "precision": 0.3077,
+            "recall": 0.3256,
+            "f1": 0.3164,
+            "mean_iou_of_matches": 0.5786
+          },
+          "stacked_margin3px_refine_contour": {
+            "tp": 46,
+            "fp": 49,
+            "fn": 40,
+            "precision": 0.4842,
+            "recall": 0.5349,
+            "f1": 0.5083,
+            "mean_iou_of_matches": 0.6042
+          },
+          "stacked_margin5px_refine_image": {
+            "tp": 26,
+            "fp": 61,
+            "fn": 55,
+            "precision": 0.2989,
+            "recall": 0.321,
+            "f1": 0.3095,
+            "mean_iou_of_matches": 0.5664
+          },
+          "stacked_margin5px_refine_contour": {
+            "tp": 45,
+            "fp": 45,
+            "fn": 36,
+            "precision": 0.5,
+            "recall": 0.5556,
+            "f1": 0.5263,
+            "mean_iou_of_matches": 0.6061
+          },
+          "stacked_margin10px_refine_image": {
+            "tp": 26,
+            "fp": 52,
+            "fn": 46,
+            "precision": 0.3333,
+            "recall": 0.3611,
+            "f1": 0.3467,
+            "mean_iou_of_matches": 0.5664
+          },
+          "stacked_margin10px_refine_contour": {
+            "tp": 40,
+            "fp": 41,
+            "fn": 32,
+            "precision": 0.4938,
+            "recall": 0.5556,
+            "f1": 0.5229,
+            "mean_iou_of_matches": 0.6094
+          }
+        }
+      },
+      "lever_delta_vs_raw": {
+        "original": {
+          "1_border_margin_3px": -0.0194,
+          "1_border_margin_5px": -0.0249,
+          "1_border_margin_10px": 0.0194,
+          "2_refine_image": -0.4402,
+          "2_refine_contour": -0.1914,
+          "stacked_margin3px_refine_image": -0.4073,
+          "stacked_margin3px_refine_contour": -0.2245,
+          "stacked_margin5px_refine_image": -0.414,
+          "stacked_margin5px_refine_contour": -0.2066,
+          "stacked_margin10px_refine_image": -0.3759,
+          "stacked_margin10px_refine_contour": -0.1975
+        },
+        "corrected_v2": {
+          "1_border_margin_3px": -0.0188,
+          "1_border_margin_5px": -0.024,
+          "1_border_margin_10px": 0.0069,
+          "2_refine_image": -0.4455,
+          "2_refine_contour": -0.1896,
+          "stacked_margin3px_refine_image": -0.4135,
+          "stacked_margin3px_refine_contour": -0.2216,
+          "stacked_margin5px_refine_image": -0.4204,
+          "stacked_margin5px_refine_contour": -0.2036,
+          "stacked_margin10px_refine_image": -0.3832,
+          "stacked_margin10px_refine_contour": -0.207
+        }
+      },
+      "best_lever": {
+        "original": {
+          "lever": "1_border_margin_10px",
+          "f1": 0.7467,
+          "delta_vs_raw": 0.0194,
+          "margin_px": 10,
+          "edits_pixels": false,
+          "measurement_only": true
+        },
+        "corrected_v2": {
+          "lever": "1_border_margin_10px",
+          "f1": 0.7368,
+          "delta_vs_raw": 0.0069,
+          "margin_px": 10,
+          "edits_pixels": false,
+          "measurement_only": true
+        }
+      },
+      "error_breakdown": {
+        "faint_threshold_original": 0.1912,
+        "typical_area_px_original": 773.5,
+        "faint_threshold_v2": 0.1896,
+        "typical_area_px_v2": 768.5,
+        "raw_vs_original": {
+          "n_misses": 32,
+          "n_false_positives": 25,
+          "miss_kinds": {
+            "visible but missed": 7,
+            "too faint": 14,
+            "at the image border": 4,
+            "found but outline too poor": 7
+          },
+          "false_positive_kinds": {
+            "at the image border": 1,
+            "looks exactly like a cell (suspect label)": 14,
+            "faint structure": 4,
+            "overlaps a real cell (split or poor outline)": 6
+          },
+          "structural_buckets": {
+            "border_fragment": 19,
+            "suspect_label": 14,
+            "true_miss": 7,
+            "noise_fp": 4,
+            "boundary_near_miss": 13
+          },
+          "boundary_near_miss_median_iou": 0.426
+        },
+        "raw_vs_v2": {
+          "n_misses": 33,
+          "n_false_positives": 24,
+          "miss_kinds": {
+            "visible but missed": 7,
+            "at the image border": 5,
+            "found but outline too poor": 7,
+            "too faint": 14
+          },
+          "false_positive_kinds": {
+            "at the image border": 1,
+            "looks exactly like a cell (suspect label)": 13,
+            "faint structure": 4,
+            "overlaps a real cell (split or poor outline)": 6
+          },
+          "structural_buckets": {
+            "border_fragment": 20,
+            "suspect_label": 13,
+            "true_miss": 7,
+            "noise_fp": 4,
+            "boundary_near_miss": 13
+          },
+          "boundary_near_miss_median_iou": 0.426
+        },
+        "remaining_at_best_lever_vs_original": {
+          "lever": "1_border_margin_10px",
+          "n_misses": 14,
+          "n_false_positives": 24,
+          "miss_kinds": {
+            "visible but missed": 7,
+            "found but outline too poor": 3,
+            "too faint": 4
+          },
+          "false_positive_kinds": {
+            "looks exactly like a cell (suspect label)": 18,
+            "faint structure": 3,
+            "overlaps a real cell (split or poor outline)": 3
+          },
+          "structural_buckets": {
+            "suspect_label": 18,
+            "true_miss": 7,
+            "noise_fp": 3,
+            "boundary_near_miss": 6,
+            "border_fragment": 4
+          },
+          "boundary_near_miss_median_iou": 0.491
+        },
+        "remaining_at_best_lever_vs_v2": {
+          "lever": "1_border_margin_10px",
+          "n_misses": 16,
+          "n_false_positives": 24,
+          "miss_kinds": {
+            "visible but missed": 8,
+            "found but outline too poor": 3,
+            "too faint": 5
+          },
+          "false_positive_kinds": {
+            "looks exactly like a cell (suspect label)": 18,
+            "faint structure": 3,
+            "overlaps a real cell (split or poor outline)": 3
+          },
+          "structural_buckets": {
+            "suspect_label": 18,
+            "true_miss": 8,
+            "noise_fp": 3,
+            "boundary_near_miss": 6,
+            "border_fragment": 5
+          },
+          "boundary_near_miss_median_iou": 0.491
+        }
+      }
+    },
+    "dNone": {
+      "diameter_px": null,
+      "harness_sound": true,
+      "raw_vs_original_expected": {
+        "tp": 73,
+        "fp": 29,
+        "fn": 35,
+        "f1": 0.6952
+      },
+      "levers": {
+        "original": {
+          "0_raw": {
+            "tp": 73,
+            "fp": 29,
+            "fn": 35,
+            "precision": 0.7157,
+            "recall": 0.6759,
+            "f1": 0.6952,
+            "mean_iou_of_matches": 0.6942
+          },
+          "1_border_margin_3px": {
+            "tp": 60,
+            "fp": 32,
+            "fn": 24,
+            "precision": 0.6522,
+            "recall": 0.7143,
+            "f1": 0.6818,
+            "mean_iou_of_matches": 0.6845
+          },
+          "1_border_margin_5px": {
+            "tp": 55,
+            "fp": 32,
+            "fn": 24,
+            "precision": 0.6322,
+            "recall": 0.6962,
+            "f1": 0.6627,
+            "mean_iou_of_matches": 0.683
+          },
+          "1_border_margin_10px": {
+            "tp": 51,
+            "fp": 25,
+            "fn": 19,
+            "precision": 0.6711,
+            "recall": 0.7286,
+            "f1": 0.6986,
+            "mean_iou_of_matches": 0.68
+          },
+          "2_refine_image": {
+            "tp": 24,
+            "fp": 78,
+            "fn": 84,
+            "precision": 0.2353,
+            "recall": 0.2222,
+            "f1": 0.2286,
+            "mean_iou_of_matches": 0.5936
+          },
+          "2_refine_contour": {
+            "tp": 53,
+            "fp": 49,
+            "fn": 55,
+            "precision": 0.5196,
+            "recall": 0.4907,
+            "f1": 0.5048,
+            "mean_iou_of_matches": 0.5922
+          },
+          "stacked_margin3px_refine_image": {
+            "tp": 23,
+            "fp": 67,
+            "fn": 61,
+            "precision": 0.2556,
+            "recall": 0.2738,
+            "f1": 0.2644,
+            "mean_iou_of_matches": 0.5906
+          },
+          "stacked_margin3px_refine_contour": {
+            "tp": 41,
+            "fp": 53,
+            "fn": 43,
+            "precision": 0.4362,
+            "recall": 0.4881,
+            "f1": 0.4607,
+            "mean_iou_of_matches": 0.5958
+          },
+          "stacked_margin5px_refine_image": {
+            "tp": 23,
+            "fp": 63,
+            "fn": 56,
+            "precision": 0.2674,
+            "recall": 0.2911,
+            "f1": 0.2788,
+            "mean_iou_of_matches": 0.5906
+          },
+          "stacked_margin5px_refine_contour": {
+            "tp": 39,
+            "fp": 50,
+            "fn": 40,
+            "precision": 0.4382,
+            "recall": 0.4937,
+            "f1": 0.4643,
+            "mean_iou_of_matches": 0.5974
+          },
+          "stacked_margin10px_refine_image": {
+            "tp": 23,
+            "fp": 52,
+            "fn": 47,
+            "precision": 0.3067,
+            "recall": 0.3286,
+            "f1": 0.3172,
+            "mean_iou_of_matches": 0.5906
+          },
+          "stacked_margin10px_refine_contour": {
+            "tp": 34,
+            "fp": 43,
+            "fn": 36,
+            "precision": 0.4416,
+            "recall": 0.4857,
+            "f1": 0.4626,
+            "mean_iou_of_matches": 0.5992
+          }
+        },
+        "corrected_v2": {
+          "0_raw": {
+            "tp": 73,
+            "fp": 29,
+            "fn": 37,
+            "precision": 0.7157,
+            "recall": 0.6636,
+            "f1": 0.6887,
+            "mean_iou_of_matches": 0.6942
+          },
+          "1_border_margin_3px": {
+            "tp": 60,
+            "fp": 32,
+            "fn": 26,
+            "precision": 0.6522,
+            "recall": 0.6977,
+            "f1": 0.6742,
+            "mean_iou_of_matches": 0.6845
+          },
+          "1_border_margin_5px": {
+            "tp": 55,
+            "fp": 32,
+            "fn": 26,
+            "precision": 0.6322,
+            "recall": 0.679,
+            "f1": 0.6548,
+            "mean_iou_of_matches": 0.683
+          },
+          "1_border_margin_10px": {
+            "tp": 51,
+            "fp": 25,
+            "fn": 21,
+            "precision": 0.6711,
+            "recall": 0.7083,
+            "f1": 0.6892,
+            "mean_iou_of_matches": 0.68
+          },
+          "2_refine_image": {
+            "tp": 24,
+            "fp": 78,
+            "fn": 86,
+            "precision": 0.2353,
+            "recall": 0.2182,
+            "f1": 0.2264,
+            "mean_iou_of_matches": 0.5936
+          },
+          "2_refine_contour": {
+            "tp": 53,
+            "fp": 49,
+            "fn": 57,
+            "precision": 0.5196,
+            "recall": 0.4818,
+            "f1": 0.5,
+            "mean_iou_of_matches": 0.5922
+          },
+          "stacked_margin3px_refine_image": {
+            "tp": 23,
+            "fp": 67,
+            "fn": 63,
+            "precision": 0.2556,
+            "recall": 0.2674,
+            "f1": 0.2614,
+            "mean_iou_of_matches": 0.5906
+          },
+          "stacked_margin3px_refine_contour": {
+            "tp": 41,
+            "fp": 53,
+            "fn": 45,
+            "precision": 0.4362,
+            "recall": 0.4767,
+            "f1": 0.4556,
+            "mean_iou_of_matches": 0.5958
+          },
+          "stacked_margin5px_refine_image": {
+            "tp": 23,
+            "fp": 63,
+            "fn": 58,
+            "precision": 0.2674,
+            "recall": 0.284,
+            "f1": 0.2754,
+            "mean_iou_of_matches": 0.5906
+          },
+          "stacked_margin5px_refine_contour": {
+            "tp": 39,
+            "fp": 50,
+            "fn": 42,
+            "precision": 0.4382,
+            "recall": 0.4815,
+            "f1": 0.4588,
+            "mean_iou_of_matches": 0.5974
+          },
+          "stacked_margin10px_refine_image": {
+            "tp": 23,
+            "fp": 52,
+            "fn": 49,
+            "precision": 0.3067,
+            "recall": 0.3194,
+            "f1": 0.3129,
+            "mean_iou_of_matches": 0.5906
+          },
+          "stacked_margin10px_refine_contour": {
+            "tp": 34,
+            "fp": 43,
+            "fn": 38,
+            "precision": 0.4416,
+            "recall": 0.4722,
+            "f1": 0.4564,
+            "mean_iou_of_matches": 0.5992
+          }
+        }
+      },
+      "lever_delta_vs_raw": {
+        "original": {
+          "1_border_margin_3px": -0.0134,
+          "1_border_margin_5px": -0.0325,
+          "1_border_margin_10px": 0.0034,
+          "2_refine_image": -0.4666,
+          "2_refine_contour": -0.1904,
+          "stacked_margin3px_refine_image": -0.4308,
+          "stacked_margin3px_refine_contour": -0.2345,
+          "stacked_margin5px_refine_image": -0.4164,
+          "stacked_margin5px_refine_contour": -0.2309,
+          "stacked_margin10px_refine_image": -0.378,
+          "stacked_margin10px_refine_contour": -0.2326
+        },
+        "corrected_v2": {
+          "1_border_margin_3px": -0.0145,
+          "1_border_margin_5px": -0.0339,
+          "1_border_margin_10px": 0.0005,
+          "2_refine_image": -0.4623,
+          "2_refine_contour": -0.1887,
+          "stacked_margin3px_refine_image": -0.4273,
+          "stacked_margin3px_refine_contour": -0.2331,
+          "stacked_margin5px_refine_image": -0.4133,
+          "stacked_margin5px_refine_contour": -0.2299,
+          "stacked_margin10px_refine_image": -0.3758,
+          "stacked_margin10px_refine_contour": -0.2323
+        }
+      },
+      "best_lever": {
+        "original": {
+          "lever": "1_border_margin_10px",
+          "f1": 0.6986,
+          "delta_vs_raw": 0.0034,
+          "margin_px": 10,
+          "edits_pixels": false,
+          "measurement_only": true
+        },
+        "corrected_v2": {
+          "lever": "1_border_margin_10px",
+          "f1": 0.6892,
+          "delta_vs_raw": 0.0005,
+          "margin_px": 10,
+          "edits_pixels": false,
+          "measurement_only": true
+        }
+      },
+      "error_breakdown": {
+        "faint_threshold_original": 0.1912,
+        "typical_area_px_original": 773.5,
+        "faint_threshold_v2": 0.1896,
+        "typical_area_px_v2": 768.5,
+        "raw_vs_original": {
+          "n_misses": 35,
+          "n_false_positives": 29,
+          "miss_kinds": {
+            "found but outline too poor": 9,
+            "too faint": 14,
+            "visible but missed": 9,
+            "at the image border": 3
+          },
+          "false_positive_kinds": {
+            "looks exactly like a cell (suspect label)": 13,
+            "overlaps a real cell (split or poor outline)": 8,
+            "faint structure": 7,
+            "at the image border": 1
+          },
+          "structural_buckets": {
+            "suspect_label": 13,
+            "boundary_near_miss": 17,
+            "border_fragment": 18,
+            "true_miss": 9,
+            "noise_fp": 7
+          },
+          "boundary_near_miss_median_iou": 0.431
+        },
+        "raw_vs_v2": {
+          "n_misses": 37,
+          "n_false_positives": 29,
+          "miss_kinds": {
+            "found but outline too poor": 10,
+            "at the image border": 4,
+            "visible but missed": 9,
+            "too faint": 14
+          },
+          "false_positive_kinds": {
+            "looks exactly like a cell (suspect label)": 12,
+            "overlaps a real cell (split or poor outline)": 9,
+            "faint structure": 7,
+            "at the image border": 1
+          },
+          "structural_buckets": {
+            "suspect_label": 12,
+            "boundary_near_miss": 19,
+            "border_fragment": 19,
+            "true_miss": 9,
+            "noise_fp": 7
+          },
+          "boundary_near_miss_median_iou": 0.472
+        },
+        "remaining_at_best_lever_vs_original": {
+          "lever": "1_border_margin_10px",
+          "n_misses": 19,
+          "n_false_positives": 25,
+          "miss_kinds": {
+            "found but outline too poor": 5,
+            "visible but missed": 10,
+            "too faint": 4
+          },
+          "false_positive_kinds": {
+            "looks exactly like a cell (suspect label)": 14,
+            "overlaps a real cell (split or poor outline)": 5,
+            "faint structure": 6
+          },
+          "structural_buckets": {
+            "suspect_label": 14,
+            "boundary_near_miss": 10,
+            "true_miss": 10,
+            "noise_fp": 6,
+            "border_fragment": 4
+          },
+          "boundary_near_miss_median_iou": 0.473
+        },
+        "remaining_at_best_lever_vs_v2": {
+          "lever": "1_border_margin_10px",
+          "n_misses": 21,
+          "n_false_positives": 25,
+          "miss_kinds": {
+            "found but outline too poor": 5,
+            "visible but missed": 11,
+            "too faint": 5
+          },
+          "false_positive_kinds": {
+            "looks exactly like a cell (suspect label)": 14,
+            "overlaps a real cell (split or poor outline)": 5,
+            "faint structure": 6
+          },
+          "structural_buckets": {
+            "suspect_label": 14,
+            "boundary_near_miss": 10,
+            "true_miss": 11,
+            "noise_fp": 6,
+            "border_fragment": 5
+          },
+          "boundary_near_miss_median_iou": 0.473
+        }
+      }
+    }
+  },
+  "ceiling_f1_primary_vs_original": 0.7467,
+  "ceiling_f1_primary_vs_v2": 0.7368,
+  "ceiling_lever_primary_vs_original": "1_border_margin_10px",
+  "ceiling_lever_primary_vs_v2": "1_border_margin_10px",
+  "ceiling_f1_primary": 0.7467,
+  "refinement_is_net_negative": true,
+  "verdict": "The deterministic per-frame ceiling on held-out KK2 is F1 0.7467 vs the original labels and 0.7368 vs corrected_reference_v2 (d=36), both reached by the single lever that helps -- a 10 px border-margin exclusion -- which is only +0.0194/+0.0069 over the raw 0.7273/0.7299, and even that is a MEASUREMENT change (it stops scoring cut-off edge cells), not pixel recovery. The only lever that edits predicted pixels -- boundary refinement at +-3 px -- LOWERS F1 (contour to 0.5403, image to 0.2844): the near-miss outlines are wrong by more than 3 px and the refiners break good boundaries, so the ~17 boundary near-misses are not recoverable this way. The v2 label-truth lever is negligible here (+2 undrawn cells over 31 stills). Deterministic single-frame post-processing therefore does NOT carry the near-peak F1~0.73 model toward 0.98; the residual error is border_fragment=5, boundary_near_miss=6, noise_fp=3, suspect_label=18, true_miss=8 -- true misses (long cells the proposer never fires on: a proposer/scale problem), suspect labels (a label-truth problem needing a real corrected reference), boundary near-misses (sub-pixel outline error) and border fragments (unsegmentable per frame). That residual is exactly what ENGINE_4D's time/Z disambiguation, referee and atlas must recover -- it is not sitting in reach of a per-frame deterministic pass."
+}

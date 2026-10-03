@@ -183,6 +183,12 @@ def _edge_stability(volume: np.ndarray, background: np.ndarray, eps: float) -> n
     forced to 0 where ``B`` is locally flat (no edge, so no orientation to
     agree with), which keeps empty background from reading as a stable edge.
     """
+    # np.gradient needs at least 2 samples along every axis it differentiates.
+    # On a degenerate image (a 1-px axis, e.g. a single Z plane or a tiny test
+    # stack) there is no gradient and therefore no edge orientation to agree
+    # with, so edge stability is 0 everywhere.
+    if any(s < 2 for s in background.shape):
+        return np.zeros(background.shape, dtype=np.float64)
     grad_b = np.gradient(background.astype(np.float64))
     if background.ndim == 1:  # np.gradient returns a bare array for 1-D
         grad_b = [grad_b]

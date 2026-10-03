@@ -94,23 +94,21 @@ def test_skeleton_runs_and_writes_evidence_files(tmp_path):
         assert r["state"] == "LIKELY"
 
 
-def test_skeleton_names_the_bots_it_does_not_have(tmp_path):
+def test_full_engine_runs_every_stage_with_nothing_skipped(tmp_path):
+    """On the engine-2.1 integration branch every bot is now present, so the
+    pipeline runs the whole chain and skips nothing. (The skeleton's
+    name-what-you-skip behaviour is still covered by unit tests that stub a
+    bot as absent; here we assert the assembled engine is complete.)"""
     intensity, masks = _moving_cell()
     result = run_engine_4d(intensity, GivenMasksProposer(masks=masks), tmp_path, axes="TYX")
 
-    # The real stages ran.
-    assert "propose" in result.stages_run
-    assert "referee" in result.stages_run
-    # The absent bots are each named as skipped, not silently missing. On the
-    # engine-2.1 integration branch, Z consensus (Bot 4), temporal delta
-    # (Bot 5) and measurement (Bot 6) are now merged and present, so only the
-    # registration/atlas bot (Bots 1 and 2) remains unbuilt; the skeleton must
-    # still name those rather than drop them silently.
+    # The real stages ran, in particular the ones that needed Bots 1 and 2.
+    for stage in ("register", "atlas", "propose", "referee"):
+        assert stage in result.stages_run, f"{stage} did not run: {result.stages_run}"
+    # Nothing is reported skipped, because every bot module is present.
     skipped = " ".join(result.stages_skipped)
-    assert "Bot 1" in skipped  # registration
-    assert "Bot 2" in skipped  # atlas
-    # A bot whose module is present must not be reported as skipped.
-    assert "Bot 4" not in skipped and "Bot 5" not in skipped
+    for bot in ("Bot 1", "Bot 2", "Bot 4", "Bot 5"):
+        assert bot not in skipped, f"{bot} reported skipped but is present: {skipped}"
 
 
 def test_identity_handoff_links_the_moving_cell(tmp_path):
