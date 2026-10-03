@@ -135,3 +135,18 @@ def test_the_model_line_names_id_version_and_checksum():
     assert "OVERRIDE" not in line
     result.model = ResolvedModel(spec=spec, path=Path("m"), sha256="0" * 64, developer_override=True)
     assert "DEVELOPER OVERRIDE" in cli.describe_model(result)
+
+
+def test_a_3d_stack_without_a_validated_model_exits_3_and_writes_nothing(tmp_path, capsys):
+    """Exit 3 covers the 3-D refusal too, and says so; no empty directory is left."""
+    import numpy as np
+    import tifffile
+
+    plain = tmp_path / "plain.tif"
+    tifffile.imwrite(plain, np.full((6, 32, 32), 500, np.uint16))
+    out = tmp_path / "plain_out"
+    code = cli.main([str(plain), "-o", str(out), "--axes", "ZYX", "--quiet"])
+    assert code == cli.EXIT_MODEL_UNAVAILABLE == 3
+    assert "3D-validated" in capsys.readouterr().err
+    assert not out.exists()
+    assert "3-D" in cli.build_parser().format_help() and "3-D" in cli.__doc__

@@ -105,20 +105,40 @@ _TRACKING_V1_ONLY = (
     "perp_width_fraction", "max_perp_widths", "gate_chi2",
 )
 
-#: What the two speed figures in ``run.json["results"]`` are.  Named in the
-#: file because "mean speed" alone is ambiguous between them, and they differ
-#: by exactly the effect missed detections have.
+#: What the run-level speed figures in ``run.json["results"]`` are.  Named in
+#: the file because "mean speed" alone is ambiguous, and two different kinds
+#: of robustness are at stake:
+#:
+#: *   *Within* a track, the net speed reads only the first and last
+#:     observation, so a frame missed in between costs it nothing; the mean
+#:     step speed does not have that property.
+#: *   *Across* tracks, an unweighted mean is not robust at all: one spurious
+#:     2-observation fragment moves it.  Measured on 052924_1 (2.0 defaults):
+#:     one such track (3.80 µm/min) lifts the mean net speed of the other 12
+#:     tracks from 0.525 to 0.777 µm/min (+48 %); their median moves from
+#:     0.428 to 0.485 (+13 %): one extra value shifts a median by at most
+#:     half a rank, however extreme it is.
+#:     The median over tracks is therefore the run-level figure called
+#:     robust; the means stay, named for what they are.
 SPEED_ESTIMATORS = {
     "mean_speed": (
-        "mean over tracks of each track's mean step speed (step distance / elapsed "
-        "time between its observations)"
+        "unweighted mean over tracks (>= 2 observations) of each track's mean step "
+        "speed (step distance / elapsed time between its observations); sensitive "
+        "both to missed frames and to short fragment tracks"
     ),
     "mean_net_speed": (
-        "mean over tracks of each track's net speed (net displacement / elapsed time "
-        "of the track) -- the robust estimator: it reads only the first and last "
-        "observation, so a missed frame in between costs it nothing"
+        "unweighted mean over tracks (>= 2 observations) of each track's net speed "
+        "(net displacement / elapsed time of the track); per track it is insensitive "
+        "to frames missed inside the track, but the mean over tracks is NOT robust: "
+        "one short outlier track moves it"
     ),
-    "robust_estimator": "mean_net_speed",
+    "median_speed": "median over tracks (>= 2 observations) of each track's mean step speed",
+    "median_net_speed": (
+        "median over tracks (>= 2 observations) of each track's net speed -- the robust "
+        "run-level estimator: insensitive to missed frames inside a track (net speed) "
+        "and to a minority of outlier or fragment tracks (median)"
+    ),
+    "robust_estimator": "median_net_speed",
 }
 
 
@@ -236,6 +256,38 @@ def effective_calibration(
     return pixel, interval, scale
 
 
+@dataclass(frozen=True)
+class ReportedCalibration:
+    """What the file itself says, captured before any user override replaces it.
+
+    ``run_analysis`` writes the values it *used* into the metadata (every
+    later stage reads them there).  Without this record an override would
+    leave run.json half overwritten -- the review found ``pixel_size_um``
+    0.639 (user) beside ``pixel_size_y_um`` 0.467 (file) and
+    ``anisotropic_pixels`` false, a manifest contradicting itself.
+    """
+
+    pixel_size_x_um: Calibrated
+    pixel_size_y_um: Calibrated
+    frame_interval_min: Calibrated
+    z_step_um: Calibrated
+
+    @classmethod
+    def of(cls, metadata: StackMetadata) -> "ReportedCalibration":
+        return cls(
+            metadata.pixel_size_um, metadata.pixel_size_y_um,
+            metadata.frame_interval_min, metadata.z_step_um,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for name in ("pixel_size_x_um", "pixel_size_y_um", "frame_interval_min", "z_step_um"):
+            value: Calibrated = getattr(self, name)
+            out[name] = value.value
+            out[f"{name}_source"] = value.source
+        return out
+
+
 def _check(progress: Progress) -> None:
     if progress.cancelled():
         raise Cancelled("Analysis cancelled.")
@@ -278,17 +330,19 @@ def run_analysis(
     progress = progress or NullProgress()
     started = time.time()
     out_dir = Path(config.output_dir) if config.output_dir else None
-    if save and out_dir is not None:
-        out_dir.mkdir(parents=True, exist_ok=True)
-        # The completeness marker of a previous run in this directory goes
-        # first: until the new one is written, the directory is not a result.
-        (out_dir / F_MANIFEST).unlink(missing_ok=True)
+    # The output directory is touched only once there is something to write
+    # in it -- after the metadata and the model were accepted and the
+    # segmentation ran (step 2).  A refusal (exit 3 or 4 on the command line)
+    # or a cancel during segmentation therefore leaves no empty directory
+    # behind, and leaves a previous complete result in it untouched.
+    writes = bool(save and out_dir is not None)
 
     # -- 1. metadata --------------------------------------------------------
     progress.stage("Reading", "interpreting the image and its metadata")
     # The import settings name the axis order (and channel) of a file whose
     # metadata cannot: without them an ambiguous file is refused, not guessed.
     metadata = read_metadata(config.input_path, config.import_)
+    reported = ReportedCalibration.of(metadata)
     pixel, interval, scale = effective_calibration(metadata, config.calibration)
     metadata.pixel_size_um = pixel
     metadata.frame_interval_min = interval
@@ -322,7 +376,11 @@ def run_analysis(
         raise
     _check(progress)
 
-    if save and out_dir is not None:
+    if writes:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # The completeness marker of a previous run goes before anything new
+        # is written: until the new one exists, the directory is not a result.
+        (out_dir / F_MANIFEST).unlink(missing_ok=True)
         export.save_masks(out_dir / F_MASKS, segmentation.masks)
         if keep_raw_masks and segmentation.provenance == PROVENANCE_MODEL:
             # An imported label file is its own raw record; a copy of it adds
@@ -347,7 +405,7 @@ def run_analysis(
     assign_lanes(segmentation.detections, geometry)
     _check(progress)
 
-    if save and out_dir is not None:
+    if writes:
         export.write_csv(
             out_dir / F_DETECTIONS,
             export.DETECTION_COLUMNS,
@@ -420,6 +478,7 @@ def run_analysis(
         recovery=recovery_result, recovery_skipped=recovery_skipped,
         tracking_notes=getattr(tracks, "notes", ()),
         issues=issues,
+        reported=reported,
     )
 
     result = AnalysisResult(
@@ -432,7 +491,7 @@ def run_analysis(
         model=segmentation.model, dimensionality=dimensionality,
     )
 
-    if save and out_dir is not None:
+    if writes:
         progress.stage("Saving", str(out_dir))
         save_result(result, out_dir)
     return result
@@ -528,6 +587,13 @@ def _relabel_recovered(primary: Sequence[Detection], recovered: Sequence[Detecti
     (frame, det_label) would silently pick up a different cell.  Primary
     labels are never touched: they are the pixel values in ``masks.npz`` and
     what every attempt's bracket names.
+
+    Since E2 09925b8, ``recovery.recover`` assigns labels by this same rule
+    as it finds each cell (highest label among the frame's first-pass
+    observations, then one more per recovered cell in order), so on its
+    output this is a no-op whenever every primary detection is held by a
+    first-pass track.  It stays as the safety net for a ``recover`` that
+    does not label, and for a primary detection ``recover`` never saw.
     """
     highest: dict[int, int] = {}
     for det in primary:
@@ -714,13 +780,44 @@ def _environment(segmentation: SegmentationOutput) -> dict[str, Any]:
     }
 
 
+def _finite(values: Sequence[float | None]) -> list[float]:
+    return [float(v) for v in values if v is not None and math.isfinite(float(v))]
+
+
 def _mean(values: Sequence[float | None]) -> float | None:
-    clean = [float(v) for v in values if v is not None and math.isfinite(float(v))]
+    clean = _finite(values)
     return float(np.mean(clean)) if clean else None
+
+
+def _median(values: Sequence[float | None]) -> float | None:
+    clean = _finite(values)
+    return float(np.median(clean)) if clean else None
 
 
 def _per_hr(per_min: float | None) -> float | None:
     return None if per_min is None else per_min * 60.0
+
+
+def speed_results(summaries: Sequence[Any]) -> dict[str, Any]:
+    """The run-level speed figures of ``run.json["results"]``, both units.
+
+    Every figure is over the tracks that have one (a single observation has
+    no speed), and ``speed_estimators`` names which is which and which is the
+    robust one (see :data:`SPEED_ESTIMATORS`).
+    """
+    step = [getattr(s, "mean_speed_um_per_min", None) for s in summaries]
+    net = [getattr(s, "net_speed_um_per_min", None) for s in summaries]
+    out: dict[str, Any] = {"n_tracks_with_speed": len(_finite(net))}
+    for name, value in (
+        ("mean_speed", _mean(step)),
+        ("mean_net_speed", _mean(net)),
+        ("median_speed", _median(step)),
+        ("median_net_speed", _median(net)),
+    ):
+        out[f"{name}_um_per_min"] = value
+        out[f"{name}_um_per_hr"] = _per_hr(value)
+    out["speed_estimators"] = dict(SPEED_ESTIMATORS)
+    return out
 
 
 def build_manifest(
@@ -738,15 +835,21 @@ def build_manifest(
     recovery_skipped: str | None = None,
     tracking_notes: Sequence[str] = (),
     issues: Sequence[Any] = (),
+    reported: ReportedCalibration | None = None,
 ) -> dict[str, Any]:
-    """Everything needed to reproduce or audit this run (``run.json``, schema 2)."""
+    """Everything needed to reproduce or audit this run (``run.json``, schema 2).
+
+    ``metadata`` holds the calibration that was *used*; ``reported`` what the
+    file said before any override (None: nothing was overridden, so the two
+    are the same).
+    """
+    if reported is None:
+        reported = ReportedCalibration.of(metadata)
     diag = segmentation.diagnostics
     tracking = asdict(config.tracking)
     v1_only = {k: tracking.pop(k) for k in _TRACKING_V1_ONLY if k in tracking}
     n_primary = len(segmentation.detections)
     n_recovered = len(recovery.detections) if recovery is not None else 0
-    mean_speed = _mean([s.mean_speed_um_per_min for s in summaries])
-    mean_net = _mean([s.net_speed_um_per_min for s in summaries])
     dimensionality = metadata.dimensionality
     severities: dict[str, int] = {}
     for issue in issues:
@@ -785,11 +888,18 @@ def build_manifest(
         },
         "import": asdict(config.import_),
         "calibration": {
+            # Used.  Corridor measures X and Y with ONE pixel size, so the Y
+            # size applied is the X size, whatever the file reports for Y.
             "pixel_size_um": metadata.pixel_size_um.value,
             "pixel_size_um_source": metadata.pixel_size_um.source,
-            "pixel_size_y_um": metadata.pixel_size_y_um.value,
-            "pixel_size_y_um_source": metadata.pixel_size_y_um.source,
+            "pixel_size_y_um": metadata.pixel_size_um.value,
+            "pixel_size_y_um_source": metadata.pixel_size_um.source,
+            # The FILE's own X and Y sizes differ (imaging.read_metadata).  An
+            # entered pixel size is one number and cannot make non-square
+            # pixels square, so an override never clears this; it is what
+            # QC's critical ``anisotropic_pixels`` issue reports.
             "anisotropic_pixels": metadata.anisotropic_pixels,
+            "reported_by_file": reported.to_dict(),
             "frame_interval_min": metadata.frame_interval_min.value,
             "frame_interval_min_source": metadata.frame_interval_min.source,
             "z_step_um": metadata.z_step_um.value,
@@ -873,11 +983,7 @@ def build_manifest(
                 1 for t in tracks if t.n_obs >= config.tracking.min_observations
             ),
             "n_observations": sum(t.n_obs for t in tracks),
-            "mean_speed_um_per_min": mean_speed,
-            "mean_speed_um_per_hr": _per_hr(mean_speed),
-            "mean_net_speed_um_per_min": mean_net,
-            "mean_net_speed_um_per_hr": _per_hr(mean_net),
-            "speed_estimators": dict(SPEED_ESTIMATORS),
+            **speed_results(summaries),
             "qc_issues_by_severity": severities,
             "output_dir": str(output_dir) if output_dir else None,
             "elapsed_seconds": round(elapsed_s, 3),

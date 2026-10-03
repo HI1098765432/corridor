@@ -9,7 +9,9 @@ Exit codes, so a batch script can tell the refusals apart:
     0  the analysis ran and its results were written
     1  any other failure (the message is printed, not a traceback)
     2  a bad command line, or the input file does not exist
-    3  the validated segmentation model is missing or fails its checksum
+    3  no validated segmentation model for this data: the model is missing or
+       fails its checksum, or the stack is 3-D and no 3-D model is validated
+       (segment it yourself and pass --labels)
     4  the file's axis order is ambiguous; pass --axes
 """
 
@@ -81,8 +83,8 @@ def build_parser() -> argparse.ArgumentParser:
         description=f"{app_meta.APP_NAME} - {app_meta.APP_TAGLINE}",
         epilog=(
             "Exit codes: 0 done, 1 failed, 2 bad command line or missing file, "
-            "3 validated model missing or checksum mismatch, 4 ambiguous axis order "
-            "(pass --axes)."
+            "3 no validated model for this data (missing, checksum mismatch, or a 3-D "
+            "stack: pass --labels), 4 ambiguous axis order (pass --axes)."
         ),
     )
     p.add_argument("input", nargs="?", help="time-lapse TIFF to analyse")
@@ -358,6 +360,14 @@ def main(argv: list[str] | None = None) -> int:
         f"{recovered} recovered"
     )
     print(f"  tracking       {result.n_tracks} tracks, {len(result.usable_tracks)} with velocity")
+    res = result.manifest.get("results", {})
+    if res.get("median_net_speed_um_per_min") is not None:
+        # The robust run-level figure (pipeline.SPEED_ESTIMATORS), never the mean.
+        print(
+            f"  net speed      median {res['median_net_speed_um_per_min']:.3f} um/min "
+            f"({res['median_net_speed_um_per_hr']:.1f} um/hr) over "
+            f"{res['n_tracks_with_speed']} tracks"
+        )
     for issue in result.issues[:8]:
         where = f" (frame {issue.frame})" if issue.frame is not None else ""
         print(f"  ! {issue.severity:8s} {issue.title}{where}")

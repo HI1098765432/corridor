@@ -232,7 +232,83 @@ def test_mean_speed_is_in_both_units_and_the_estimator_is_named(
     expected = 20.0 * PIXEL_SIZE_UM / FRAME_INTERVAL_MIN  # a straight run: all three agree
     assert res["mean_speed_um_per_min"] == pytest.approx(expected)
     assert res["mean_net_speed_um_per_min"] == pytest.approx(expected)
-    assert res["speed_estimators"]["robust_estimator"] == "mean_net_speed"
+    for name in ("median_speed", "median_net_speed"):
+        assert res[f"{name}_um_per_min"] == pytest.approx(expected)
+        assert res[f"{name}_um_per_hr"] == pytest.approx(expected * 60)
+    estimators = res["speed_estimators"]
+    assert estimators["robust_estimator"] == "median_net_speed"
+    assert "NOT robust" in estimators["mean_net_speed"]
+    assert res["n_tracks_with_speed"] == 1
+
+
+def test_one_outlier_fragment_moves_the_mean_and_not_the_median():
+    """The failure that actually happens: a spurious 2-observation track.
+
+    Shaped on 052924_1 (2.0 defaults), where one 3.80 um/min fragment lifted
+    the mean net speed of 12 tracks by 48 %.  Here: four cells at 0.5 um/min
+    and one fragment at 4.0.
+    """
+    from types import SimpleNamespace
+
+    def track(v):
+        return SimpleNamespace(mean_speed_um_per_min=v, net_speed_um_per_min=v)
+
+    cells = [track(0.5) for _ in range(4)]
+    clean = pipeline.speed_results(cells)
+    noisy = pipeline.speed_results(cells + [track(4.0)])
+    assert clean["mean_net_speed_um_per_min"] == pytest.approx(0.5)
+    assert noisy["mean_net_speed_um_per_min"] == pytest.approx(1.2)  # +140 %
+    robust = noisy["speed_estimators"]["robust_estimator"]
+    assert noisy[f"{robust}_um_per_min"] == pytest.approx(0.5) == clean[f"{robust}_um_per_min"]
+    # A one-observation track has no speed and is not counted.
+    single = pipeline.speed_results(cells + [SimpleNamespace(mean_speed_um_per_min=None,
+                                                             net_speed_um_per_min=None)])
+    assert single["n_tracks_with_speed"] == 4
+    assert pipeline.speed_results([])["median_net_speed_um_per_min"] is None
+
+
+def test_a_pixel_size_override_leaves_a_calibration_block_that_agrees_with_itself(
+    metadata, geometry, scale, tracking_config
+):
+    """Review finding: the override replaced X while Y stayed the file's value.
+
+    The file reports square 0.467 um pixels; the user enters 0.639.
+    """
+    from corridor.core.config import CalibrationConfig
+
+    file_px = Calibrated(0.46706, "nd2_info")
+    metadata.pixel_size_um = file_px
+    metadata.pixel_size_y_um = file_px
+    reported = pipeline.ReportedCalibration.of(metadata)
+    pixel, interval, used_scale = pipeline.effective_calibration(
+        metadata, CalibrationConfig(pixel_size_um=0.639)
+    )
+    metadata.pixel_size_um, metadata.frame_interval_min = pixel, interval
+    tracks, _ = track_detections(straight_track(6), 8, used_scale, tracking_config, geometry=geometry)
+    manifest = pipeline.build_manifest(
+        RunConfig(), metadata, used_scale, geometry, segmentation_output(straight_track(6)),
+        tracks, summarise(tracks, used_scale), elapsed_s=0.0, output_dir=None, reported=reported,
+    )
+    cal = manifest["calibration"]
+    assert cal["pixel_size_um"] == cal["pixel_size_y_um"] == 0.639
+    assert cal["pixel_size_um_source"] == cal["pixel_size_y_um_source"] == SOURCE_USER
+    assert cal["anisotropic_pixels"] is False
+    file = cal["reported_by_file"]
+    assert file["pixel_size_x_um"] == file["pixel_size_y_um"] == 0.46706
+    assert file["pixel_size_x_um_source"] == file["pixel_size_y_um_source"] == "nd2_info"
+
+
+def test_an_anisotropic_file_stays_flagged_whatever_is_entered(
+    metadata, geometry, scale, tracking_config
+):
+    """One entered number cannot make non-square pixels square (imaging.read_metadata)."""
+    metadata.pixel_size_y_um = Calibrated(PIXEL_SIZE_UM * 1.2, "tiff_tag")
+    metadata.anisotropic_pixels = True
+    cal = build(metadata, geometry, scale, tracking_config, straight_track(6)).manifest["calibration"]
+    assert cal["anisotropic_pixels"] is True
+    # Measured with one size; the file's Y size is kept where it is labelled as the file's.
+    assert cal["pixel_size_y_um"] == cal["pixel_size_um"] == PIXEL_SIZE_UM
+    assert cal["reported_by_file"]["pixel_size_y_um"] == pytest.approx(PIXEL_SIZE_UM * 1.2)
 
 
 def test_building_a_manifest_does_not_import_torch():

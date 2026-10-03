@@ -1,6 +1,6 @@
 {
-  "what_this_is": "Corridor 2.0 (build/v2_runs, CLI defaults) against the frozen v1.3.0 baseline (build/baseline_v1.3.0, CLI defaults), movie by movie. The baseline is v1's answer, not ground truth: agreement measures consistency, not accuracy. Every difference is attributed to segmentation, recovery (the re-segmentation of windows a track predicts), tracking or measurement.",
-  "how": "1.  **Segmentation.** ``masks.npz`` and ``masks_raw.npz`` are compared\n    array for array (dtype, shape, every pixel), the model checksum and every\n    segmentation setting in the two ``run.json`` files are compared, and the\n    primary rows of ``detections.csv`` are compared on every column both\n    schemas have.  Same model, same settings and identical masks is the\n    proof that segmentation did not change.\n2.  **Recovery.** Recovered detections (``source != primary``) are matched\n    across versions by frame and centroid (within ``--match-px``).  One that\n    exists in only one version is a recovery difference.\n3.  **Tracking.** Every observation gets a version-independent key: a primary\n    detection is ``(frame, label)`` -- identical in both versions, because the\n    masks are -- and a recovered one is its cross-version match.  Each v1\n    track is paired with the v2 track holding most of its observations\n    (identity agreement, observation-weighted), and every link (consecutive\n    observations of one track) present in only one version is listed.  A link\n    difference touching a detection only one version recovered is attributed\n    to recovery; any other is the tracker's.\n4.  **Measurement.** For every paired track, net speed and median step speed\n    (\u00b5m/min) from both ``track_summary.csv`` files.  A speed difference\n    between tracks made of the *same* observations is a measurement\n    difference; otherwise it is attributed to whatever changed the\n    observations.",
+  "what_this_is": "Corridor 2.0 (build/v2_runs, CLI defaults) against the frozen v1.3.0 baseline (build/baseline_v1.3.0, CLI defaults), movie by movie. The baseline is v1's answer, not ground truth: agreement measures consistency, not accuracy. Every difference is attributed to segmentation, recovery (the re-segmentation of windows a track predicts), tracking or measurement -- except a step faster than any v1.3.0 step, which is attributed to 'known defect' (summary.known_defects), with the stage it would otherwise have been given kept as neutral_attribution.",
+  "how": "1.  **Segmentation.** ``masks.npz`` and ``masks_raw.npz`` are compared\n    array for array (dtype, shape, every pixel), the model checksum and every\n    segmentation setting in the two ``run.json`` files are compared, and the\n    primary rows of ``detections.csv`` are compared on every column both\n    schemas have.  Same model, same settings and identical masks is the\n    proof that segmentation did not change.\n2.  **Recovery.** Recovered detections (``source != primary``) are matched\n    across versions by frame and centroid (within ``--match-px``).  One that\n    exists in only one version is a recovery difference.\n3.  **Tracking.** Every observation gets a version-independent key: a primary\n    detection is ``(frame, label)`` -- identical in both versions, because the\n    masks are -- and a recovered one is its cross-version match.  Each v1\n    track is paired with the v2 track holding most of its observations\n    (identity agreement, observation-weighted), and every link (consecutive\n    observations of one track) present in only one version is listed.  A link\n    difference touching a detection only one version recovered is attributed\n    to recovery; any other is the tracker's.\n4.  **Measurement.** For every paired track, net speed and median step speed\n    (\u00b5m/min) from both ``track_summary.csv`` files.  A speed difference\n    between tracks made of the *same* observations is a measurement\n    difference; otherwise it is attributed to whatever changed the\n    observations.\n5.  **Plausibility.** Every v2 step faster than the fastest step of any\n    v1.3.0 track (measured from the baseline's own ``tracks.csv``) is listed\n    as a KNOWN DEFECT, never as a neutral difference: the segmentation is\n    bit-identical, so such a step is a link 1.x never made and no reviewed\n    track ever showed.  Each is traced to its cause -- the first-pass link\n    across the gap (its bracket, and how far apart the bracket's two\n    observations are) and the recovery attempt that filled it -- and every\n    link and track comparison that touches it is re-attributed to it.",
   "match_px": 5.0,
   "same_prediction_px": 20.0,
   "summary": {
@@ -17,12 +17,49 @@
     "links_only_in_v2": 10,
     "attribution_counts": {
       "none (identical)": 15,
-      "tracking": 8,
+      "tracking": 7,
       "recovery + tracking": 3,
+      "known defect": 1,
       "link:recovery": 11,
-      "link:tracking": 20,
+      "link:tracking": 19,
+      "link:known defect": 1,
       "recovery": 1
     },
+    "fastest_v1_step": {
+      "speed_um_per_min": 1.984089566,
+      "movie": "052924_2",
+      "track_id": 7,
+      "frame": 14
+    },
+    "known_defects": [
+      {
+        "movie": "052924_1",
+        "track_id": 15,
+        "step_px": 162.9,
+        "speed_um_per_min": 3.802,
+        "times_fastest_baseline_step": 1.92,
+        "cause": [
+          {
+            "recovered_frame": 17,
+            "found_by": "intensity",
+            "offset_from_prediction_px": 52.8,
+            "first_pass_track_id": 15,
+            "first_pass_bracket": {
+              "before": [
+                16,
+                3
+              ],
+              "after": [
+                18,
+                1
+              ]
+            },
+            "first_pass_link_px": 220.2,
+            "owners": "tracking (WP-B): the first pass linked the bracket across the gap; recovery (E2): accepted a candidate this far from the prediction"
+          }
+        ]
+      }
+    ],
     "per_movie_tracks": {
       "052924_1": [
         15,
@@ -521,7 +558,9 @@
               17,
               3
             ],
-            "attributed_to": "tracking"
+            "attributed_to": "known defect",
+            "neutral_attribution": "tracking",
+            "known_defect": "KNOWN DEFECT: track 15 steps 162.9 px in 1 frame(s) = 3.802 um/min (1.92x the fastest v1.3.0 step)"
           },
           {
             "from": [
@@ -693,7 +732,7 @@
           "mean_speed_um_per_min_v1": 0.497632852,
           "mean_speed_um_per_min_v2": 0.503308008,
           "mean_speed_um_per_min_diff": 0.005675,
-          "attributed_to": "tracking",
+          "attributed_to": "known defect",
           "observations_only_v1": [
             [
               "p",
@@ -701,7 +740,9 @@
               3
             ]
           ],
-          "observations_only_v2": []
+          "observations_only_v2": [],
+          "neutral_attribution": "tracking",
+          "known_defect": "KNOWN DEFECT: track 15 steps 162.9 px in 1 frame(s) = 3.802 um/min (1.92x the fastest v1.3.0 step)"
         },
         {
           "v1_track": 5,
@@ -1004,12 +1045,57 @@
           "attributed_to": "none (identical)"
         }
       ],
+      "known_defects": [
+        {
+          "track_id": 15,
+          "from": {
+            "frame": 16,
+            "det_label": 3,
+            "x": 44.4,
+            "y": 279.6,
+            "source": "primary"
+          },
+          "to": {
+            "frame": 17,
+            "det_label": 3,
+            "x": 55.0,
+            "y": 117.1,
+            "source": "intensity"
+          },
+          "step_px": 162.9,
+          "speed_um_per_min": 3.802,
+          "times_fastest_baseline_step": 1.92,
+          "track_observations": 2,
+          "cause": [
+            {
+              "recovered_frame": 17,
+              "found_by": "intensity",
+              "offset_from_prediction_px": 52.8,
+              "first_pass_track_id": 15,
+              "first_pass_bracket": {
+                "before": [
+                  16,
+                  3
+                ],
+                "after": [
+                  18,
+                  1
+                ]
+              },
+              "first_pass_link_px": 220.2,
+              "owners": "tracking (WP-B): the first pass linked the bracket across the gap; recovery (E2): accepted a candidate this far from the prediction"
+            }
+          ]
+        }
+      ],
       "attribution_counts": {
         "none (identical)": 7,
-        "tracking": 5,
+        "tracking": 4,
         "recovery + tracking": 3,
+        "known defect": 1,
         "link:recovery": 9,
-        "link:tracking": 11
+        "link:tracking": 10,
+        "link:known defect": 1
       },
       "results_v1": {
         "n_detections": 73,
@@ -1022,7 +1108,9 @@
         "n_detections_recovered": 4,
         "n_tracks": 16,
         "mean_speed_um_per_min": 0.8412697661030332,
-        "mean_net_speed_um_per_min": 0.7773479111222692
+        "mean_net_speed_um_per_min": 0.7773479111222692,
+        "median_net_speed_um_per_min": 0.4850089878445944,
+        "median_net_speed_um_per_hr": 29.100539270675664
       },
       "channel_geometry_v2": {
         "source": "channel_ridges",
@@ -1554,6 +1642,7 @@
           "attributed_to": "none (identical)"
         }
       ],
+      "known_defects": [],
       "attribution_counts": {
         "none (identical)": 3,
         "recovery": 1,
@@ -1572,7 +1661,9 @@
         "n_detections_recovered": 4,
         "n_tracks": 9,
         "mean_speed_um_per_min": 0.8961216697605894,
-        "mean_net_speed_um_per_min": 0.8625257254311887
+        "mean_net_speed_um_per_min": 0.8625257254311887,
+        "median_net_speed_um_per_min": 0.6992016939046874,
+        "median_net_speed_um_per_hr": 41.95210163428125
       },
       "channel_geometry_v2": {
         "source": "channel_ridges",
@@ -1702,6 +1793,7 @@
           "attributed_to": "none (identical)"
         }
       ],
+      "known_defects": [],
       "attribution_counts": {
         "none (identical)": 1
       },
@@ -1716,7 +1808,9 @@
         "n_detections_recovered": 0,
         "n_tracks": 1,
         "mean_speed_um_per_min": 0.49772779496269304,
-        "mean_net_speed_um_per_min": 0.47190598468089445
+        "mean_net_speed_um_per_min": 0.47190598468089445,
+        "median_net_speed_um_per_min": 0.47190598468089445,
+        "median_net_speed_um_per_hr": 28.314359080853666
       },
       "channel_geometry_v2": {
         "source": "channel_ridges",
@@ -1846,6 +1940,7 @@
           "attributed_to": "none (identical)"
         }
       ],
+      "known_defects": [],
       "attribution_counts": {
         "none (identical)": 1
       },
@@ -1860,7 +1955,9 @@
         "n_detections_recovered": 0,
         "n_tracks": 1,
         "mean_speed_um_per_min": 0.06361178036058818,
-        "mean_net_speed_um_per_min": 0.06361178036058818
+        "mean_net_speed_um_per_min": 0.06361178036058818,
+        "median_net_speed_um_per_min": 0.06361178036058818,
+        "median_net_speed_um_per_hr": 3.8167068216352904
       },
       "channel_geometry_v2": {
         "source": "channel_ridges",
@@ -2026,6 +2123,7 @@
           "attributed_to": "none (identical)"
         }
       ],
+      "known_defects": [],
       "attribution_counts": {
         "none (identical)": 3
       },
@@ -2040,7 +2138,9 @@
         "n_detections_recovered": 0,
         "n_tracks": 3,
         "mean_speed_um_per_min": 0.1456806675120499,
-        "mean_net_speed_um_per_min": 0.10274005720119557
+        "mean_net_speed_um_per_min": 0.10274005720119557,
+        "median_net_speed_um_per_min": 0.10274005720119557,
+        "median_net_speed_um_per_hr": 6.164403432071734
       },
       "channel_geometry_v2": {
         "source": "channel_ridges",
