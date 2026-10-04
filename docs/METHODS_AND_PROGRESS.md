@@ -26,9 +26,11 @@ the hard code; the model was not retrained.
   verified at load, no fallback.
 - Training: Cellpose fine-tuning from `cyto2` (lab notebook
   `automatedTraining.ipynb`; reproducible pipeline in `training/`).
-- Detection accuracy (per frame, IoU ≥ 0.5 vs human masks): **0.84**
-  in-distribution, **0.73** held-out, **0.82–0.86** on faint wide-field movies.
-  Per cell across a movie it finds every cell (see §5).
+- Detection accuracy (per frame, IoU ≥ 0.5 vs human masks): **F1 0.84**
+  in-distribution (precision 0.83, recall 0.85); **F1 0.30–0.48 held out** on a
+  new instrument/experiment (the number that predicts a new movie). F1 never
+  exceeds 0.843 at any threshold; at IoU 0.75 it falls to 0.07–0.22. Per cell
+  across a movie it still finds every cell in enough frames to track (see §5).
 
 ## 2. The hard code (`core/pipeline.py`)
 
@@ -92,7 +94,7 @@ block that fills in frame by frame as the engine works (`ui/screens/dataset.py`)
 | tracking, elongating cells (real) | 0.31 | 1.00 | overlap/shape vs centroid |
 | tracking, large-motion cells (real) | 0.89 | 0.99 | lane-primary vs overlap |
 | tracking, 271 synthetic trials | 0.82 | 0.94 | gate + gap-fill + lane prior |
-| detection, per frame (model) | 0.73–0.86 | 0.73–0.86 | unchanged |
+| detection, per frame (model) | 0.84 in-dist / 0.30–0.48 held-out | same | unchanged |
 | detection, per cell/trajectory | — | 1.00 | every cell found in enough frames |
 | noise robustness | — | perfect to 0.25×, precision 1.0 | noise causes misses, not phantoms |
 
